@@ -21,7 +21,7 @@ const SHORTCUTS = [
   ["Enter", "open the dir entry on the cursor row"],
   ["- / BS", "back — pop to the previous view"],
   ["R / r", "refresh — re-open the current view (keep the scroll pos)"],
-  ["w", "toggle soft-wrap / no-wrap for this view"],
+  ["w", "toggle soft-wrap on / off (views open no-wrap)"],
   ["h", "this help screen"],
 ];
 
@@ -162,7 +162,8 @@ function Pager(fd, opts) {
 Pager.prototype.setHunks = function (hunks, path) {
   const p = path !== undefined ? path
           : hunks && hunks.length ? hunks[0].uri || "" : "";
-  this.view = { hunks: hunks, path: p, rows: null, scroll: 0, cols: 0, wrap: true };
+  //  BRO-014: a view opens NO-WRAP (long lines clamp at the right edge); `w` wraps.
+  this.view = { hunks: hunks, path: p, rows: null, scroll: 0, cols: 0, wrap: false };
 };
 
 //  JAB-030: PUSH a fresh view, stacking the current one (a follow / a typed path
@@ -389,8 +390,8 @@ Pager.prototype._keyScroll = function (b) {
     //  re-indexes for the live width, the saved hunks stand.
     case 0x2d: case 0x7f: case 0x08: this.popView(); break;          // - / BS
     case 0x52: case 0x72: this._refresh(); break;                    // R/r refresh
-    //  BRO-014: `w` flips THIS view soft-wrap ↔ no-wrap (rows() re-indexes on the
-    //  new cache key).  Per-view only — lite has no wrap defaults.
+    //  BRO-014: `w` flips THIS view no-wrap (the open default) ↔ soft-wrap (rows()
+    //  re-indexes on the new cache key).  Per-view only — no persisted setting.
     case 0x77: v.wrap = !v.wrap; break;                              // w  toggle
     case 0x68: this._help(); break;                                  // h  help
     default: break;

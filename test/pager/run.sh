@@ -70,6 +70,8 @@ printf '//  a comment line\nfunction f(a) { return a + 1; }\n'         > "$FIX/c
 printf '/*  a comment */\nint main(void) { return 0; }\n'              > "$FIX/code.c"
 printf 'no extension, so no lexer at all\n'                            > "$FIX/plainfile"
 printf 'deep\n'                                                        > "$FIX/sub/deep.txt"
+# a line WIDER than the 40-col pty: no-wrap hides TAIL, `w` brings it back.
+printf 'HEAD%s TAIL\nSHORT\n' "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" > "$FIX/sub/long.txt"
 # QJAB-001: under --eval there is no main script, so the jsrc pin climbs from
 # the CWD — plant lite at the fixture PARENT ($FIX itself must stay listable).
 ln -s "$LITE" "$WORK/jsrc"

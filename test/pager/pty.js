@@ -119,6 +119,27 @@ try {
   const fg = frame(p);
   check("g-top-frame", fg.indexOf("TOP") >= 0 && fg.indexOf("48;5;230") >= 0, fg);
 
+  //  ---- wrap: a view OPENS no-wrap, `w` toggles ---------------------------
+  const pw = new pager.Pager(pty.slave, { color: true, open: entry.openPath });
+  pw.setHunks(entry.openPath("sub/long.txt"), "sub/long.txt");
+  check("wrap-off-by-default", pw.view.wrap === false, String(pw.view.wrap));
+  const nNo = pw.rows(40).length;
+  const fw0 = frame(pw);
+  check("nowrap-clamps-tail", fw0.indexOf("TAIL") < 0 && fw0.indexOf("HEAD") >= 0, fw0);
+  check("nowrap-keeps-next-line", fw0.indexOf("SHORT") >= 0, fw0);
+
+  send("w");
+  check("key-w-wraps", pump(pw, function () { return pw.view.wrap === true; }),
+        "wrap " + pw.view.wrap);
+  const nYes = pw.rows(40).length;
+  check("wrap-adds-rows", nYes > nNo, nNo + " -> " + nYes);
+  const fw1 = frame(pw);
+  check("wrap-shows-tail", fw1.indexOf("TAIL") >= 0, fw1);
+  send("w");
+  check("key-w-unwraps", pump(pw, function () { return pw.view.wrap === false; }),
+        "wrap " + pw.view.wrap);
+  check("unwrap-rows-back", pw.rows(40).length === nNo, String(pw.rows(40).length));
+
   //  ---- a DIR view: Enter follows an entry, `-` backs out -----------------
   const dh = entry.openPath(".");
   check("openPath-dir-list", dh !== null && dh.length === 1 && dh[0].kind === "dir",
