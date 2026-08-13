@@ -162,8 +162,12 @@ function buildDirHunk(arg, path) {
 //  columns consumed; 'U'/'O'-tagged bytes are skipped (invisible, no column).
 function rowEnd(hunk, off, cols) {
   const text = hunk.text, tlen = text.length, toks = hunk.toks;
-  let ti = 0;
-  while (ti < toks.length && (toks[ti] & 0xffffff) <= off) ti++;
+  //  toks are sorted by byte end: bisect to the tok covering `off` — a linear
+  //  scan from 0 made indexing O(rows*toks), minutes on a 100k-tok log hunk.
+  let lo = 0, hi = toks.length;
+  while (lo < hi) { const m = (lo + hi) >> 1;
+    if ((toks[m] & 0xffffff) <= off) lo = m + 1; else hi = m; }
+  let ti = lo;
   let cp = 0, pos = off;
   while (pos < tlen && cp < cols) {
     while (ti < toks.length && (toks[ti] & 0xffffff) <= pos) ti++;

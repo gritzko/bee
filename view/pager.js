@@ -102,8 +102,12 @@ function indexAll(hunks, cols, wrap) {
 //  VERBATIM text bytes.  BRO-010: colour = the SHARED THEME, runs batched, U/O hidden.
 function emitBody(hunk, off, end, color, pass, enc, raw) {
   const text = hunk.text, toks = hunk.toks;
-  let ti = 0;
-  while (ti < toks.length && (toks[ti] & 0xffffff) <= off) ti++;
+  //  bisect to the tok covering `off` (toks sorted by byte end) — the linear
+  //  scan from 0 cost O(toks) per painted row, sluggish on a 100k-tok hunk.
+  let lo = 0, hi = toks.length;
+  while (lo < hi) { const m = (lo + hi) >> 1;
+    if ((toks[m] & 0xffffff) <= off) lo = m + 1; else hi = m; }
+  let ti = lo;
   let cur = bro.A0, pos = off, runLo = -1;
   while (pos < end) {
     while (ti < toks.length && (toks[ti] & 0xffffff) <= pos) ti++;

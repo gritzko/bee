@@ -83,11 +83,16 @@ const TAG_L = 11, TAG_G = 6, TAG_S = 18, TAG_D = 3;   // 'L' 'G' 'S' 'D' - 'A'
 function tok32(tag, end) { return ((tag & 0x1f) << 27) | (end & 0xffffff); }
 
 function hunk(uriStr, parts) {
-  let text = "";
+  //  ONE growing Buf; feedStr encodes each span straight into IDLE, so there
+  //  is no string concat (`text +=` recopied the whole text: O(n^2)-slow).
+  const b = io.buf(1 << 16);
   const spans = [];                                  // [tag, byte end]
-  const blen = (s) => utf8.Encode(s).length;
-  let at = 0;
-  const put = (tag, str) => { text += str; at += blen(str); spans.push([tag, at]); };
+  const put = (tag, str) => {
+    const worst = str.length * 4 + 4;                // utf8 worst case
+    if (b.room < worst) b.grow(Math.max(b.cap * 2, b.cap + worst));
+    b.feedStr(str);
+    spans.push([tag, b.size]);
+  };
   for (const p of parts) {
     put(TAG_L, p.sha8);
     put(TAG_G, " ");
@@ -99,7 +104,7 @@ function hunk(uriStr, parts) {
   }
   const toks = new Uint32Array(spans.length);
   for (let i = 0; i < spans.length; i++) toks[i] = tok32(spans[i][0], spans[i][1]);
-  return { uri: uriStr, verb: "hunk", text: utf8.Encode(text), toks: toks,
+  return { uri: uriStr, verb: "hunk", text: b.data(), toks: toks,
            kind: "log" };
 }
 
