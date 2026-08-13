@@ -131,6 +131,31 @@ function runCommit(args) {
   pageHunks([cm.hunk(out)]);
 }
 
+//  LITE-010: `lite diff [--plain] [<hex>|<path>]` — the CFOLD 2-layer diff,
+//  worktree vs HEAD by default, a path scoped to that path, a `<hex>` against
+//  its first parent.  One hunk per emitted window: at a terminal the pager
+//  paints the weave (added salad, removed salmon), piped or under `--plain` it
+//  is the C unified render under the usual `hunk <uri>` banner.
+function runDiff(args) {
+  const df = require("index/diff.js");
+  const rest = [];
+  let plain = false;
+  for (const a of args) { if (a === "--plain") plain = true; else rest.push(a); }
+  const out = df.diff(rest.length ? rest[0] : undefined);
+  if (out.hunks.length === 0) return;             // no change says nothing
+  if (!io.isatty(1) || plain) {
+    const parts = [];
+    let total = 0;
+    for (const h of out.hunks) { const b = bro.plainHunk(h); parts.push(b); total += b.length; }
+    const all = new Uint8Array(total);
+    let off = 0;
+    for (const b of parts) { all.set(b, off); off += b.length; }
+    writeFd(1, all);
+    return;
+  }
+  pageHunks(out.hunks);
+}
+
 //  Hand a hunk list to the pager on the CONTROLLING terminal (the runPager
 //  edge, shared so there is ONE tty lifecycle).  `open` is left unset: a log
 //  row has nothing to follow into.
@@ -152,6 +177,7 @@ function main(argv) {
   if (argl.length && argl[0] === "index") return runIndex(argl.slice(1));
   if (argl.length && argl[0] === "log") return runLog(argl.slice(1));
   if (argl.length && argl[0] === "commit") return runCommit(argl.slice(1));
+  if (argl.length && argl[0] === "diff") return runDiff(argl.slice(1));
   const args = [];
   let plain = false;
   //  `--plain` is the ONE flag; everything else is a path, verbatim.

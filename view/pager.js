@@ -116,7 +116,10 @@ function emitBody(hunk, off, end, color, pass, enc, raw) {
     if (clen === 0 || pos + clen > end) clen = 1;
     if (tag === "U" || tag === "O") { if (runLo >= 0) { raw(runLo, pos); runLo = -1; } pos += clen; continue; }
     if (color) {
-      const want = bro.cellAnsi(tag);              // PASS_NORMAL, SIDE_EQ
+      //  LITE-010: the token's diff SIDE (tok32 [25..24]) rides along — EQ for
+      //  every file/dir/log hunk, IN/RM inside a diff hunk's weave.
+      const side = ti < toks.length ? ((toks[ti] >>> 24) & 3) : bro.SIDE_EQ;
+      const want = bro.cellAnsi(tag, pass, side);  // PASS_NORMAL
       if (!bro.aEq(want, cur)) {
         if (runLo >= 0) { raw(runLo, pos); runLo = -1; }
         enc(bro.deltaSGR(want, cur)); cur = want;

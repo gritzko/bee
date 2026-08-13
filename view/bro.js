@@ -51,6 +51,16 @@ const THEME = {
 function themeAt(tag) { return THEME[tag] || A0; }
 const THEME_BANNER = { fm: 2, fg: 0, bm: 2, bg: 230, fl: 0 };
 
+//  LITE-010: the diff WASH.  A tok32's side lives in bits [25..24] — 1 = the
+//  to-side (inserted), 2 = the from-side (removed) — and a changed token takes
+//  a 256-colour BACKGROUND over its syntax colour: be/view/theme.js's own
+//  `inWash` 157 (salad green) and `rmWash` 217 (salmon), which is exactly what
+//  the C HUNK colour render paints.  lite has ONE pass, so there is no pale
+//  other-pass tint and no patch-provenance family: two slots, both ways.
+const SIDE_EQ = 0, SIDE_IN = 1, SIDE_RM = 2;
+function aBg256(n) { return { fm: 0, fg: 0, bm: 2, bg: n, fl: 0 }; }
+const WASH_IN = aBg256(157), WASH_RM = aBg256(217);
+
 //  --- SGR delta speller (abc/ANSI.c ANSIu8sFeedDelta / ANSIu8sFeedReset) ---
 //  Emit only the attributes that transitioned from `prev` to `want`, in the
 //  C order: flags-off, flags-on, fg, bg.  Byte-identical to the C speller so
@@ -83,11 +93,14 @@ function resetSGR(cur) { return aEq(cur, A0) ? "" : ESC + "[0m"; }
 //  a pass-aware consumer maps 1:1 onto the be/ row shape).
 const PASS_NORMAL = 0;
 
-//  --- bro_cell_ansi: (fg tag) -> ansi64 -----------------------------------
-//  PASS_NORMAL / side EQ only — no diff wash to OR on.  Extra (pass, side)
-//  args from a be/-shaped caller are accepted and ignored.
-function cellAnsi(tag) {
-  return themeAt(tag);
+//  --- bro_cell_ansi: (fg tag, pass, side) -> ansi64 ------------------------
+//  PASS_NORMAL only (lite never splits a row into an rm-pass and an in-pass);
+//  a diff hunk's side ORs the wash on, a file hunk's side is EQ and gets none.
+function cellAnsi(tag, pass, side) {
+  const want = themeAt(tag);
+  if (side === SIDE_IN) return aOr(want, WASH_IN);
+  if (side === SIDE_RM) return aOr(want, WASH_RM);
+  return want;
 }
 
 //  Render the THEME_BANNER colour band for a hunk URI, space-filled to `cols`
@@ -218,7 +231,11 @@ function indexRows(hunk, cols, wrap) {
 function statusURI(hunk, line) {
   const u = typeof hunk === "string" ? hunk : hunk.uri;
   if (!u) return u;
-  return u + "#L" + line;
+  //  LITE-010: the LIVE line REPLACES an anchor the uri already carries (a diff
+  //  hunk's uri is `<path>#L<window start>`), never stacks a second one.
+  const h = u.lastIndexOf("#L");
+  const bare = h > 0 ? u.slice(0, h) : u;
+  return bare + "#L" + line;
 }
 
 function statusPos(scroll, nrows, viewRows) {
@@ -237,7 +254,11 @@ function statusPos(scroll, nrows, viewRows) {
 function plainHunk(hunk) {
   let head = "hunk " + hunk.uri + "\n";       // verb "hunk" + uri (banner)
   let out = utf8.Encode(head);
-  const text = hunk.text;
+  //  LITE-010: a diff hunk's TEXT is the weave (both sides interleaved, sides
+  //  in the toks) — unreadable as bytes — so it carries its own already
+  //  rendered `plain`, the C `diff:`-URI unified render.  Same banner, same
+  //  trailing-newline rule; every other hunk has no `plain` and is unchanged.
+  const text = hunk.plain || hunk.text;
   if (text.length === 0) return out;
   const needNL = text[text.length - 1] !== 0x0a;
   const buf = new Uint8Array(out.length + text.length + (needNL ? 1 : 0));
@@ -277,4 +298,7 @@ module.exports = {
   //  The banner band the colour sink opens each hunk with.
   bannerColor: bannerColor,
   THEME_BANNER: THEME_BANNER,
+  //  LITE-010: the diff wash slots + the tok32 side vocabulary.
+  SIDE_EQ: SIDE_EQ, SIDE_IN: SIDE_IN, SIDE_RM: SIDE_RM,
+  WASH_IN: WASH_IN, WASH_RM: WASH_RM,
 };

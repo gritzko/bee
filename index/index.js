@@ -602,6 +602,8 @@ module.exports = {
   index: index, summary: summary, track: track, openIndex: openIndex,
   discover: discover, openRepo: openRepo, closeRepo: closeRepo,
   bringUp: bringUp, reader: reader, readCommit: readCommit, readTree: readTree,
+  //  LITE-010: `diff` reads blob/commit objects straight off the ODB.
+  object: object,
   firstLine: firstLine, identTs: identTs, heap: heap, hexOfHl: hexOfHl,
   IDX_DIR: IDX_DIR, IDX_EXT: IDX_EXT, IDX_BATCH: IDX_BATCH,
   CPAR_NONE: CPAR_NONE,
