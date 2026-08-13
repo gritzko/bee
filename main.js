@@ -114,6 +114,23 @@ function runLog(args) {
   pageHunks([lg.hunk(out.uri, out.parts)]);
 }
 
+//  LITE-009: `lite commit [--plain] [<hex>]` — ONE commit's metadata, the be
+//  `commit:` view over this repo's own ODB.  Bare = the checked-out tip.
+//
+//  The plain bytes are `commit <sha40>\n` + the raw object, which is exactly
+//  `git cat-file commit <sha>` with one line in front — so a pipe feeds a diff
+//  or a grep the object itself.  At a terminal the SAME bytes ride the SAME
+//  pageHunks door a log or a file arg takes, with the fields coloured.
+function runCommit(args) {
+  const cm = require("index/commit.js");
+  const rest = [];
+  let plain = false;
+  for (const a of args) { if (a === "--plain") plain = true; else rest.push(a); }
+  const out = cm.commit(rest.length ? rest[0] : undefined);
+  if (!io.isatty(1) || plain) { writeFd(1, out.text); return; }
+  pageHunks([cm.hunk(out)]);
+}
+
 //  Hand a hunk list to the pager on the CONTROLLING terminal (the runPager
 //  edge, shared so there is ONE tty lifecycle).  `open` is left unset: a log
 //  row has nothing to follow into.
@@ -134,6 +151,7 @@ function main(argv) {
   const argl = argv.slice(2);
   if (argl.length && argl[0] === "index") return runIndex(argl.slice(1));
   if (argl.length && argl[0] === "log") return runLog(argl.slice(1));
+  if (argl.length && argl[0] === "commit") return runCommit(argl.slice(1));
   const args = [];
   let plain = false;
   //  `--plain` is the ONE flag; everything else is a path, verbatim.

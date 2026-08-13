@@ -8,6 +8,8 @@ Usage:
  -  `lite index [<repo>]` — index a git repo (root, `.git` dir or gitfile; default the cwd) into its own `<repo>/.git/be/` and list it in `$HOME/.config/be/tracks`. Lazy: a second run is a watermark no-op, a later one indexes only the gap. Everything under `.git/be/` is derived — `rm -rf` it and the next run rebuilds it from the ODB.
  -  `lite log [--plain] [<hex>|<path>]` — the commit log off that index (bare = the checked-out tip, `<hex>` = a commit's ancestors, anything else = a file's revisions), one `<sha8> <date> <subject> (<author>)` row per commit, newest first. At a terminal it pages as a coloured hunk, the same way a file arg does; piped or under `--plain` it is the bare rows. It brings the index up to date itself, so there is never an `index` call to remember.
 
+ -  `lite commit [--plain] [<hex>]` — one commit's metadata: the header block in the object's own order (folded `gpgsig`/`mergetag` continuations and `encoding` included), then the message. Bare = the checked-out tip, otherwise any 6..40 hexlet. The plain bytes are exactly `commit <sha40>` + `git cat-file commit <sha>`, so a pipe gets the object itself; at a terminal the same bytes page as a coloured hunk. Pure ODB — it reads no index, so it answers on a repo that was never indexed and on a commit off the branch.
+
 Build: quickjab is standalone — it carries dog/ (libdog) and test/ (the
 jab-shared API suite) as submodules, no jab tree involved:
 

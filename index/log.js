@@ -312,7 +312,8 @@ function seedOf(ctx, ix, hexarg) {
 }
 
 //  A commit body -> its 20-byte git sha, over the loose-object framing (the
-//  be/shared/util/sha.js `frameSha` shape).  Only a short `<hex>` arg needs it.
+//  be/shared/util/sha.js `frameSha` shape).  Only a short `<hex>` arg needs it
+//  — LITE-009's `commit` re-frames the same way, so it is exported.
 function frameSha(content) {
   const hdr = utf8.Encode("commit " + content.length + "\0");
   const b = io.buf(hdr.length + content.length + 8);
@@ -324,4 +325,5 @@ module.exports = { log: log, row: row, rowParts: rowParts, hunk: hunk,
                    authorName: authorName, date7Of: date7Of,
                    fileLog: fileLog, ancestry: ancestry, parentsOf: parentsOf,
                    cparOf: cparOf, isIndexed: isIndexed,
-                   relOf: relOf, normalize: normalize, HEXARG: HEXARG };
+                   relOf: relOf, normalize: normalize, HEXARG: HEXARG,
+                   frameSha: frameSha };
