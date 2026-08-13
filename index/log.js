@@ -281,7 +281,13 @@ function log(arg, opts) {
         w = ancestry(ix, r, seedOf(ctx, ix, arg), max);
       } else {
         form = "path";
+        //  LITE-011: the full spelling first (it is exact); nothing there and
+        //  the arg may be PARTIAL, so let the FSEG rows name it against the tip.
         w = fileLog(ix, r, relOf(ctx.root, arg), max);
+        if (w.hls.length === 0) {
+          const hit = require("./resolve.js").pick("log", ix, ctx, arg);
+          if (hit !== null) w = fileLog(ix, r, hit, max);
+        }
       }
       const rows = [], parts = [];
       for (const hl of w.hls) {

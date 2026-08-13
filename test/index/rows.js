@@ -41,10 +41,40 @@ const all = [];
   }
 }
 const NAMED = [["REV-BLOB", idx.K_BLOB], ["REV-CMMT", idx.K_CMMT], ["REV-PARS", idx.K_PARS],
-               ["CPAR", idx.K_CPAR], ["B2P", idx.K_B2P], ["MARK", idx.K_MARK]];
+               ["CPAR", idx.K_CPAR], ["B2P", idx.K_B2P], ["FSEG", idx.K_FSEG],
+               ["MARK", idx.K_MARK]];
 for (const [nm, k] of NAMED)
   check("kind-" + nm, (kinds.get(k) || 0) > 0, "rows " + (kinds.get(k) || 0));
-check("kinds-are-only-the-six", kinds.size === 6, "distinct kinds " + kinds.size);
+//  LITE-011 added FSEG (6) to the LITE-006 six.
+check("kinds-are-only-the-seven", kinds.size === 7, "distinct kinds " + kinds.size);
+
+//  --- 1b. FSEG: ONE row per distinct path, the ruled key/val split ----------
+//  The fixture holds 4 paths (a.txt, dir/b.txt, moved.txt, orphan.txt — the
+//  last one is off the indexed branch, so it is NOT here): 3 rows.
+{
+  const rows = [];
+  for (const [k, v] of all) if (idx.keyKind(k) === idx.K_FSEG) rows.push([k, v]);
+  check("fseg-one-row-per-path", rows.length === 3, "rows " + rows.length);
+  const want = idx.fsegRow("dir/b.txt");
+  const got = rows.filter((e) => e[0] === want.key);
+  check("fseg-key-is-fn_hl|prnt_hl|6", got.length === 1, "rows " + got.length);
+  check("fseg-val-is-a-pure-function-of-the-text",
+        got.length === 1 && got[0][1] === want.val, got.length ? got[0][1] : "no row");
+  check("fseg-depth-is-the-dir-count",
+        got.length === 1 && idx.fsegDepth(got[0][1]) === 1,
+        got.length ? idx.fsegDepth(got[0][1]) : "no row");
+  check("fseg-seg0-is-the-topmost-dir",
+        got.length === 1 && idx.fsegSeg(got[0][1], 0) === idx.segHl("dir", 10n),
+        got.length ? idx.fsegSeg(got[0][1], 0) : "no row");
+  check("fseg-unused-levels-are-zero",
+        got.length === 1 && idx.fsegSeg(got[0][1], 1) === 0n);
+  //  a repo-ROOT file: no parent segment at all, so prnt_hl is 0.
+  const rootWant = idx.fsegRow("a.txt");
+  check("fseg-root-file-has-no-parent",
+        ((rootWant.key >> 4n) & ((1n << 20n) - 1n)) === 0n &&
+        idx.fsegDepth(rootWant.val) === 0 &&
+        rows.some((e) => e[0] === rootWant.key && e[1] === rootWant.val));
+}
 
 //  --- 2. one file's log = ONE prefix scan of its path_hl -------------------
 //  The rows come back rev-ordered oldest-first, each rev naming its blob, its

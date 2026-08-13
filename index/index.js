@@ -15,7 +15,8 @@
 //    3. REV-PARS  key = path_hl:40|rev:20|PARS  val = par1:20|par2:20|par3:20|vnib:4
 //    4. CPAR      key = commit_hl:60|CPAR       val = parent_hl:60|ord:4
 //    5. B2P       key = blob_hl:60|B2P          val = path_hl:40|rev:20|vnib:4
-//    6. MARK      key = ref_hl:60|MARK          val = tip commit_hl:60|vnib:4
+//    6. FSEG      key = fn_hl:40|prnt_hl:20|FSEG  val = seg0..seg5:10 each|depth:4
+//    7. MARK      key = ref_hl:60|MARK          val = tip commit_hl:60|vnib:4
 //
 //  `vnib` is RESERVED (0) everywhere the ruled table does not name a field;
 //  CPAR's low nibble is the parent ordinal (first parent = 0), and a ROOT
@@ -58,7 +59,7 @@ const TREE_CACHE_MAX = 1 << 14;
 
 //  --- the field split -------------------------------------------------------
 const K_BLOB = 0x1n, K_CMMT = 0x2n, K_PARS = 0x3n;
-const K_CPAR = 0x4n, K_B2P = 0x5n, K_MARK = 0xFn;
+const K_CPAR = 0x4n, K_B2P = 0x5n, K_FSEG = 0x6n, K_MARK = 0xFn;
 
 const REV_BITS = 20n, PHL_BITS = 40n;
 const REV_MAX = (1n << REV_BITS) - 1n;          // also the empty PARS slot
@@ -86,6 +87,49 @@ function parsVal(p) {
   for (let i = 0; i < 3; i++) if (s[i] === undefined) s[i] = REV_MAX;
   return (s[0] << 44n) | (s[1] << 24n) | (s[2] << 4n);
 }
+//  --- LITE-011: FSEG, the partial-path record -------------------------------
+//  key = fn_hl:40 | prnt_hl:20 | 6, val = seg0..seg5:10 each ROOT-FIRST | vnib:4.
+//  The val is a pure function of the path TEXT — no rev, no commit, no blob —
+//  so a row is minted once, re-puts are byte-identical, and nothing invalidates
+//  it: it describes a NAME, not a content state.  ROOT-FIRST is load-bearing,
+//  it anchors index/resolve.js's descent at the root tree.
+const SEG_SLOTS = 6;                              // the val holds the TOP six
+const DEPTH_MAX = 15;                             // vnib is 4 bits
+const SEG_MASK = (1n << 10n) - 1n;
+
+//  A segment's TOP `bits` hashlet bits; a genuine 0 bumps to 1 so that 0 keeps
+//  its ruled meaning — "no parent" / "no such level".
+function segHl(name, bits) {
+  const h = hlOfText(name) >> (60n - bits);
+  return h === 0n ? 1n : h;
+}
+//  The LAST segment's top 40 bits.  No bump: it names nothing absent.
+function fnHl(name) { return hlOfText(name) >> 20n; }
+
+function fsegKey(fn, prnt) { return (fn << 24n) | (prnt << 4n) | K_FSEG; }
+function fsegVal(chain, depth) {
+  let v = 0n;
+  for (let i = 0; i < SEG_SLOTS; i++)
+    v = (v << 10n) | (i < chain.length ? chain[i] : 0n);
+  return (v << 4n) | BigInt(depth > DEPTH_MAX ? DEPTH_MAX : depth);
+}
+function fsegSeg(v, i) { return (v >> BigInt(54 - 10 * i)) & SEG_MASK; }
+function fsegDepth(v) { return Number(v & 0xfn); }
+
+//  One repo-relative path -> its { key, val }.  A path deeper than SEG_SLOTS is
+//  SELF-DECLARING through `vnib`: the chain holds the top 6 and the near tail is
+//  missing, so the descent goes wide for those levels instead of guessing.
+function fsegRow(path) {
+  const segs = path.split("/");
+  const dirs = segs.slice(0, -1);
+  const prnt = dirs.length ? segHl(dirs[dirs.length - 1], 20n) : 0n;
+  const chain = [];
+  for (let i = 0; i < dirs.length && i < SEG_SLOTS; i++)
+    chain.push(segHl(dirs[i], 10n));
+  return { key: fsegKey(fnHl(segs[segs.length - 1]), prnt),
+           val: fsegVal(chain, dirs.length) };
+}
+
 function keyKind(k) { return k & 0xfn; }
 function keyPhl(k) { return k >> 24n; }
 function keyRev(k) { return (k >> 4n) & REV_MAX; }
@@ -573,6 +617,10 @@ function emit(wr, st, c, chl) {
     if (pr !== undefined && pars.indexOf(pr) < 0) pars.push(pr);
   }
 
+  //  LITE-011: the path's FSEG row, minted at its rev 0 — the one commit that
+  //  FIRST sees the path — and put BEFORE the rev rows, so a persisted blob row
+  //  (what the re-put guard reads) always proves the FSEG row landed too.
+  if (rev === 0n) { const f = fsegRow(c.path); wr.put(f.key, f.val); }
   wr.put(revKey(c.phl, rev, K_BLOB), hlVal(bhl, 0n));
   wr.put(revKey(c.phl, rev, K_CMMT), hlVal(chl, 0n));
   //  4th+ parent rev rides a SECOND PARS row (the val holds three slots).
@@ -608,7 +656,12 @@ module.exports = {
   IDX_DIR: IDX_DIR, IDX_EXT: IDX_EXT, IDX_BATCH: IDX_BATCH,
   CPAR_NONE: CPAR_NONE,
   K_BLOB: K_BLOB, K_CMMT: K_CMMT, K_PARS: K_PARS,
-  K_CPAR: K_CPAR, K_B2P: K_B2P, K_MARK: K_MARK, REV_MAX: REV_MAX,
+  K_CPAR: K_CPAR, K_B2P: K_B2P, K_FSEG: K_FSEG, K_MARK: K_MARK,
+  REV_MAX: REV_MAX,
+  //  LITE-011: the FSEG split, shared with index/resolve.js.
+  SEG_SLOTS: SEG_SLOTS, DEPTH_MAX: DEPTH_MAX, segHl: segHl, fnHl: fnHl,
+  fsegKey: fsegKey, fsegVal: fsegVal, fsegSeg: fsegSeg, fsegDepth: fsegDepth,
+  fsegRow: fsegRow,
   revKey: revKey, hlKey: hlKey, hlVal: hlVal, pathRevVal: pathRevVal,
   parsVal: parsVal, keyKind: keyKind, keyPhl: keyPhl, keyRev: keyRev,
   keyHl60: keyHl60, valHl60: valHl60,

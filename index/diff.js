@@ -326,6 +326,33 @@ function emptyHunk(name) {
            toks: new Uint32Array(0), plain: new Uint8Array(0), kind: "diff" };
 }
 
+//  LITE-011: is `rel` a leaf of this tree?  A file DELETED in the worktree
+//  still is, so `diff <deleted file>` never has to touch the index.
+function inTree(r, tree, rel) {
+  const segs = rel === "" ? [] : rel.split("/");
+  let t = tree;
+  for (let i = 0; i < segs.length; i++) {
+    const M = idx.readTree(r, t);
+    if (M === null) return false;
+    const e = M.get(segs[i]);
+    if (e === undefined) return false;
+    if (i === segs.length - 1) return true;
+    if (!e.dir) return false;
+    t = e.sha;
+  }
+  return false;
+}
+
+//  LITE-011: the ONE place a lite diff opens the index — a partial path arg.
+//  It brings the lane up to date first, exactly as `log` does, then resolves.
+function resolvePartial(ctx, arg) {
+  const ix = idx.openIndex(ctx.gitdir);
+  try {
+    idx.bringUp(ctx, ix, { track: false });
+    return require("./resolve.js").pick("diff", ix, ctx, arg);
+  } finally { try { ix.close(); } catch (e) {} }
+}
+
 //  A `<hex>` arg -> { sha, meta } for the commit it names, refused in plain
 //  words when it names nothing (or something that is not a commit).
 function commitOf(ctx, hexarg) {
@@ -359,9 +386,15 @@ function diff(arg, opts) {
       uri = "diff " + arg;
     } else {
       form = "path";
-      const rel = lg.relOf(ctx.root, arg);
-      let dir = false;
-      try { dir = io.stat(ctx.root + "/" + rel).kind === "dir"; } catch (e) {}
+      let rel = lg.relOf(ctx.root, arg);
+      let dir = false, here = true;
+      try { dir = io.stat(ctx.root + "/" + rel).kind === "dir"; } catch (e) { here = false; }
+      //  LITE-011: neither in the worktree nor in HEAD's tree — the arg may be
+      //  PARTIAL, so ask the index (and only then) to name it.
+      if (!here && !inTree(ctx.r, headTree, rel)) {
+        const hit = resolvePartial(ctx, arg);
+        if (hit !== null) rel = hit;
+      }
       //  A DIR scopes the worktree diff to that subtree; a FILE gets the
       //  whole-file view (emitFull), which is what `be diff <file>` shows.
       if (dir) diffWt(ctx, headTree, rel === "" ? "" : rel + "/", false, out);

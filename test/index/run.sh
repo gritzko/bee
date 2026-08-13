@@ -6,7 +6,7 @@
 #           the tracks list (append + dedup), the no-op second run, the gap run
 #           after a new commit, a rewritten history (non-ancestor mark -> rewalk,
 #           re-puts idempotent) and the `rm -rf .git/be` rebuild.
-#   rows  — rows.js: the six ruled record kinds, one file's rev chain as ONE
+#   rows  — rows.js: the seven ruled record kinds, one file's rev chain as ONE
 #           prefix scan, the B2P rows of a shared blob, CPAR edges, the MARK.
 #
 # Standalone: `sh lite/test/index/run.sh` from anywhere (it cds itself).
@@ -181,6 +181,17 @@ if cmp -s "$WORK/l4w" "$WORK/l6" && [ "$RC" = 0 ] && [ ! -s "$WORK/l7" ]
 then ok "a path is root-relative from any subdir; an unknown path = empty log"
 else bad "subdir path / unknown path (rc $RC)" "$WORK/l6" "$WORK/l7" "$WORK/l7e"; fi
 
+# ==========================================================================
+# leg 1c — LITE-011: a PARTIAL path resolves against the commit's tree
+# ==========================================================================
+# R1: `dir/b.txt` named by its BARE filename from the repo root.  `path_hl`
+# hashes the WHOLE path, so `b.txt` hashes to a key the lane does not hold —
+# the FSEG rows + the tree descent are what turn it back into `dir/b.txt`.
+rtin "$REPO" log b.txt 2>"$WORK/p1e" | cut -c1-8 > "$WORK/p1"
+if cmp -s "$WORK/l4w" "$WORK/p1"
+then ok "log <bare filename> resolves to dir/b.txt"
+else bad "log <bare filename> resolves to dir/b.txt" "$WORK/l4w" "$WORK/p1" "$WORK/p1e"; fi
+
 # G7: a commit outside the indexed branch is refused IN PLAIN WORDS, never
 # answered with a one-row log that is silently wrong.
 rtin "$REPO" log "$ORPH" > "$WORK/l8" 2>"$WORK/l8e"; RC=$?
@@ -241,6 +252,75 @@ then ok "log on a fresh clone indexes implicitly and adds no tracks line"
 else bad "log on a fresh clone indexes implicitly (rc $RC)" "$WORK/l9" "$WORK/l9e"; fi
 
 # ==========================================================================
+# leg 1d — LITE-011: the FSEG rows + the descent, on a fixture built for it
+# ==========================================================================
+#   c0  README.mkd  src/abc/TCP.c  net/TCP.c  a/b/c/d/e/f/g/deep.c  gone/old.c
+#   c1  README.mkd amended, gone/old.c deleted, src/abc/FSW.c added
+REPO2="$WORK/repo2"
+mkdir -p "$REPO2/src/abc" "$REPO2/net" "$REPO2/a/b/c/d/e/f/g" "$REPO2/gone"
+(
+  cd "$REPO2" || exit 1
+  git init -q -b master . && git config user.email t@t && git config user.name T || exit 1
+  export GIT_AUTHOR_NAME=T GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=T GIT_COMMITTER_EMAIL=t@t
+  printf 'readme\n' > README.mkd
+  printf 'src abc tcp\n' > src/abc/TCP.c
+  printf 'net tcp\n' > net/TCP.c
+  printf 'deep\n' > a/b/c/d/e/f/g/deep.c
+  printf 'old\n' > gone/old.c
+  git add -A && GIT_AUTHOR_DATE="2021-01-01T00:00:00Z" GIT_COMMITTER_DATE="2021-01-01T00:00:00Z" \
+      git commit -q -m d0 || exit 1
+  printf 'readme 2\n' > README.mkd
+  printf 'fsw\n' > src/abc/FSW.c
+  rm -f gone/old.c
+  git add -A && GIT_AUTHOR_DATE="2021-01-02T00:00:00Z" GIT_COMMITTER_DATE="2021-01-02T00:00:00Z" \
+      git commit -q -m d1 || exit 1
+) || { echo "index: cannot build the LITE-011 fixture repo" >&2; exit 2; }
+D0=$(git -C "$REPO2" rev-parse master~1)
+D1=$(git -C "$REPO2" rev-parse master)
+
+rt index "$REPO2" > "$WORK/q0" 2>"$WORK/q0e"; RC=$?
+if [ "$RC" = 0 ] && grep -q '^indexed 2 commits, ' "$WORK/q0"
+then ok "the LITE-011 fixture indexes"
+else bad "the LITE-011 fixture indexes (rc $RC)" "$WORK/q0" "$WORK/q0e"; fi
+
+LITE_FIX2="$REPO2" LITE_EXP2="c0=$D0 c1=$D1" \
+    rt --eval "require('$CASE/resolve.js')" > "$WORK/rv.out" 2>"$WORK/rv.err"; RC=$?
+if [ "$RC" = 0 ] && grep -q '^DONE' "$WORK/rv.out" && ! grep -q '^FAIL' "$WORK/rv.out"; then
+    N=$(grep -c '^ok' "$WORK/rv.out"); CHECKS=$((CHECKS + N))
+    ok "resolve leg: $N checks (FSEG rows / the descent / per-commit answers)"
+else
+    cat "$WORK/rv.out"; head -5 "$WORK/rv.err"
+    bad "resolve leg (rc $RC)" "$WORK/rv.out"
+fi
+
+# R2: `log <qualified partial>` = the log of the path it names.
+rtin "$REPO2" log abc/TCP.c | cut -c1-8 > "$WORK/q1"
+if [ "$(cat "$WORK/q1")" = "$(echo "$D0" | cut -c1-8)" ]
+then ok "log abc/TCP.c = the log of src/abc/TCP.c"
+else bad "log abc/TCP.c = the log of src/abc/TCP.c" "$WORK/q1"; fi
+
+# R3: an AMBIGUOUS bare filename lists the paths, in plain words.
+rtin "$REPO2" log TCP.c > "$WORK/q2" 2>"$WORK/q2e"; RC=$?
+if [ "$RC" != 0 ] && grep -q 'names 2 files' "$WORK/q2e" &&
+   grep -q '^  net/TCP.c$' "$WORK/q2e" && grep -q '^  src/abc/TCP.c$' "$WORK/q2e"
+then ok "an ambiguous bare filename lists both paths"
+else bad "an ambiguous bare filename lists both paths (rc $RC)" "$WORK/q2" "$WORK/q2e"; fi
+
+# R4: a path DEEPER than the 6-slot chain, named bare, in `diff`.
+printf 'deep changed\n' > "$REPO2/a/b/c/d/e/f/g/deep.c"
+rtin "$REPO2" diff --plain deep.c > "$WORK/q3" 2>"$WORK/q3e"; RC=$?
+if [ "$RC" = 0 ] && grep -q '^hunk a/b/c/d/e/f/g/deep.c' "$WORK/q3"
+then ok "diff <bare, depth 7> names a/b/c/d/e/f/g/deep.c"
+else bad "diff <bare, depth 7> names the deep path (rc $RC)" "$WORK/q3" "$WORK/q3e"; fi
+git -C "$REPO2" checkout -q -- a/b/c/d/e/f/g/deep.c
+
+# R5: a partial that names nothing at HEAD is still an EMPTY log, not an error.
+rtin "$REPO2" log old.c > "$WORK/q4" 2>"$WORK/q4e"; RC=$?
+if [ "$RC" = 0 ] && [ ! -s "$WORK/q4" ]
+then ok "a partial absent at HEAD is an empty log, not an error"
+else bad "a partial absent at HEAD is an empty log (rc $RC)" "$WORK/q4" "$WORK/q4e"; fi
+
+# ==========================================================================
 # leg 2 — the ROWS (over the index the first run wrote)
 # ==========================================================================
 LITE_FIX="$REPO" \
@@ -256,7 +336,7 @@ elif ! grep -q '^DONE' "$WORK/r.out"; then
 else
     N=$(grep -c '^ok' "$WORK/r.out")
     CHECKS=$((CHECKS + N))
-    ok "rows leg: $N checks (six kinds / rev chain / B2P / CPAR / MARK)"
+    ok "rows leg: $N checks (seven kinds / rev chain / B2P / FSEG / CPAR / MARK)"
 fi
 
 # ==========================================================================
