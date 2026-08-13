@@ -1,0 +1,155 @@
+name: Release
+
+on:
+  push:
+    tags: [ "[0-9]+.[0-9]+.[0-9]+", "v[0-9]+.[0-9]+.[0-9]+" ]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to test and build the tarball for"
+        required: true
+
+permissions:
+  contents: write
+
+# After be/.github/workflows/release.yml with jab replaced by quickjab: the
+# release attaches the source tarball of this jsrc tree plus `be` binaries —
+# quickjab built with this rev packed in as the default jsrc floor (JAB-035),
+# a single executable that works with no checkout, against plain git repos.
+# quickjab's engine is vendored quickjs-ng, so there is NO JSC build and NO
+# ICU data anywhere in the matrix — the static leg needs no build cache.
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      # Scaffolding: the golden-snapshot suite is not wired yet; when it
+      # lands, run it here to gate the binaries matrix, as be/ does.
+      - name: Pack tarball
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          NAME="beagle-lite-${TAG}"
+          git archive --format=tar.gz --prefix="${NAME}/" -o "${NAME}.tar.gz" HEAD
+          shasum -a 256 "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256"
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: |
+            beagle-lite-*.tar.gz
+            beagle-lite-*.tar.gz.sha256
+
+  # quickjab built from source with this rev packed in as the default jsrc
+  # floor, shipped named `be`.  quickjab carries dog/ (libdog) and test/
+  # (the jab-shared API suite) as its own submodules — STANDALONE, no jab
+  # tree involved.  The pack source is a pristine `git archive` of the
+  # release rev — no .git, no fetched fixtures.
+  binaries:
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset: be-lite-linux-x86_64
+          - os: ubuntu-24.04-arm
+            asset: be-lite-linux-arm64
+          - os: macos-latest
+            asset: be-lite-macos-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install ninja-build \
+            libsodium-dev libcurl4-gnutls-dev liblz4-dev zlib1g-dev
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja libsodium lz4
+
+      - name: Build be (quickjab + packed jsrc)
+        run: |
+          git clone --recurse-submodules --depth 1 \
+            https://github.com/gritzko/quickjab.git quickjab-src
+          mkdir lite-jsrc && git archive HEAD | tar -x -C lite-jsrc
+          cmake -S quickjab-src -B qj-build -GNinja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DJAB_JSRC="$PWD/lite-jsrc" -DQUICKJAB_JSRC_PACK=ON
+          ninja -C qj-build quickjab
+          install -m 0755 qj-build/bin/quickjab be-bin
+
+      # A fresh HOME has no jsrc anywhere, so a bareword invocation must
+      # extract the embedded floor to .cache/jsrcs/<hash>/ and run main.js
+      # from it.
+      - name: Smoke test the packed be
+        run: |
+          S=$(mktemp -d); W=$(mktemp -d)
+          (cd "$W" && HOME="$S" XDG_CACHE_HOME= \
+            "$GITHUB_WORKSPACE/be-bin" status 2>&1 | head -5) || true
+          find "$S/.cache/jsrcs" -mindepth 1 -maxdepth 1 -type d | grep -q .
+
+      - name: Pack
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          NAME="${{ matrix.asset }}-${TAG}"
+          install -d "dist/${NAME}"
+          install -m 0755 be-bin "dist/${NAME}/be"
+          tar -C dist -czf "${NAME}.tar.gz" "${NAME}"
+          shasum -a 256 "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256"
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: |
+            ${{ matrix.asset }}-*.tar.gz
+            ${{ matrix.asset }}-*.tar.gz.sha256
+
+  # The fully static linux x86_64 `be` — musl + vendored quickjs-ng +
+  # embedded pack.  Runs on ANY Linux (glibc or musl), zero runtime deps.
+  # Unlike be's static leg there is nothing to cache: no WebKit compile.
+  static:
+    needs: release
+    runs-on: ubuntu-latest
+    container: alpine:3.22
+    steps:
+      - name: Container prerequisites for checkout
+        run: apk add -q git tar
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      # actions/checkout writes its safe.directory exception into a temporary
+      # HOME the container shell never sees; static-lite.sh also sets it, but
+      # set it here too so a pre-fix tag dispatch still builds.
+      - name: Mark checkout safe for container git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Build static be
+        run: sh .github/static-lite.sh "$PWD/be-bin"
+
+      - name: Pack and upload
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          NAME="be-lite-linux-x86_64-static-${TAG}"
+          install -d "dist/${NAME}"
+          install -m 0755 be-bin "dist/${NAME}/be"
+          tar -C dist -czf "${NAME}.tar.gz" "${NAME}"
+          sha256sum "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256"
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: |
+            be-lite-linux-x86_64-static-*.tar.gz
+            be-lite-linux-x86_64-static-*.tar.gz.sha256

@@ -1,0 +1,15 @@
+#   Beagle-lite
+
+This project implements beagle-lite functionality for git repos.
+
+Usage: `lite [--plain] <path>...` — file/dir args page interactively at a terminal, dump as plain hunks when piped or under `--plain`.
+
+Build: quickjab is standalone — it carries dog/ (libdog) and test/ (the
+jab-shared API suite) as submodules, no jab tree involved:
+
+    cmake -S <quickjab> -B build -GNinja \
+        -DJAB_JSRC=<this tree> -DQUICKJAB_JSRC_PACK=ON
+    ninja -C build quickjab
+
+[q]: https://github.com/gritzko/quickjab
+[d]: https://github.com/gritzko/libdog
