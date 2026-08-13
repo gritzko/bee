@@ -57,7 +57,7 @@ function date7Of(secs) {
 //  The row's COLUMNS, kept apart so the tty leg can tag each one; `row()` is
 //  the plain join the piped leg writes.
 function rowParts(name, m) {
-  return { sha8: name.slice(0, 8),
+  return { sha8: name.slice(0, 8), hex: name,
            date7: date7Of(m ? m.ats : 0),
            summary: m ? m.subject : "",
            authTail: " (" + authorName(m ? m.author : "") + ")" };
@@ -80,6 +80,9 @@ function row(name, m) {
 //  row and the `F` ticket-code split need core/nav + shared/ticket, which lite
 //  has no equivalent of.  The COLUMNS and their paint are identical.
 const TAG_L = 11, TAG_G = 6, TAG_S = 18, TAG_D = 3;   // 'L' 'G' 'S' 'D' - 'A'
+//  BRO-006's invisible click-target: the bytes after a visible token, covered by
+//  a `U` span, ARE the nav target — here the row's own commit, for `commit`.
+const TAG_U = 20;
 function tok32(tag, end) { return ((tag & 0x1f) << 27) | (end & 0xffffff); }
 
 function hunk(uriStr, parts) {
@@ -95,6 +98,9 @@ function hunk(uriStr, parts) {
   };
   for (const p of parts) {
     put(TAG_L, p.sha8);
+    //  The sha8 is CLICKABLE: `commit <hexlet>` rides after it under a `U` span
+    //  — no column, and the door reads it as the ordinary verb line it is.
+    if (p.hex) put(TAG_U, "commit " + p.hex);
     put(TAG_G, " ");
     put(TAG_L, p.date7);
     put(TAG_G, " ");
@@ -132,9 +138,10 @@ function parentsOf(ix, hl) {
 function isIndexed(ix, hl) { return cparOf(ix, hl).length > 0; }
 
 //  Everything reachable from `seed` over CPAR, newest-first (see the header).
-//  Returns [hl60] — the caller reads each one's commit off the ODB.  There is
-//  no walk bound: the lane holds a complete history by construction.
-function ancestry(ix, r, seed) {
+//  Returns { hls: [hl60], more } — the caller reads each commit off the ODB.
+//  `max` (0 = all) caps the EMIT loop: tsOf is called lazily on the ready
+//  frontier only, so a capped log reads ~max commits from the ODB, not all.
+function ancestry(ix, r, seed, max) {
   const par = new Map(), kids = new Map();
   const queue = [seed];
   par.set(seed, null);
@@ -160,7 +167,7 @@ function ancestry(ix, r, seed) {
   const out = [];
   const byHex = new Map();
   for (const hl of par.keys()) byHex.set(idx.hexOfHl(hl), hl);
-  while (ready.size) {
+  while (ready.size && (!max || out.length < max)) {
     const hex = ready.pop();
     const hl = byHex.get(hex);
     out.push(hl);
@@ -170,7 +177,7 @@ function ancestry(ix, r, seed) {
       if (d === 0) ready.push(tsOf(p), idx.hexOfHl(p));
     }
   }
-  return out;
+  return { hls: out, more: ready.size > 0 };
 }
 
 //  --- the file history ------------------------------------------------------
@@ -183,7 +190,8 @@ function ancestry(ix, r, seed) {
 //  date ALONE gets this wrong wherever a side branch's commit is older than
 //  what the mainline already merged (VERIFIED: gitoxide Cargo.toml, dogs
 //  beagle/BE.cli.c both deviated from git until the edges were honoured).
-function fileLog(ix, r, rel) {
+//  `max` (0 = all) caps the emit loop exactly like ancestry's.
+function fileLog(ix, r, rel, max) {
   const phl = idx.pathHl(rel);
   const cmt = new Map(), pars = new Map(), kids = new Map();
   ix.prefix(phl << 24n, 24, function (e) {
@@ -216,7 +224,7 @@ function fileLog(ix, r, rel) {
     if (d === 0) ready.push(tsOf(rev), rev);
   }
   const out = [], seen = new Set();
-  while (ready.size) {
+  while (ready.size && (!max || out.length < max)) {
     const rev = ready.pop();
     const hl = cmt.get(rev);
     if (hl !== undefined && !seen.has(hl)) { seen.add(hl); out.push(hl); }
@@ -227,7 +235,7 @@ function fileLog(ix, r, rel) {
       if (d === 0) ready.push(tsOf(p), p);
     }
   }
-  return out;
+  return { hls: out, more: ready.size > 0 };
 }
 
 //  --- the path argument -----------------------------------------------------
@@ -251,10 +259,12 @@ function relOf(root, arg) {
 }
 
 //  --- the verb --------------------------------------------------------------
-//  log(arg, opts) -> { rows[], rec, form }.  `opts.from` is the dir to find
-//  the repo above (the cwd by default).
+//  log(arg, opts) -> { rows[], rec, form, capped }.  `opts.from` is the dir to
+//  find the repo above (the cwd by default); `opts.max` (0/absent = all) caps
+//  the walk — a capped walk reads ~max commits off the ODB, not the history.
 function log(arg, opts) {
   opts = opts || {};
+  const max = opts.max || 0;
   const ctx = idx.openRepo(opts.from || io.cwd(), true);
   try {
     const ix = idx.openIndex(ctx.gitdir);
@@ -262,25 +272,25 @@ function log(arg, opts) {
       //  LAZY: the index brings ITSELF up to date before a single row is read.
       const rec = idx.bringUp(ctx, ix, { track: false });
       const r = ctx.r;
-      let hls, form;
+      let w, form;
       if (arg === undefined || arg === null || arg === "") {
         form = "tip";
-        hls = ancestry(ix, r, idx.hlOfSha(ctx.head.sha));
+        w = ancestry(ix, r, idx.hlOfSha(ctx.head.sha), max);
       } else if (HEXARG.test(arg)) {
         form = "commit";
-        hls = ancestry(ix, r, seedOf(ctx, ix, arg));
+        w = ancestry(ix, r, seedOf(ctx, ix, arg), max);
       } else {
         form = "path";
-        hls = fileLog(ix, r, relOf(ctx.root, arg));
+        w = fileLog(ix, r, relOf(ctx.root, arg), max);
       }
       const rows = [], parts = [];
-      for (const hl of hls) {
+      for (const hl of w.hls) {
         const hex = idx.hexOfHl(hl);
         const p = rowParts(hex, idx.readCommit(r, hex));
         parts.push(p);
         rows.push(p.sha8 + " " + p.date7 + " " + p.summary + p.authTail);
       }
-      return { rows: rows, parts: parts, rec: rec, form: form,
+      return { rows: rows, parts: parts, rec: rec, form: form, capped: w.more,
                uri: "log" + (arg ? " " + arg : "") };
     } finally { try { ix.close(); } catch (e) {} }
   } finally { idx.closeRepo(ctx); }

@@ -32,12 +32,24 @@ const h = lg.hunk(out.uri, out.parts);
 check("hunk-shape", h.verb === "hunk" && h.uri === "log" &&
       h.text instanceof Uint8Array && h.toks instanceof Uint32Array,
       h.verb + " " + h.uri);
-check("hunk-seven-toks-per-row", h.toks.length === out.rows.length * 7,
+//  8, not 7: the sha8 is followed by its hidden `U` click-target (`commit
+//  <hexlet>`), which takes no column but is a span of its own.
+check("hunk-eight-toks-per-row", h.toks.length === out.rows.length * 8,
       h.toks.length + " toks for " + out.rows.length + " rows");
-//  the hunk's BYTES are the plain rows — one renderer, two sinks.
-check("hunk-bytes-are-the-plain-rows",
-      utf8.Decode(h.text) === out.rows.join("\n") + "\n",
-      utf8.Decode(h.text).slice(0, 60));
+check("the-second-tok-of-a-row-is-the-U-target",
+      String.fromCharCode(65 + ((h.toks[1] >>> 27) & 0x1f)) === "U",
+      String.fromCharCode(65 + ((h.toks[1] >>> 27) & 0x1f)));
+//  The hunk's VISIBLE bytes are the plain rows — one renderer, two sinks.  The
+//  `U` spans carry nav bytes that never paint, so they come out of the compare.
+let vis = "", at = 0;
+for (let i = 0; i < h.toks.length; i++) {
+  const end = h.toks[i] & 0xffffff;
+  if (String.fromCharCode(65 + ((h.toks[i] >>> 27) & 0x1f)) !== "U")
+    vis += utf8.Decode(h.text.slice(at, end));
+  at = end;
+}
+check("hunk-visible-bytes-are-the-plain-rows",
+      vis === out.rows.join("\n") + "\n", vis.slice(0, 60));
 //  tok ends must ascend and finish exactly at the text length (bro.rowEnd
 //  walks them in order; a stray end would mis-column every row after it).
 let ok = true, prev = -1;

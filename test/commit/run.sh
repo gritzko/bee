@@ -115,12 +115,15 @@ rtin() { D=$1; shift; ( cd "$D" && HOME="$FAKEHOME" "$RT" "$@" ); }
 # ==========================================================================
 # leg 1 — THE ACCEPTANCE TEST: the bytes are the object's own
 # ==========================================================================
-# B1..B3: the root, the merge and the folded-header commit, each byte-equal to
-# `commit <sha40>\n` + `git cat-file commit <sha>`.  This is exact.
+# B1..B3: the root, the merge and the folded-header commit.  The METADATA — the
+# bytes before the first `hunk ` banner — is byte-equal to `commit <sha40>\n` +
+# `git cat-file commit <sha>`; the commit's own diff hunks follow it.
 for pair in "root:$C0" "merge:$C3" "folded:$SIG"; do
     WHAT=${pair%%:*}; SHA=${pair#*:}
     { printf 'commit %s\n' "$SHA"; g cat-file commit "$SHA"; } > "$WORK/w.$WHAT"
-    rtin "$REPO" commit "$SHA" > "$WORK/g.$WHAT" 2>"$WORK/e.$WHAT"; RC=$?
+    rtin "$REPO" commit "$SHA" > "$WORK/all.$WHAT" 2>"$WORK/e.$WHAT"; RC=$?
+    # the metadata prefix: everything up to the first hunk banner
+    sed -n '1,/^hunk /p' "$WORK/all.$WHAT" | sed '$ { /^hunk /d; }' > "$WORK/g.$WHAT"
     if [ "$RC" = 0 ] && cmp -s "$WORK/w.$WHAT" "$WORK/g.$WHAT"
     then ok "commit <sha> = 'commit <sha40>' + git cat-file commit ($WHAT)"
     else bad "commit <sha> = git cat-file commit ($WHAT, rc $RC)" \
@@ -140,19 +143,19 @@ else bad "ordered headers survive" "$WORK/g.merge" "$WORK/g.folded"; fi
 
 # B5: a 6..40 hexlet is the same object name a full sha is.
 rtin "$REPO" commit "$(echo "$SIG" | cut -c1-8)" > "$WORK/g.hexlet" 2>"$WORK/e.hexlet"; RC=$?
-if [ "$RC" = 0 ] && cmp -s "$WORK/g.folded" "$WORK/g.hexlet"
+if [ "$RC" = 0 ] && cmp -s "$WORK/all.folded" "$WORK/g.hexlet"
 then ok "an 8-char hexlet resolves to the same commit, byte for byte"
 else bad "an 8-char hexlet resolves the same (rc $RC)" "$WORK/g.hexlet" "$WORK/e.hexlet"; fi
 
 # B6: bare `commit` = the checked-out tip.
 rtin "$REPO" commit > "$WORK/g.bare" 2>"$WORK/e.bare"; RC=$?
-if [ "$RC" = 0 ] && cmp -s "$WORK/g.merge" "$WORK/g.bare"
+if [ "$RC" = 0 ] && cmp -s "$WORK/all.merge" "$WORK/g.bare"
 then ok "bare commit = the checked-out tip"
 else bad "bare commit = the checked-out tip (rc $RC)" "$WORK/g.bare" "$WORK/e.bare"; fi
 
 # B7: `--plain` after the verb is byte-identical to the piped dump.
 rtin "$REPO" commit --plain "$C3" > "$WORK/g.plain" 2>"$WORK/e.plain"; RC=$?
-if [ "$RC" = 0 ] && cmp -s "$WORK/g.merge" "$WORK/g.plain"
+if [ "$RC" = 0 ] && cmp -s "$WORK/all.merge" "$WORK/g.plain"
 then ok "commit --plain = the piped bytes, byte for byte"
 else bad "commit --plain = the piped bytes (rc $RC)" "$WORK/g.plain" "$WORK/e.plain"; fi
 

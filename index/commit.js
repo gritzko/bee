@@ -27,6 +27,9 @@
 
 const idx = require("./index.js");
 const lg = require("./log.js");
+//  LITE-009: the metadata is followed by the commit's OWN diff (vs its first
+//  parent) — the LITE-010 fold, one hunk set per changed or added file.
+const df = require("./diff.js");
 
 //  The arg is a hexlet, nothing else — there is no path form here, so a
 //  non-hex arg is refused rather than reclassified (cf. LITE-007's log).
@@ -154,6 +157,10 @@ function commit(arg, opts) {
     const out = build(sha, o.bytes);
     out.sha = sha;
     out.uri = "commit " + (bare ? sha : arg);
+    //  The commit's files, under the metadata: a changed or added one gets its
+    //  diff hunks, a removed one an EMPTY hunk (the banner alone).
+    const m = idx.readCommit(ctx.r, sha);
+    out.hunks = m === null ? [] : df.commitHunks(ctx, m, []);
     return out;
   } finally { idx.closeRepo(ctx); }
 }

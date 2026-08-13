@@ -316,6 +316,10 @@ Pager.prototype._followRow = function (ri) {
   if (!rows.length) return;
   const r = rows[Math.max(0, Math.min(ri, rows.length - 1))];
   if (!r || r.banner) { this.message = "(nothing to follow)"; return; }
+  //  A `U` target on the row's FIRST token (a log row's sha8) opens verbatim;
+  //  only a dir listing joins its entry name to the hunk's own path.
+  const target = this._targetAt(r.hunk, r.off);
+  if (target) { this._openPush(target); return; }
   const name = this._uriAt(r.hunk, r.off);
   if (!name) { this.message = "(nothing to follow)"; return; }
   this._follow(r.hunk, name);
@@ -331,6 +335,20 @@ Pager.prototype._uriAt = function (hunk, off) {
   if (ti >= toks.length) return "";
   if (String.fromCharCode(65 + ((toks[ti] >>> 27) & 0x1f)) !== "F") return "";
   const lo = ti > 0 ? (toks[ti - 1] & 0xffffff) : 0, hi = toks[ti] & 0xffffff;
+  return hi > lo ? utf8.Decode(hunk.text.slice(lo, hi)) : "";
+};
+
+//  A CLICK TARGET (be's BRO-006 `U` span): a visible token FOLLOWED by a
+//  `U`-tagged one whose hidden bytes ARE the target — a log row's sha8 carries
+//  the commit it names.  Returns "" when the token under `off` has no target.
+Pager.prototype._targetAt = function (hunk, off) {
+  const toks = hunk.toks;
+  if (!toks || !toks.length) return "";
+  let ti = 0;
+  while (ti < toks.length && (toks[ti] & 0xffffff) <= off) ti++;
+  if (ti + 1 >= toks.length) return "";
+  if (String.fromCharCode(65 + ((toks[ti + 1] >>> 27) & 0x1f)) !== "U") return "";
+  const lo = toks[ti] & 0xffffff, hi = toks[ti + 1] & 0xffffff;
   return hi > lo ? utf8.Decode(hunk.text.slice(lo, hi)) : "";
 };
 
@@ -489,6 +507,8 @@ Pager.prototype._mouse = function (seq, press) {
   if ((b & 0x23) !== 0) return;                  // not a plain left press (drag/btn)
   const hit = this._screenToByte(row, col);
   if (hit) {
+    const target = this._targetAt(hit.hunk, hit.off);   // a `U` click-target
+    if (target) { this._openPush(target); return; }
     const name = this._uriAt(hit.hunk, hit.off);
     if (name) { this._follow(hit.hunk, name); return; }
   }

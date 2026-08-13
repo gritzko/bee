@@ -303,6 +303,29 @@ function diffTrees(ctx, fromTree, toTree, scope, out) {
   }
 }
 
+//  One COMMIT's file hunks, against its FIRST parent — what `lite commit` shows
+//  under the metadata (LITE-009).  A changed or added file gets its diff hunks;
+//  a REMOVED file gets an EMPTY hunk, the banner alone, since the bytes that
+//  went are already in the parent.  A root commit's files are all additions.
+function commitHunks(ctx, m, out) {
+  const par = m.parents.length ? idx.readCommit(ctx.r, m.parents[0]) : null;
+  const pairs = [];
+  treePairs(ctx.r, par ? par.tree : null, m.tree, "", pairs);
+  pairs.sort(function (a, b) { return a.path < b.path ? -1 : a.path > b.path ? 1 : 0; });
+  for (const p of pairs) {
+    if (p.to === undefined) { out.push(emptyHunk(p.path)); continue; }
+    diffFile(p.path, blobBytes(ctx.r, p.from), blobBytes(ctx.r, p.to), false, out);
+  }
+  return out;
+}
+
+//  The removed file's hunk: a banner and nothing else.  plainHunk writes the
+//  `hunk <path>` line alone for it, and the pager paints a bare band.
+function emptyHunk(name) {
+  return { uri: name, verb: "hunk", text: new Uint8Array(0),
+           toks: new Uint32Array(0), plain: new Uint8Array(0), kind: "diff" };
+}
+
 //  A `<hex>` arg -> { sha, meta } for the commit it names, refused in plain
 //  words when it names nothing (or something that is not a commit).
 function commitOf(ctx, hexarg) {
@@ -350,6 +373,7 @@ function diff(arg, opts) {
 }
 
 module.exports = { diff: diff, diffFile: diffFile, isBinary: isBinary,
+                   commitHunks: commitHunks, emptyHunk: emptyHunk,
                    extOf: extOf, blobSha: blobSha, wtBytes: wtBytes,
                    treePairs: treePairs, treeLeaves: treeLeaves,
                    MAX_SOURCE_SIZE: MAX_SOURCE_SIZE,

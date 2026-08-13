@@ -101,17 +101,37 @@ function runIndex(args) {
 //  whole history scrolls.  Piped or under `--plain` it is the bare rows, which
 //  is what a `| grep` and a `diff` against `git log` want.
 function runLog(args) {
-  const lg = require("index/log.js");
   const rest = [];
   let plain = false;
   for (const a of args) { if (a === "--plain") plain = true; else rest.push(a); }
-  const out = lg.log(rest.length ? rest[0] : undefined);
-  if (out.rows.length === 0) return;              // an empty log says nothing
+  const argstr = rest.join(" ");
   if (!io.isatty(1) || plain) {
-    writeFd(1, utf8.Encode(out.rows.join("\n") + "\n"));
+    //  A pipe / --plain defaults to ALL rows (the `git log` diff parity); an
+    //  explicit count still applies.
+    const lg = require("index/log.js");
+    const q = logQuery(argstr);
+    const out = lg.log(q.target, { max: q.max || 0 });
+    if (out.rows.length)
+      writeFd(1, utf8.Encode(out.rows.join("\n") + "\n"));
     return;
   }
-  pageHunks([lg.hunk(out.uri, out.parts)]);
+  //  A log row's sha8 is a click-target: the row carries `commit <hexlet>`, the
+  //  pager hands it to the door and pushes that view, `-` backs out.
+  const hunks = VERBS.log(argstr);
+  if (hunks.length) pageHunks(hunks);
+}
+
+//  `log [<n>] [<hex>|<path>]` — a 1..5-digit decimal token is the COUNT, no
+//  clash with hexlets (6..40 chars): `log 10` = 10 rows, `log 0` = all.
+function logQuery(arg) {
+  let max = null;
+  const t = [];
+  for (const w of (arg || "").split(" ")) {
+    if (w === "") continue;
+    if (max === null && /^\d{1,5}$/.test(w)) max = Number(w);
+    else t.push(w);
+  }
+  return { max: max, target: t.length ? t.join(" ") : undefined };
 }
 
 //  LITE-009: `lite commit [--plain] [<hex>]` — ONE commit's metadata, the be
@@ -127,9 +147,23 @@ function runCommit(args) {
   let plain = false;
   for (const a of args) { if (a === "--plain") plain = true; else rest.push(a); }
   const out = cm.commit(rest.length ? rest[0] : undefined);
-  if (!io.isatty(1) || plain) { writeFd(1, out.text); return; }
-  pageHunks([cm.hunk(out)]);
+  //  The metadata hunk, then the commit's own diff: one hunk set per changed or
+  //  added file, an empty (banner-only) hunk per removed one.
+  if (!io.isatty(1) || plain) {
+    const parts = [out.text];
+    for (const h of out.hunks) parts.push(bro.plainHunk(h));
+    let total = 0;
+    for (const b of parts) total += b.length;
+    const all = new Uint8Array(total);
+    let off = 0;
+    for (const b of parts) { all.set(b, off); off += b.length; }
+    writeFd(1, all);
+    return;
+  }
+  pageHunks([cm.hunk(out)].concat(out.hunks));
 }
+
+
 
 //  LITE-010: `lite diff [--plain] [<hex>|<path>]` — the CFOLD 2-layer diff,
 //  worktree vs HEAD by default, a path scoped to that path, a `<hex>` against
@@ -156,9 +190,47 @@ function runDiff(args) {
   pageHunks(out.hunks);
 }
 
+//  ---- the ONE door --------------------------------------------------------
+//  Every view a verb can produce, keyed by the verb: `(arg) -> hunks`.  The CLI
+//  legs above and the PAGER both come through this table, so a click target is
+//  an ordinary `<verb> <arg>` line and no view-specific opener exists.
+const VERBS = {
+  log: function (arg) {
+    const lg = require("index/log.js");
+    const q = logQuery(arg);
+    //  The VIEW defaults to 1000 rows so any-size history paints instantly.
+    const max = q.max === null ? 1000 : q.max;
+    const o = lg.log(q.target, { max: max });
+    if (!o.rows.length) return [];
+    //  The uri is the TYPED target, verbatim — an explicit count stays, the
+    //  default cap does not rename the view.
+    const uri = q.max === null ? o.uri
+              : "log " + q.max + (q.target ? " " + q.target : "");
+    return [lg.hunk(uri, o.parts)];
+  },
+  commit: function (arg) {
+    const cm = require("index/commit.js");
+    const o = cm.commit(arg);
+    return [cm.hunk(o)].concat(o.hunks);
+  },
+  diff: function (arg) { return require("index/diff.js").diff(arg).hunks; }
+};
+
+//  Resolve ONE target to hunks (`null` = nothing to open): a `<verb> <arg>`
+//  line goes to its verb, anything else is a PATH.  A target must carry an arg
+//  to read as a verb, so a file merely NAMED `log` still opens as the file.
+function openTarget(target) {
+  const sp = target.indexOf(" ");
+  const fn = sp > 0 ? VERBS[target.slice(0, sp)] : null;
+  if (!fn) return openPath(target);
+  let hunks;
+  try { hunks = fn(target.slice(sp + 1).trim()); } catch (e) { return null; }
+  return hunks && hunks.length ? hunks : null;
+}
+
 //  Hand a hunk list to the pager on the CONTROLLING terminal (the runPager
-//  edge, shared so there is ONE tty lifecycle).  `open` is left unset: a log
-//  row has nothing to follow into.
+//  edge, shared so there is ONE tty lifecycle).  The door is openTarget for
+//  every view: the pager stays arg-blind, the target names its own verb.
 function pageHunks(hunks) {
   const pager = require("view/pager.js");
   let fd = null, own = false;
@@ -166,7 +238,7 @@ function pageHunks(hunks) {
   if (fd === null && io.isatty(0)) fd = 0;
   if (fd === null) fd = 1;
   try {
-    const p = new pager.Pager(fd, { color: true });
+    const p = new pager.Pager(fd, { color: true, open: openTarget });
     p.setHunks(hunks);
     p.run();
   } finally { if (own) { try { io.close(fd); } catch (e) {} } }
@@ -187,6 +259,6 @@ function main(argv) {
 }
 
 if (typeof module !== "undefined")
-  module.exports = { main: main, openPath: openPath };
+  module.exports = { main: main, openPath: openPath, openTarget: openTarget };
 if (process.argv[1] && process.argv[1].slice(-"/main.js".length) === "/main.js")
   main(process.argv);
