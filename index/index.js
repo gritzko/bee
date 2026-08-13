@@ -443,31 +443,72 @@ function topo(r, set) {
 //  EVERY parent; a subtree whose sha equals the corresponding subtree sha in
 //  ANY parent is PRUNED whole — nothing under it can have changed there.
 //
+//  DOG-030: both tests are now ONE C leaf.  `git.getTreeDiff(h, a, b)` hands
+//  back ONLY the entries that differ, in git tree FORMAT — each changed name
+//  an adjacent PAIR (the NEW side first, then the OLD one, an all-zero sha
+//  spelling "absent on that side").  So a name MISSING from a parent's diff
+//  IS the prune, for a blob and for a subtree alike, and the JS work per
+//  commit is O(changed) instead of O(dir width).  Merges are one pairwise
+//  call per parent, intersected here: present in EVERY parent's diff.
+const ZERO40 = "0000000000000000000000000000000000000000";
+const MODE_DIR = 0o40000;
+
+//  One (tree, parentTree) diff -> Map(name -> { sha, dir, old, oldDir }).
+//  `old` is null when the path is absent on the parent side.  null when the
+//  NEW tree is unreadable — what `readTree` returning null used to mean.
+function diffMap(r, aSha, bSha) {
+  let buf;
+  try { buf = git.getTreeDiff(r.h, aSha, bSha || ZERO40); }
+  catch (e) { return null; }
+  if (buf === null) return null;
+  const m = new Map();
+  const c = git.tree(buf);
+  while (c.next()) {
+    const mode = c.mode, sha = c.sha, name = c.str;
+    if (!c.next()) break;                       // the OLD half of the pair
+    if (sha === ZERO40) continue;               // deleted: no rev of it here
+    const osha = c.sha;
+    m.set(name, { sha: sha, dir: mode === MODE_DIR,
+                  old: osha === ZERO40 ? null : osha,
+                  oldDir: c.mode === MODE_DIR });
+  }
+  return m;
+}
+
 //  `pTrees` stays parent-ALIGNED (a null slot = that parent has no tree here),
 //  so a rev's PARS come out in the commit's own parent order.
 //  Emits { path, phl, blob, pblobs[] } into `out`.
 function descend(r, treeSha, pTrees, prefix, out) {
   if (!treeSha) return;
   for (const t of pTrees) if (t === treeSha) return;      // unchanged: prune
-  const ents = readTree(r, treeSha);
-  if (ents === null) return;
-  const pEnts = pTrees.map((t) => readTree(r, t));
-  for (const [name, e] of ents) {
+  const maps = [];
+  for (const t of pTrees) {
+    const m = diffMap(r, treeSha, t);
+    if (m === null) return;                               // unreadable tree
+    maps.push(m);
+  }
+  //  A root commit has no parent to differ from: the whole tree is new.
+  const base = maps.length ? maps[0] : diffMap(r, treeSha, ZERO40);
+  if (base === null) return;
+  for (const [name, e] of base) {
     const path = prefix + name;
-    const sibs = pEnts.map((m) => (m === null ? null : (m.get(name) || null)));
+    const olds = [];
+    let same = false;
+    for (const m of maps) {
+      const s = m.get(name);
+      if (s === undefined) { same = true; break; }   // identical there: prune
+      olds.push(s);
+    }
+    if (same) continue;
     if (e.dir) {
-      const subs = sibs.map((s) => (s !== null && s.dir) ? s.sha : null);
-      let same = false;
-      for (const s of subs) if (s === e.sha) { same = true; break; }
-      if (same) continue;
-      descend(r, e.sha, subs, path + "/", out);
+      descend(r, e.sha,
+              olds.map((s) => (s.old !== null && s.oldDir) ? s.old : null),
+              path + "/", out);
       continue;
     }
-    const pblobs = sibs.map((s) => (s !== null && !s.dir) ? s.sha : null);
-    let same = false;
-    for (const s of pblobs) if (s === e.sha) { same = true; break; }
-    if (same) continue;                                   // unchanged in a parent
-    out.push({ path: path, phl: pathHl(path), blob: e.sha, pblobs: pblobs });
+    out.push({ path: path, phl: pathHl(path), blob: e.sha,
+               pblobs: olds.map((s) => (s.old !== null && !s.oldDir)
+                                       ? s.old : null) });
   }
 }
 
