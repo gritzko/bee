@@ -51,9 +51,11 @@ const isSha40 = refs.isSha40;
 //  The run family lives in the repo's own gitdir.
 const IDX_DIR = "be";
 const IDX_EXT = ".lite.idx";
-//  Rows put between two commits must fit ONE 4 KB memtable page — the
-//  be/shared/ingest.js `idxWriter` discipline (DOG-027).
-const IDX_BATCH = 200;
+//  DOG-032: the INITIAL derive alone opens a big memtable (64Ki wh128 rows =
+//  1 MB) and seals lazily — an incremental run puts a handful of rows and keeps
+//  the one-page durable default.  The magic 200-row batch is gone: the batch IS
+//  the memtable (`ix.mem` rows), so a commit never lands mid-page.
+const IDX_BULK_ROWS = 1 << 16;
 //  Parsed trees held per run (a tree is immutable, so this only ever hits).
 const TREE_CACHE_MAX = 1 << 14;
 
@@ -268,18 +270,36 @@ function identTs(ident) {
 //  --- the index handle ------------------------------------------------------
 //  `abc.index` io.mkdir()s its dir, so the family CREATES `<gitdir>/be` — that
 //  directory is derived state this verb owns, never a store to be conjured.
-function openIndex(gitdir) {
-  return abc.index("wh128", { dir: gitdir + "/" + IDX_DIR, ext: IDX_EXT });
+//  DOG-032: `bulk` opens the from-scratch derive's handle — a 1 MB memtable and
+//  lazy seals, finished by the ONE durable commit that writes the mark.
+function openIndex(gitdir, bulk) {
+  const o = { dir: gitdir + "/" + IDX_DIR, ext: IDX_EXT };
+  if (bulk) { o.mem = IDX_BULK_ROWS; o.durable = false; }
+  return abc.index("wh128", o);
 }
 
-//  A batching writer (be/shared/ingest.js `idxWriter`): <= 200 rows per put
-//  batch, one 4 KB memtable page.  A seal NEVER carries the mark.
+//  Has this repo an index at all?  A dir with no run and no memtable is the
+//  from-scratch derive — the one run that wants the big memtable.
+function fresh(gitdir) {
+  const dir = gitdir + "/" + IDX_DIR;
+  try {
+    for (const f of io.readdir(dir))
+      if (f.length >= IDX_EXT.length && f.slice(-IDX_EXT.length) === IDX_EXT)
+        return false;
+  } catch (e) { return true; }
+  return true;
+}
+
+//  A batching writer (be/shared/ingest.js `idxWriter`): the rows put between
+//  two commits fit ONE memtable, whatever size it was opened at.  A seal NEVER
+//  carries the mark.
 function idxWriter(ix) {
   let n = 0, total = 0;
+  const batch = Number(ix.mem) > 0 ? Number(ix.mem) : 0;
   return {
     put: function (k, v) {
-      ix.put(k, v); total++;
-      if (++n >= IDX_BATCH) { ix.commit(); n = 0; }
+      ix.put(k, v); total++; n++;
+      if (batch && n >= batch) { ix.commit(); n = 0; }
     },
     seal: function () { if (n) { ix.commit(); n = 0; } },
     get rows() { return total; }
@@ -561,7 +581,7 @@ function index(repoArg, opts) {
   opts = opts || {};
   const ctx = openRepo(repoArg, opts.climb);
   try {
-    const ix = openIndex(ctx.gitdir);
+    const ix = openIndex(ctx.gitdir, fresh(ctx.gitdir));
     try { return bringUp(ctx, ix, opts); }
     finally { try { ix.close(); } catch (e) {} }
   } finally { closeRepo(ctx); }
@@ -625,9 +645,10 @@ function bringUp(ctx, ix, opts) {
   }
   wr.seal();
   rec.rows = wr.rows;
-  //  The MARK is the LAST write of the run (DOG-027).
+  //  The MARK is the LAST write of the run (DOG-027) and DOG-032's ONE durable
+  //  commit: a lazy bulk run's earlier seals are made good right here.
   ix.put(hlKey(refHl, K_MARK), hlVal(hlOfSha(hd.sha), 0n));
-  ix.commit();
+  ix.commit(true);
   rec.rows++;
   if (rec.commits === 0) rec.upToDate = true;   // the tip was indexed, unmarked
   return rec;
@@ -694,7 +715,8 @@ module.exports = {
   //  LITE-010: `diff` reads blob/commit objects straight off the ODB.
   object: object,
   firstLine: firstLine, identTs: identTs, heap: heap, hexOfHl: hexOfHl,
-  IDX_DIR: IDX_DIR, IDX_EXT: IDX_EXT, IDX_BATCH: IDX_BATCH,
+  IDX_DIR: IDX_DIR, IDX_EXT: IDX_EXT, IDX_BULK_ROWS: IDX_BULK_ROWS,
+  fresh: fresh,
   CPAR_NONE: CPAR_NONE,
   K_BLOB: K_BLOB, K_CMMT: K_CMMT, K_PARS: K_PARS,
   K_CPAR: K_CPAR, K_B2P: K_B2P, K_FSEG: K_FSEG, K_MARK: K_MARK,
