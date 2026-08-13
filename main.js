@@ -82,11 +82,62 @@ function runPlain(args) {
   if (!anyOpened) throw "BRONONE";
 }
 
+//  LITE-006: `lite index [<repo>]` brings `<repo>/.git/be/` up to date and
+//  prints one summary line.  The verbs stand BEFORE the flag scan because
+//  every other arg is a path, verbatim.
+function runIndex(args) {
+  const idx = require("index/index.js");
+  const rec = idx.index(args.length ? args[0] : io.cwd());
+  writeFd(1, utf8.Encode(idx.summary(rec) + "\n"));
+}
+
+//  LITE-007: `lite log [--plain] [<hex>|<path>]` — the commit / file log off
+//  that index, which it brings up to date ITSELF.  One be-log row per commit,
+//  newest first.
+//
+//  A LOG IS A HUNK (ruling 2026-08-13).  At a terminal it goes through the
+//  SAME door a file arg takes — view/pager.js over a tok32-tagged hunk, painted
+//  by view/bro.js's theme — so the columns carry be log's own colours and the
+//  whole history scrolls.  Piped or under `--plain` it is the bare rows, which
+//  is what a `| grep` and a `diff` against `git log` want.
+function runLog(args) {
+  const lg = require("index/log.js");
+  const rest = [];
+  let plain = false;
+  for (const a of args) { if (a === "--plain") plain = true; else rest.push(a); }
+  const out = lg.log(rest.length ? rest[0] : undefined);
+  if (out.rows.length === 0) return;              // an empty log says nothing
+  if (!io.isatty(1) || plain) {
+    writeFd(1, utf8.Encode(out.rows.join("\n") + "\n"));
+    return;
+  }
+  pageHunks([lg.hunk(out.uri, out.parts)]);
+}
+
+//  Hand a hunk list to the pager on the CONTROLLING terminal (the runPager
+//  edge, shared so there is ONE tty lifecycle).  `open` is left unset: a log
+//  row has nothing to follow into.
+function pageHunks(hunks) {
+  const pager = require("view/pager.js");
+  let fd = null, own = false;
+  try { fd = io.open("/dev/tty", "rw"); own = true; } catch (e) { fd = null; }
+  if (fd === null && io.isatty(0)) fd = 0;
+  if (fd === null) fd = 1;
+  try {
+    const p = new pager.Pager(fd, { color: true });
+    p.setHunks(hunks);
+    p.run();
+  } finally { if (own) { try { io.close(fd); } catch (e) {} } }
+}
+
 function main(argv) {
+  const argl = argv.slice(2);
+  if (argl.length && argl[0] === "index") return runIndex(argl.slice(1));
+  if (argl.length && argl[0] === "log") return runLog(argl.slice(1));
   const args = [];
   let plain = false;
   //  `--plain` is the ONE flag; everything else is a path, verbatim.
-  for (const a of argv.slice(2)) { if (a === "--plain") plain = true; else args.push(a); }
+  for (const a of argl) { if (a === "--plain") plain = true; else args.push(a); }
   if (io.isatty(1) && !plain) runPager(args);      // no args → an empty viewport
   else runPlain(args);
 }

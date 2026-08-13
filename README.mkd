@@ -2,7 +2,11 @@
 
 This project implements beagle-lite functionality for git repos.
 
-Usage: `lite [--plain] <path>...` — file/dir args page interactively at a terminal, dump as plain hunks when piped or under `--plain`.
+Usage:
+
+ -  `lite [--plain] <path>...` — file/dir args page interactively at a terminal, dump as plain hunks when piped or under `--plain`.
+ -  `lite index [<repo>]` — index a git repo (root, `.git` dir or gitfile; default the cwd) into its own `<repo>/.git/be/` and list it in `$HOME/.config/be/tracks`. Lazy: a second run is a watermark no-op, a later one indexes only the gap. Everything under `.git/be/` is derived — `rm -rf` it and the next run rebuilds it from the ODB.
+ -  `lite log [--plain] [<hex>|<path>]` — the commit log off that index (bare = the checked-out tip, `<hex>` = a commit's ancestors, anything else = a file's revisions), one `<sha8> <date> <subject> (<author>)` row per commit, newest first. At a terminal it pages as a coloured hunk, the same way a file arg does; piped or under `--plain` it is the bare rows. It brings the index up to date itself, so there is never an `index` call to remember.
 
 Build: quickjab is standalone — it carries dog/ (libdog) and test/ (the
 jab-shared API suite) as submodules, no jab tree involved:
