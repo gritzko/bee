@@ -440,6 +440,30 @@ Pager.prototype._openPush = function (path) {
   catch (e) { this.message = "cannot open " + path + ": " + String(e); return; }
   if (!hunks || hunks.length === 0) { this.message = "cannot open " + path; return; }
   this.pushView(hunks, path);
+  if (hunks.land) this._land(hunks.land);
+};
+
+//  LITE-024: land the pushed view on the ref's line — the door did the path math
+//  and named `{line, col}`, the pager only scrolls.  `view.land` is where the
+//  LITE-023 cursor goes once it lands; until then the scroll IS the landing.
+Pager.prototype._land = function (land) {
+  const v = this.view;
+  if (!v || !land || !land.line) return;
+  const rows = this.rows(this._paintCols > 0 ? this._paintCols : 80);
+  let hunk = null;
+  for (const r of rows) if (!r.banner) { hunk = r.hunk; break; }
+  if (!hunk) return;
+  //  the byte the line starts at, then the display row that byte falls in.
+  const t = hunk.text;
+  let off = 0, n = 1;
+  while (n < land.line && off < t.length) { if (t[off] === 0x0a) n++; off++; }
+  if (n < land.line) return;                     // past the last line — stay put
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    if (r.banner || r.hunk !== hunk) continue;
+    if (off >= r.off && off <= r.end) { v.scroll = i; break; }
+  }
+  v.land = land;
 };
 
 //  Follow one F TOKEN: a dir listing joins the name to the hunk's OWN path (its

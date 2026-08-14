@@ -306,11 +306,13 @@ const VERBS = {
 //  LITE-015: the FSEG leg of the door — a path that does not stat may be a
 //  PARTIAL one, so the LITE-011 descent gets to name it before the miss stands.
 //  ONE hit opens; SEVERAL become the chooser; none leaves the caller's message.
-function openPartial(partial) {
+//  LITE-024: `tail` is the ref's `:line(:col)?` as written — the chooser ROWS
+//  carry it, so picking one still lands on the line the reference named.
+function openPartial(partial, tail) {
   const paths = resolvePartial(partial);
   if (paths.length === 0) return null;
   if (paths.length === 1) return openPath(paths[0].full);
-  return [bro.buildChooserHunk(partial, paths)];
+  return [bro.buildChooserHunk(partial + (tail || ""), paths, tail)];
 }
 
 //  The resolution itself, at HEAD of the CWD repo, through the ONE resolver.
@@ -334,12 +336,40 @@ function resolvePartial(partial) {
 //  Resolve ONE target to hunks (`null` = nothing to open): a `<verb> <arg>`
 //  line goes to its verb, anything else is a PATH.  A target must carry an arg
 //  to read as a verb, so a file merely NAMED `log` still opens as the file.
+//  LITE-024: the byte before a ref's `:line(:col)?` tail, or -1 when the last
+//  colon has no all-digit run after it (`b.c:` and `TCP.c:100:a7` keep theirs).
+function digitTail(s) {
+  const i = s.lastIndexOf(":");
+  if (i <= 0 || i === s.length - 1) return -1;
+  for (let k = i + 1; k < s.length; k++)
+    if (s.charCodeAt(k) < 0x30 || s.charCodeAt(k) > 0x39) return -1;
+  return i;
+}
+
+//  LITE-024: split a ref (DOG-034 fuses `abc/TCP.c:12:24` into ONE `F` token)
+//  into the path the fs sees and the landing the pager scrolls to.
+function splitRef(target) {
+  const i = digitTail(target);
+  if (i < 0) return { path: target, tail: "", line: 0, col: 0 };
+  const last = Number(target.slice(i + 1));
+  const head = target.slice(0, i);
+  const j = digitTail(head);
+  if (j < 0) return { path: head, tail: target.slice(i), line: last, col: 0 };
+  return { path: head.slice(0, j), tail: target.slice(j), line: Number(head.slice(j + 1)),
+           col: last };
+}
+
 function openTarget(target) {
   const sp = target.indexOf(" ");
   const fn = sp > 0 ? VERBS[target.slice(0, sp)] : null;
   if (!fn) {
-    const hs = openPath(target);
-    return hs !== null ? hs : openPartial(target);
+    //  LITE-024: shed the tail HERE — the ONE split point the click and the `:`
+    //  bar share — then hand the landing back riding the hunks.
+    const ref = splitRef(target);
+    const at = openPath(ref.path);
+    const hs = at !== null ? at : openPartial(ref.path, ref.tail);
+    if (hs !== null && ref.line) hs.land = { line: ref.line, col: ref.col };
+    return hs;
   }
   let hunks;
   try { hunks = fn(target.slice(sp + 1).trim()); } catch (e) { return null; }

@@ -194,13 +194,15 @@ function buildDirHunk(arg, path) {
 
 //  LITE-015: the CHOOSER hunk — one row per full path a PARTIAL names: the
 //  visible repo-relative text, then the openable path under a hidden `U` span.
-function buildChooserHunk(arg, rows) {
+//  LITE-024: `tail` is the ref's `:line(:col)?` — the hidden target keeps it, so
+//  the chosen row re-enters the door suffixed and lands on the line.
+function buildChooserHunk(arg, rows, tail) {
   let text = "";
   const tagAt = [];
   for (const r of rows) {
     text += r.rel;
     tagAt.push(["F", utf8.Encode(text).length]);
-    text += r.full;                            // the click target, no column
+    text += r.full + (tail || "");              // the click target, no column
     tagAt.push(["U", utf8.Encode(text).length]);
     text += "\n";
     tagAt.push(["W", utf8.Encode(text).length]);
