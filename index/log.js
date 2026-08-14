@@ -23,6 +23,14 @@
 //      addressed by the row's own 15-hex hashlet60 (ODBHex takes any 6..40
 //      hexlet, so a hashlet is a perfectly good object name).
 //
+//  THE STRAIGHT CHAIN (LITE-020).  A commit log is mostly noise merged in from
+//  side branches, so the SPINE — the first-parent (CPAR ord-0) chain from the
+//  walked tip — keeps its normal columns and every other row renders GREY, whole
+//  row, the way be/views/log/log.js does with `TAG_Q`.  The spine is MEMBERSHIP
+//  marked over the rows the walk already collected (O(rows), no second history
+//  walk), display order is untouched, and `--plain` is unaffected: greying is
+//  paint, not text.
+//
 //  ORDER (LITE-013).  A CAPPED walk is git's OWN DEFAULT order: a MAX heap on
 //  the committer date seeded with the tip, pop -> emit -> push the popped
 //  commit's parents.  It is lazy — it touches ~max commits, not the history —
@@ -87,6 +95,9 @@ const TAG_L = 11, TAG_G = 6, TAG_S = 18, TAG_D = 3;   // 'L' 'G' 'S' 'D' - 'A'
 //  BRO-006's invisible click-target: the bytes after a visible token, covered by
 //  a `U` span, ARE the nav target — here the row's own commit, for `commit`.
 const TAG_U = 20;
+//  LITE-020: the OFF-SPINE slot — be's own `TAG_Q` (LOG-001), the dir/unk grey
+//  of dog/THEME that LITE-017 already added to lite's table (`Q: aFgB(90)`).
+const TAG_Q = 16;
 function tok32(tag, end) { return ((tag & 0x1f) << 27) | (end & 0xffffff); }
 
 function hunk(uriStr, parts) {
@@ -101,15 +112,19 @@ function hunk(uriStr, parts) {
     spans.push([tag, b.size]);
   };
   for (const p of parts) {
-    put(TAG_L, p.sha8);
+    //  LITE-020: an OFF-SPINE row is covered WHOLE by the grey `Q` slot — the
+    //  same spans, the same columns, one tag (be's appendRow does exactly this).
+    //  The trailing "\n" keeps its `S` either way, so no colour bleeds onward.
+    const t = p.nonspine ? function () { return TAG_Q; } : function (tag) { return tag; };
+    put(t(TAG_L), p.sha8);
     //  The sha8 is CLICKABLE: `commit <hexlet>` rides after it under a `U` span
     //  — no column, and the door reads it as the ordinary verb line it is.
     if (p.hex) put(TAG_U, "commit " + p.hex);
-    put(TAG_G, " ");
-    put(TAG_L, p.date7);
-    put(TAG_G, " ");
-    put(TAG_S, p.summary);
-    put(TAG_D, p.authTail);
+    put(t(TAG_G), " ");
+    put(t(TAG_L), p.date7);
+    put(t(TAG_G), " ");
+    put(t(TAG_S), p.summary);
+    put(t(TAG_D), p.authTail);
     put(TAG_S, "\n");
   }
   const toks = new Uint32Array(spans.length);
@@ -207,6 +222,21 @@ function ancestry(ix, r, seed, max) {
   return { hls: out, more: ready.size > 0 };
 }
 
+//  LITE-020: the STRAIGHT CHAIN over the rows the walk ALREADY collected — from
+//  the walked tip, take the ord-0 (first) CPAR parent while it is in that set.
+//  Membership only: O(rows), no second history walk, and a spine cut short by
+//  the cap is still exactly right for the rows on screen.
+function spineOf(ix, seed, hls) {
+  const have = new Set(hls), on = new Set();
+  let hl = seed;
+  while (hl !== undefined && have.has(hl) && !on.has(hl)) {
+    on.add(hl);
+    const ps = parentsOf(ix, hl);
+    hl = ps.length ? ps[0] : undefined;
+  }
+  return on;
+}
+
 //  --- the file history ------------------------------------------------------
 //  ONE prefix scan of the path's `path_hl`, taking BOTH per-rev rows it needs:
 //  REV-CMMT (which commit introduced the rev) and REV-PARS (that rev's parent
@@ -299,13 +329,15 @@ function log(arg, opts) {
       //  LAZY: the index brings ITSELF up to date before a single row is read.
       const rec = idx.bringUp(ctx, ix, { track: false });
       const r = ctx.r;
-      let w, form;
+      let w, form, seed;
       if (arg === undefined || arg === null || arg === "") {
         form = "tip";
-        w = ancestry(ix, r, idx.hlOfSha(ctx.head.sha), max);
+        seed = idx.hlOfSha(ctx.head.sha);
+        w = ancestry(ix, r, seed, max);
       } else if (HEXARG.test(arg)) {
         form = "commit";
-        w = ancestry(ix, r, seedOf(ctx, ix, arg), max);
+        seed = seedOf(ctx, ix, arg);
+        w = ancestry(ix, r, seed, max);
       } else {
         form = "path";
         //  LITE-011: the full spelling first (it is exact); nothing there and
@@ -316,10 +348,14 @@ function log(arg, opts) {
           if (hit !== null) w = fileLog(ix, r, hit, max);
         }
       }
+      //  LITE-020: a DAG listing is split spine / off-spine; `log <path>` is a
+      //  file's revisions, not a DAG, so every one of its rows paints normally.
+      const spine = form === "path" ? null : spineOf(ix, seed, w.hls);
       const rows = [], parts = [];
       for (const hl of w.hls) {
         const hex = idx.hexOfHl(hl);
         const p = rowParts(hex, idx.readCommit(r, hex));
+        p.nonspine = spine !== null && !spine.has(hl);
         parts.push(p);
         rows.push(p.sha8 + " " + p.date7 + " " + p.summary + p.authTail);
       }
@@ -367,6 +403,7 @@ function frameSha(content) {
 module.exports = { log: log, row: row, rowParts: rowParts, hunk: hunk,
                    authorName: authorName, date7Of: date7Of,
                    fileLog: fileLog, ancestry: ancestry, parentsOf: parentsOf,
+                   spineOf: spineOf, TAG_Q: TAG_Q,
                    cparOf: cparOf, isIndexed: isIndexed,
                    relOf: relOf, normalize: normalize, HEXARG: HEXARG,
                    frameSha: frameSha };
