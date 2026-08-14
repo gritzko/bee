@@ -29,8 +29,8 @@
 //  THE LAZY CONTRACT (ruling 2026-08-13: PRESENCE is the boundary, and there
 //  is no walk ceiling at all).
 //   1. the tip is already this ref's MARK -> no-op, without even a scan;
-//   2. else ONE pass over the lane yields the arrival state AND the set of
-//      commits it already holds (their CPAR rows);
+//   2. else the lane is asked, by KEY, whether it holds a given commit (its
+//      CPAR rows) and what state a given path has arrived at (LITE-028);
 //   3. walk UP from the tip, never entering a commit in that set.  So each run
 //      indexes exactly the commits no run has indexed yet: a history of ANY
 //      size converges over successive runs, an INTERRUPTED run keeps every
@@ -346,9 +346,8 @@ function markSet(ix, refHl) {
   return out;
 }
 
-//  ONE merged pass over the whole stack -> the arrival state the walk extends.
-//  KNOWN TRAP (be/shared/mtimeidx.js): `range`/`prefix` return ZERO rows when
-//  the upper bound reaches 2^64, so a full pass MUST ride the seek cursor.
+//  --- the arrival state -----------------------------------------------------
+//  The state the walk extends:
 //
 //    next  : path_hl -> the next free rev
 //    byPB  : (path_hl<<60|blob_hl) -> its NEWEST rev   (the PARS lookup)
@@ -362,30 +361,74 @@ function markSet(ix, refHl) {
 //  by a full memtable page while its CPAR rows (put last) were not.  That
 //  commit's revs are by construction the HIGHEST rev of each path it touched,
 //  so one row per PATH catches them, instead of one entry per REV.
-function readState(ix) {
-  const next = new Map(), byPB = new Map(), top = new Map(), done = new Set();
-  const c = ix.seek(0n);
+//
+//  LITE-028: none of it is read WHOLE any more.  A run needs `done` for the
+//  commits it PROBES and next/byPB/top for the paths its new commits TOUCH, so
+//  both are filled by keyed seeks and memoized for the run — a one-commit
+//  catch-up reads a handful of rows instead of the entire history.
+//  KNOWN TRAP (be/shared/mtimeidx.js): `range`/`prefix` return ZERO rows when
+//  the upper bound reaches 2^64, so every read here MUST ride the seek cursor.
+
+function state(ix) {
+  const st = { ix: ix, next: new Map(), byPB: new Map(), top: new Map(),
+               have: new Set(), yes: new Set(), no: new Set(), all: false };
+  //  An EMPTY lane is fully known after ONE row read — the from-scratch derive
+  //  then seeks for nothing, because every row it will ever read is its own.
+  if (!ix.seek(0n).next()) st.all = true;
+  //  `done` without materializing it: ONE keyed CPAR seek per PROBED commit —
+  //  a CPAR row IS the "this commit is indexed" flag, so the probe is the
+  //  presence test.  `add` is what the run's own seals contribute.
+  st.done = {
+    has: function (chl) { return hasDone(st, chl); },
+    add: function (chl) { st.yes.add(chl); st.no.delete(chl); }
+  };
+  return st;
+}
+
+function hasDone(st, chl) {
+  if (st.yes.has(chl)) return true;
+  if (st.all || st.no.has(chl)) return false;
+  const key = hlKey(chl, K_CPAR);
+  const c = st.ix.seek(key);
+  const hit = c.next() && c.key === key;
+  (hit ? st.yes : st.no).add(chl);
+  return hit;
+}
+
+//  ONE path's rows, by the key span its `path_hl` owns: every REV row of the
+//  path is in [phl<<24, (phl+1)<<24), so one seek fills next/byPB/top for it.
+//  Other kinds hash into that span too (a B2P/FSEG/CPAR key whose top 40 bits
+//  land there), so the span is filtered by KIND, never cut short by one.
+function loadPath(st, phl) {
+  if (st.all || st.have.has(phl)) return;
+  st.have.add(phl);
+  const c = st.ix.seek(phl << 24n);
   while (c.next()) {
-    const k = c.key, kind = keyKind(k);
-    if (kind === K_CPAR) { done.add(keyHl60(k)); continue; }
-    if (kind !== K_BLOB && kind !== K_CMMT) continue;
-    const phl = keyPhl(k), rev = keyRev(k);
-    if (kind === K_BLOB) {
-      const blob = valHl60(c.val);
-      const nx = next.get(phl);
-      if (nx === undefined || nx <= rev) next.set(phl, rev + 1n);
-      const pb = (phl << 60n) | blob;
-      const cur = byPB.get(pb);
-      if (cur === undefined || cur < rev) byPB.set(pb, rev);
-      const t = top.get(phl);
-      if (t === undefined || t.rev < rev)
-        top.set(phl, { rev: rev, blob: blob, commit: null });
-      continue;
-    }
-    const t = top.get(phl);                    // BLOB sorts before CMMT per rev
-    if (t !== undefined && t.rev === rev) t.commit = valHl60(c.val);
+    if (keyPhl(c.key) !== phl) break;
+    row(st, c.key, c.val);
   }
-  return { next: next, byPB: byPB, top: top, done: done };
+}
+
+//  One lane row into the state, the fold the old full pass did per row.
+function row(st, k, v) {
+  const kind = keyKind(k);
+  if (kind === K_CPAR) { st.yes.add(keyHl60(k)); return; }
+  if (kind !== K_BLOB && kind !== K_CMMT) return;
+  const phl = keyPhl(k), rev = keyRev(k);
+  if (kind === K_BLOB) {
+    const blob = valHl60(v);
+    const nx = st.next.get(phl);
+    if (nx === undefined || nx <= rev) st.next.set(phl, rev + 1n);
+    const pb = (phl << 60n) | blob;
+    const cur = st.byPB.get(pb);
+    if (cur === undefined || cur < rev) st.byPB.set(pb, rev);
+    const t = st.top.get(phl);
+    if (t === undefined || t.rev < rev)
+      st.top.set(phl, { rev: rev, blob: blob, commit: null });
+    return;
+  }
+  const t = st.top.get(phl);                   // BLOB sorts before CMMT per rev
+  if (t !== undefined && t.rev === rev) t.commit = valHl60(v);
 }
 
 //  --- the commit walk -------------------------------------------------------
@@ -615,8 +658,8 @@ function index(repoArg, opts) {
 }
 
 //  bringUp(ctx, ix, opts) -> the summary record.  THE lazy step: the O(1) mark
-//  check, then ONE pass over the lane for the arrival state and the indexed
-//  set, then index strictly the commits the lane does not hold yet.  `ix` is
+//  check, then index strictly the commits the lane does not hold yet, reading
+//  (LITE-028) only the commits it probes and the paths they touch.  `ix` is
 //  the caller's open handle, so `log` queries the very rows this just wrote.
 function bringUp(ctx, ix, opts) {
   opts = opts || {};
@@ -633,7 +676,7 @@ function bringUp(ctx, ix, opts) {
   //  with everything below it, so there is nothing to scan and nothing to do.
   if (markSet(ix, refHl).has(hlOfSha(hd.sha))) { rec.upToDate = true; return rec; }
 
-  const st = readState(ix);
+  const st = state(ix);
   const prog = progress();
   const w = collect(r, hd.sha, st.done, prog);
   const wr = idxWriter(ix);
@@ -690,6 +733,7 @@ function bringUp(ctx, ix, opts) {
 //  is already indexed: a re-walk (a dropped mark, a rebase) re-derives the same
 //  (path, blob, commit) triple and must NOT mint a second rev for it.
 function emit(wr, st, c, chl) {
+  loadPath(st, c.phl);              // LITE-028: this path's rows, on first use
   const bhl = hlOfSha(c.blob);
   const pb = (c.phl << 60n) | bhl;
   //  The re-put guard: this path's HIGHEST rev already carries this (blob,

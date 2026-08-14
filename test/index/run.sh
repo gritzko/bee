@@ -392,6 +392,91 @@ then ok "a non-repository arg is refused in plain words"
 else bad "a non-repository arg is refused in plain words (rc $RC)" "$WORK/o6" "$WORK/e6"; fi
 
 # ==========================================================================
+# leg 3 — LITE-028: a catch-up reads the NEW work, not the whole lane
+# ==========================================================================
+# A synthetic history big enough for the asymmetry to be unmistakable: 1000
+# commits over 40 files, built by fast-import (a second, not a minute).  The
+# lane is brought up at 500 commits and again at 1000, and a ONE-commit
+# catch-up is measured over each — the rows READ must not grow with the lane.
+REPO3="$WORK/repo3"
+mkdir -p "$REPO3"
+LAZY=yes
+(
+  cd "$REPO3" || exit 1
+  git init -q -b master . && git config user.email t@t && git config user.name T || exit 1
+  i=0
+  while [ "$i" -lt 1000 ]; do
+      echo "commit refs/heads/master"
+      echo "mark :$((i + 1))"
+      echo "committer T <t@t> $((1600000000 + i)) +0000"
+      echo "data <<EOM"
+      echo "c$i"
+      echo "EOM"
+      [ "$i" -gt 0 ] && echo "from :$i"
+      echo "M 100644 inline dir$((i % 8))/file$((i % 40)).txt"
+      echo "data <<EOB"
+      echo "body $i"
+      echo "EOB"
+      i=$((i + 1))
+  done | git fast-import --quiet
+) || LAZY=no
+if [ "$LAZY" != yes ]; then
+    echo "index: SKIP the LITE-028 leg — git fast-import built no fixture" >&2
+else
+g3() { git -C "$REPO3" "$@"; }
+lz() { LITE_FIX="$REPO3" LITE_MODE="$1" rt --eval "require('$CASE/lazy.js')"; }
+nm() { sed -n "s/.*$2=\([0-9]*\).*/\1/p" "$1"; }
+
+# `reset --hard` moves the BRANCH, so the whole history is pinned by a tag and
+# every step names its commit through that.
+g3 tag -f full master
+g3 reset -q --hard full~500 && lz index > "$WORK/z0" 2>&1       # lane: 500 commits
+g3 reset -q --hard full~499
+lz meas > "$WORK/z1" 2>"$WORK/z1e"; RC=$?
+g3 reset -q --hard full && lz index >> "$WORK/z0" 2>&1          # lane: 1000 commits
+printf 'tail\n' > "$REPO3/dir0/file0.txt"; g3 add -A
+GIT_AUTHOR_DATE="2021-06-01T00:00:00Z" GIT_COMMITTER_DATE="2021-06-01T00:00:00Z" \
+    g3 commit -q -m tail
+lz meas > "$WORK/z2" 2>"$WORK/z2e"; RC2=$?
+
+R1=$(nm "$WORK/z1" reads); L1=$(nm "$WORK/z1" lane)
+R2=$(nm "$WORK/z2" reads); L2=$(nm "$WORK/z2" lane)
+C1=$(nm "$WORK/z1" commits); C2=$(nm "$WORK/z2" commits)
+
+# Z1: both catch-ups are one commit, and the lane really did double.
+if [ "$RC" = 0 ] && [ "$RC2" = 0 ] && [ "$C1" = 1 ] && [ "$C2" = 1 ] &&
+   [ "$L2" -gt "$((L1 * 3 / 2))" ]
+then ok "the fixture catches up one commit over a lane that doubled ($L1 -> $L2 rows)"
+else bad "the LITE-028 fixture (rc $RC/$RC2)" "$WORK/z1" "$WORK/z1e" "$WORK/z2" "$WORK/z2e"; fi
+
+# Z2: THE REPRO.  Reading the lane to index one commit is the bug; before the
+# fix `reads` was the whole lane (L + a few) both times.
+if [ "$R1" -lt "$((L1 / 4))" ] && [ "$R2" -lt "$((L2 / 4))" ]
+then ok "a one-commit catch-up reads a fraction of the lane ($R1/$L1, $R2/$L2 rows)"
+else bad "a one-commit catch-up reads a fraction of the lane ($R1/$L1, $R2/$L2 rows)" \
+         "$WORK/z1" "$WORK/z2"; fi
+
+# Z3: what it DOES read is the touched file's own chain — 1 of the 40 files, so
+# ~lane/40 revs at 3-4 rows each.  The old full pass read L+2 rows both times.
+E1=$((500 / 40 * 4 + 16)); E2=$((1000 / 40 * 4 + 16))
+if [ "$R1" -le "$E1" ] && [ "$R2" -le "$E2" ]
+then ok "what it reads is the file's own chain, not the lane ($R1<=$E1, $R2<=$E2)"
+else bad "what it reads is the file's own chain ($R1 of $E1, $R2 of $E2)" \
+         "$WORK/z1" "$WORK/z2"; fi
+
+# Z4: the rows the lazy state wrote are a WHOLE index — every path's rev chain
+# dense from 0, no path with two revs of one commit.
+lz check > "$WORK/z3" 2>"$WORK/z3e"; RC=$?
+if [ "$RC" = 0 ] && grep -q '^DONE' "$WORK/z3" && ! grep -q '^FAIL' "$WORK/z3"; then
+    N=$(grep -c '^ok' "$WORK/z3"); CHECKS=$((CHECKS + N))
+    ok "lazy-state leg: $N checks (dense rev chains, one rev per path per commit)"
+else
+    cat "$WORK/z3"; head -5 "$WORK/z3e"
+    bad "lazy-state leg (rc $RC)" "$WORK/z3"
+fi
+fi
+
+# ==========================================================================
 if [ "$FAILED" != 0 ]; then
     echo "FAIL [lite/index] $FAILED of $CHECKS checks failed" >&2
     exit 1
