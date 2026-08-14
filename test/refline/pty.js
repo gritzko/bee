@@ -130,6 +130,7 @@ try {
   click(2, COL + 1);
   R.landed = pump(function () { return p.stack.length === 1; });
   R.landScroll = p.view.scroll;
+  R.landCur = p.view.cur ? p.view.cur.row : -1;
   R.landFrame = frame();
   send("-"); pump(function () { return p.stack.length === 0; });
 
@@ -169,10 +170,12 @@ check("the suffixed reference lines paint",
       R.base.split("\r\n")[1]);
 
 check("a click on a :line:col ref pushed a view", R.landed, "stack depth");
-check("...SCROLLED to the line, not the top", R.landScroll === 12, "scroll " + R.landScroll);
-check("...so line 12 is the first body row", frameRow(R.landFrame, 0).indexOf("FSWMARK12") >= 0,
-      frameRow(R.landFrame, 0));
-check("...and the bar names it #L12", bar(R.landFrame).indexOf("#L12") >= 0, bar(R.landFrame));
+//  LITE-024: the landed line sits 1/4 down the 12-row page (3), cursor on it.
+check("...SCROLLED to 1/4 above the line", R.landScroll === 9, "scroll " + R.landScroll);
+check("...so line 12 is the 4th body row", frameRow(R.landFrame, 3).indexOf("FSWMARK12") >= 0,
+      frameRow(R.landFrame, 3));
+check("...the CURSOR parked on it", R.landCur === 12, "cur.row " + R.landCur);
+check("...and the bar names the top #L9", bar(R.landFrame).indexOf("#L9") >= 0, bar(R.landFrame));
 
 check("a click on the SAME ref without a tail opens at the top",
       R.topPushed && R.topScroll === 0, "scroll " + R.topScroll);
@@ -180,9 +183,9 @@ check("...line 1 on the first body row", frameRow(R.topFrame, 1).indexOf("FSWMAR
       frameRow(R.topFrame, 1).indexOf("FSWMARK12") < 0, frameRow(R.topFrame, 1));
 
 check("a ref TYPED on the `:` bar lands the same way",
-      R.barPushed && R.barScroll === 12, "scroll " + R.barScroll);
-check("...line 12 on the first body row", frameRow(R.barFrame, 0).indexOf("FSWMARK12") >= 0,
-      frameRow(R.barFrame, 0));
+      R.barPushed && R.barScroll === 9, "scroll " + R.barScroll);
+check("...line 12 on the 4th body row", frameRow(R.barFrame, 3).indexOf("FSWMARK12") >= 0,
+      frameRow(R.barFrame, 3));
 
 check("a click on an AMBIGUOUS suffixed ref pushed the chooser", R.chooserPushed, "stack depth");
 check("...bannered with the ref as typed", frameRow(R.chooserFrame, 0).indexOf("TCP.c:5") >= 0,
@@ -191,10 +194,10 @@ check("...with the suffixed row targets HIDDEN (no absolute path paints)",
       R.chooserFrame.indexOf(repo + "/") < 0, frameRow(R.chooserFrame, 1));
 check("a click on a chooser row opens THAT file", R.chosen, "stack depth");
 check("...the second candidate, as chosen", ends(R.chosenUri, "/src/abc/TCP.c"), R.chosenUri);
-check("...LANDED on line 5, the tail the row carried", R.chosenScroll === 5,
+check("...LANDED on line 5, the tail the row carried", R.chosenScroll === 2,
       "scroll " + R.chosenScroll);
-check("...so line 5 is the first body row", frameRow(R.chosenFrame, 0).indexOf("ABCMARK5") >= 0,
-      frameRow(R.chosenFrame, 0));
+check("...so line 5 is the 4th body row", frameRow(R.chosenFrame, 3).indexOf("ABCMARK5") >= 0,
+      frameRow(R.chosenFrame, 3));
 
 //  ---- the same click, on the LEXER's own token -----------------------------
 //  No hand-baked toks: `src/see.c` is opened through the shipped door and its
@@ -233,9 +236,9 @@ try {
   realFrame = k > 0 ? utf8.Decode(rb.data().slice()) : "";
 } finally { tty.cook(pty2.slave, saved2); io.close(pty2.master); io.close(pty2.slave); }
 
-check("a click on THAT token lands on line 12", realScroll === 12, "scroll " + realScroll);
-check("...line 12 painted at the top", frameRow(realFrame, 0).indexOf("FSWMARK12") >= 0,
-      frameRow(realFrame, 0));
+check("a click on THAT token lands on line 12", realScroll === 9, "scroll " + realScroll);
+check("...line 12 painted 4th from the top", frameRow(realFrame, 3).indexOf("FSWMARK12") >= 0,
+      frameRow(realFrame, 3));
 
 check("a suffixed ref that names nothing opens nothing", R.missDepth === 0,
       "stack " + R.missDepth);
@@ -243,6 +246,43 @@ check("...and says so in plain words, the ref as written",
       R.missMsg === "cannot open nosuch/gone.c:9", R.missMsg);
 check("...on the status bar", R.missFrame.indexOf("cannot open nosuch/gone.c:9") >= 0,
       bar(R.missFrame));
+
+//  ---- the NO-GIT leg (LITE-024): a plain dir still resolves a ref ----------
+//  No .git anywhere up from LITE_NOGIT — the bounded fs walk names the file
+//  the ref stands for, and the landing rides exactly as in the git leg.
+const nogit = io.getenv("LITE_NOGIT");
+const cd0 = io.cwd();
+io.chdir(nogit);
+const ng = entry.openTarget("log0.js:20");
+check("NO-GIT: the fs walk resolves the ref", ng !== null && ng.length === 1 &&
+      ends(String(ng[0].uri), "/deep/log0.js"), ng === null ? "null" : String(ng[0].uri));
+check("...the landing rides back", ng !== null && ng.land && ng.land.line === 20,
+      ng === null ? "null" : JSON.stringify(ng.land || null));
+check("NO-GIT: an unmatched ref stays a quiet null", entry.openTarget("gone.js:9") === null,
+      "opened");
+
+const ngh = entry.openTarget("note.c");
+const pty3 = tty.openpty();
+tty.setSize(pty3.slave, 14, 100);
+const p3 = new pagerlib.Pager(pty3.slave, { color: true, open: entry.openTarget });
+p3.setHunks(ngh, "note.c");
+const saved3 = tty.raw(pty3.slave);
+let ngScroll = -1, ngUri = "";
+try {
+  p3.render(); rb.reset(); io.read(pty3.master, rb);
+  kbuf.reset(); kbuf.feed(utf8.Encode(ESC + "[<0;" + (COL + 1) + ";2M"));
+  io.writeAll(pty3.master, kbuf);
+  for (let r = 0; r < 40 && p3.stack.length === 0; r++) {
+    krb.reset();
+    const m = io.read(pty3.slave, krb);
+    if (m > 0) p3._feed(krb.data().slice());
+  }
+  ngScroll = p3.view.scroll;
+  ngUri = p3.view.hunks && p3.view.hunks[0] ? String(p3.view.hunks[0].uri) : "";
+} finally { tty.cook(pty3.slave, saved3); io.close(pty3.master); io.close(pty3.slave); }
+io.chdir(cd0);
+check("NO-GIT: the click opens deep/log0.js", ends(ngUri, "/deep/log0.js"), ngUri);
+check("...landed 1/4 above line 20", ngScroll === 17, "scroll " + ngScroll);
 
 w1((bad ? "FAIL " : "PASS ") + "[lite/refline] " + n + " checks, " + bad + " bad\n");
 if (bad) throw "REFLINE";

@@ -309,10 +309,36 @@ const VERBS = {
 //  LITE-024: `tail` is the ref's `:line(:col)?` as written — the chooser ROWS
 //  carry it, so picking one still lands on the line the reference named.
 function openPartial(partial, tail) {
-  const paths = resolvePartial(partial);
+  //  LITE-024: no repo to descend (a jab tree, a plain dir) — a bounded
+  //  worktree walk resolves the ref instead; git-repo semantics unchanged.
+  let paths = resolvePartial(partial);
+  if (paths === null) paths = scanPartial(io.cwd(), partial);
   if (paths.length === 0) return null;
   if (paths.length === 1) return openPath(paths[0].full);
   return [bro.buildChooserHunk(partial + (tail || ""), paths, tail)];
+}
+
+//  LITE-024: the no-git fallback — BFS the worktree from `root`, match the
+//  partial as a path suffix; dotfiles skipped, entry/hit caps bound the walk.
+function scanPartial(root, partial) {
+  const out = [], q = [""];
+  let seen = 0;
+  while (q.length && seen < 20000 && out.length < 32) {
+    const dir = q.shift();
+    let es;
+    try { es = io.readdir(root + (dir ? "/" + dir : ""), { hidden: false }); }
+    catch (e) { continue; }
+    for (const e of es) {
+      if (++seen > 20000) break;
+      const isDir = e.endsWith("/");
+      const rel = (dir ? dir + "/" : "") + (isDir ? e.slice(0, -1) : e);
+      if (isDir) { q.push(rel); continue; }
+      if (rel === partial || rel.endsWith("/" + partial))
+        out.push({ rel: rel, full: root + "/" + rel });
+    }
+  }
+  out.sort(function (a, b) { return a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0; });
+  return out;
 }
 
 //  The resolution itself, at HEAD of the CWD repo, through the ONE resolver.
@@ -321,7 +347,8 @@ function openPartial(partial, tail) {
 function resolvePartial(partial) {
   const idx = require("index/index.js");
   let ctx;
-  try { ctx = idx.openRepo(io.cwd(), true); } catch (e) { return []; }
+  //  LITE-024: null = NO REPO here (the caller may fs-scan); [] = repo, no hit.
+  try { ctx = idx.openRepo(io.cwd(), true); } catch (e) { return null; }
   try {
     const ix = idx.openIndex(ctx.gitdir);
     try {

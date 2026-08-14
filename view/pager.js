@@ -461,7 +461,12 @@ Pager.prototype._land = function (land) {
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
     if (r.banner || r.hunk !== hunk) continue;
-    if (off >= r.off && off <= r.end) { v.scroll = i; break; }
+    //  LITE-024: the landed line sits 1/4 down the screen, cursor on it.
+    if (off >= r.off && off <= r.end) {
+      v.scroll = Math.max(0, i - (this._page() >> 2));
+      v.cur = { row: i, tok: -1 };
+      break;
+    }
   }
   v.land = land;
 };

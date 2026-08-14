@@ -56,6 +56,12 @@ numbered() {                                     # $1 = mark prefix, $2 = out fi
     git commit -q -m "r0 the files a suffixed reference can name" || exit 1
 ) || { echo "refline: cannot build the fixture repo" >&2; exit 2; }
 
+# LITE-024: the NO-GIT fixture — a plain dir, the ref resolves by the fs walk.
+NOGIT="$WORK/plain"
+mkdir -p "$NOGIT/deep"
+numbered LOGMARK "$NOGIT/deep/log0.js"
+printf '/* see log0.js:20 here */\n' > "$NOGIT/note.c"
+
 echo "refline: runtime $RT, repo $REPO"
 
 FAKEHOME="$WORK/home"; mkdir -p "$FAKEHOME"
@@ -63,7 +69,7 @@ FAKEHOME="$WORK/home"; mkdir -p "$FAKEHOME"
 export XDG_CACHE_HOME
 ln -sf "$LITE" "$WORK/jsrc"                      # unpacked-runtime require climb
 
-( cd "$REPO" && HOME="$FAKEHOME" LITE_FIX="$REPO" \
+( cd "$REPO" && HOME="$FAKEHOME" LITE_FIX="$REPO" LITE_NOGIT="$NOGIT" \
   "$RT" --eval "require('$CASE/pty.js')" ) > "$WORK/p.out" 2>"$WORK/p.err"
 RC=$?
 cat "$WORK/p.out"
