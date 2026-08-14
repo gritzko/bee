@@ -1,0 +1,87 @@
+#   Beagle-lite index records
+
+The record catalogue of the `.git/be/` index a lite verb reads and writes ([LITE-006]). One `abc.index("wh128", …)` family — a dog Pup stack of `(key:u64, val:u64)` rows, sorted by key, unkeyed (a key may carry many rows) — lives in the repo's OWN gitdir as `<gitdir>/be/*.lite.idx`. Everything there is DERIVED: `rm -rf` it and the next run rebuilds it from the ODB. Tracked repos are listed in `$HOME/.config/be/tracks`, one absolute path per line. The kind nibble is the LOW 4 bits of every key, so one lane holds every record family and one scan sees them all.
+
+##  Field vocabulary
+
+The three field types every record is built out of; all are hashes, so the index never stores a name and never gives one back.
+
+ -  `hashlet60` — the TOP 60 bits of a 20-byte sha, big-endian (`dog/WHIFF.h`
+    `whiff_hashlet(s, 15)`); blob, commit and ref hashlets are ALWAYS the full 60.
+ -  `path_hl` — 40 bits: the TOP 40 of the sha1 hashlet of the repo-relative
+    path text, no leading slash (`hlOfText(path) >> 20`).
+ -  `rev` — a 20-bit per-path arrival counter, minted oldest-first as the walk
+    seals commits; `rev = 2^20-1` is the EMPTY slot spelling, never a real rev.
+ -  `vnib` — the low nibble of a value, RESERVED (0) wherever the record does
+    not name a field for it.
+ -  `seg_hl` — the top 40/20/10 bits of ONE path segment's text hashlet
+    (filename / parent dir / ancestor dir); `0` spells "absent", so a genuine
+    0 hash bumps to 1 (the filename slot names nothing absent and never bumps).
+
+##  Record kinds
+
+Seven kinds, the nibble in `key & 0xf`. Rows are never deleted and re-puts are idempotent.
+
+ -  `REV-BLOB` (1) — key `path_hl:40|rev:20|1`, val `blob_hl:60|vnib:4`: which
+    blob this path carries at this rev.
+ -  `REV-CMMT` (2) — key `path_hl:40|rev:20|2`, val `commit_hl:60|vnib:4`: the
+    commit that introduced this rev of the path.
+ -  `REV-PARS` (3) — key `path_hl:40|rev:20|3`, val `par1:20|par2:20|par3:20|4`:
+    this rev's parent REVS; a 4th+ parent rides a second row.
+ -  `CPAR` (4) — key `commit_hl:60|4`, val `parent_hl:60|ord:4`: one row per
+    parent, first parent `ord` 0; a ROOT commit gets one row with an EMPTY parent.
+ -  `B2P` (5) — key `blob_hl:60|5`, val `path_hl:40|rev:20|vnib:4`: the reverse
+    map, which path/rev a blob is the content of.
+ -  `FSEG` (6) — key `fn_hl:40|prnt_hl:20|6`, val `seg0..seg5:10 ROOT-FIRST|
+    depth:4`: the partial-path record ([LITE-011]), the last segment's hash
+    plus the ancestor dir segment hashes; a pure function of the path TEXT,
+    minted once at the path's rev 0, never invalidated (it names, not states).
+ -  `MARK` (F) — key `ref_hl:60|F`, val `tip commit_hl:60|vnib:4`: the per-ref
+    watermark, the LAST write of a run (DOG-027).
+
+##  What the records buy
+
+Each query is a scan of ONE key prefix; no ODB ancestry walk happens at query time.
+
+ -  A file's whole history is ONE prefix scan of its `path_hl`: the rows come
+    back rev-ordered, each rev naming its blob, its commit and its parent revs.
+ -  The commit DAG is the CPAR rows alone, which is what `lite log` walks
+    ([LITE-007] `ancestry`), newest-first over a reverse Kahn.
+ -  `CPAR` doubles as the INDEXED flag: a commit with any CPAR row is in the
+    lane, which is why a root commit still gets an empty-parent row.
+ -  A commit hashlet IS an object name — `git.getHex` takes any 6..40 hexlet —
+    so a row's 15-hex `hashlet60` reads date, author and subject off the ODB.
+ -  A PARTIAL path (`abc/TCP.c`, bare `TCP.c`) resolves via one FSEG scan plus
+    a pruned descent of a commit's tree (`index/resolve.js`): the tree entries
+    carry the real names, so the answer is TEXT and ambiguity is a list.
+
+##  The lazy contract
+
+PRESENCE is the boundary and there is no walk ceiling (ruling 2026-08-13), so runs converge and an interrupted run keeps every commit it sealed.
+
+ -  The tip is already this ref's MARK → no-op without even a scan; else one
+    pass over the lane yields the arrival state and the indexed set.
+ -  The walk climbs from the tip and never enters a commit already in the lane,
+    so a rebase needs no special case (rewritten commits are simply absent).
+ -  Per commit the rev rows go in FIRST and the CPAR rows LAST: a seal persists
+    a PREFIX, so a CPAR row on disk proves that commit's rev rows are on disk.
+ -  A re-derived rev finds its own (path, blob, commit) triple through the `top`
+    guard and writes nothing, so a re-walk never mints a second rev.
+
+##  What is NOT indexed
+
+The gaps, stated so a reader does not go looking for them.
+
+ -  NO path text: `path_hl` is a one-way 40-bit hash, so the index can TEST a
+    known path and can never enumerate or print one.
+ -  NO suffix lookup in the LANE ALONE: `dog/git/ZINF.h`, `git/ZINF.h` and
+    `ZINF.h` hash to three unrelated keys; a partial path finds files only
+    through the FSEG descent, which reads real tree objects for the names.
+ -  NO tree or dir records: a directory listing comes from the ODB or the fs,
+    never from the lane.
+ -  HEAD only: one branch is indexed, so a commit off it has no CPAR rows and
+    `lite log` says so in plain words rather than answering wrong.
+
+[LITE-006]: /todo/LITE/LITE-006.mkd
+[LITE-007]: /todo/LITE/LITE-007.mkd
+[LITE-011]: /todo/LITE/LITE-011.mkd

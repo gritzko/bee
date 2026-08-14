@@ -1,0 +1,3 @@
+{"type":"mode","mode":"default","sessionId":"s1"}
+{"type":"user","isSidechain":false,"uuid":"u4","timestamp":"2026-08-03T15:10:00.000Z","message":{"role":"user","content":"SECOND ROUND question."}}
+{"type":"assistant","isSidechain":false,"uuid":"a4","timestamp":"2026-08-03T15:10:09.000Z","message":{"role":"assistant","content":[{"type":"text","text":"SECOND ROUND answer."},{"type":"tool_use","id":"toolu_D","name":"Grep","input":{"pattern":"SECOND"}}]}}

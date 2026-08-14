@@ -290,6 +290,31 @@ function fresh(gitdir) {
   return true;
 }
 
+//  Progress for histories over 100 commits: a throttled one-line \r report on
+//  STDERR, tty only — piped/captured runs stay byte-identical, plain words.
+const PROG_MIN = 100, PROG_MS = 200;
+function progress() {
+  let on = false;
+  try { on = io.isatty(2); } catch (e) { on = false; }
+  let last = 0, dirty = false;
+  function raw(s) {
+    const b = utf8.Encode(s);
+    const x = io.buf(b.length + 8);
+    x.feed(b);
+    io.writeAll(2, x);
+  }
+  return {
+    tick: function (s) {
+      if (!on) return;
+      const t = Date.now();
+      if (t - last < PROG_MS) return;
+      last = t; dirty = true;
+      raw("\r" + s + "\x1b[K");
+    },
+    done: function () { if (on && dirty) { dirty = false; raw("\r\x1b[K"); } }
+  };
+}
+
 //  A batching writer (be/shared/ingest.js `idxWriter`): the rows put between
 //  two commits fit ONE memtable, whatever size it was opened at.  A seal NEVER
 //  carries the mark.
@@ -375,7 +400,7 @@ function readState(ix) {
 //      not in the lane, so they are exactly what gets walked.
 //  The MARK survives as the ruled per-ref watermark and as the O(1) no-op:
 //  tip already marked -> answer without even scanning the lane.
-function collect(r, tip, done) {
+function collect(r, tip, done, prog) {
   const set = new Set(), queue = [];
   if (done.has(hlOfSha(tip))) return { set: set, order: [] };
   set.add(tip); queue.push(tip);
@@ -386,6 +411,8 @@ function collect(r, tip, done) {
       if (set.has(p) || done.has(hlOfSha(p))) continue;
       set.add(p); queue.push(p);
     }
+    if (prog && queue.length > PROG_MIN)
+      prog.tick("walking the history: " + queue.length + " commits found");
   }
   return { set: set, order: topo(r, set) };
 }
@@ -607,9 +634,13 @@ function bringUp(ctx, ix, opts) {
   if (markSet(ix, refHl).has(hlOfSha(hd.sha))) { rec.upToDate = true; return rec; }
 
   const st = readState(ix);
-  const w = collect(r, hd.sha, st.done);
+  const prog = progress();
+  const w = collect(r, hd.sha, st.done, prog);
   const wr = idxWriter(ix);
+  const nw = w.order.length;
   for (const sha of w.order) {
+    if (nw > PROG_MIN)
+      prog.tick("indexing " + rec.commits + "/" + nw + " commits");
     const m = readCommit(r, sha);
     if (!m) continue;
     rec.commits++;
@@ -643,6 +674,7 @@ function bringUp(ctx, ix, opts) {
       throw "index: injected fault after " + rec.commits + " commits";
     }
   }
+  prog.done();
   wr.seal();
   rec.rows = wr.rows;
   //  The MARK is the LAST write of the run (DOG-027) and DOG-032's ONE durable

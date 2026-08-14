@@ -201,6 +201,11 @@ function runInstall(args) {
   writeFd(1, utf8.Encode(mg.install(args.length ? args[0] : undefined) + "\n"));
 }
 
+//  LITE-016: `lite chat [dir] [outdir]` renders the Claude Code session logs of
+//  a project dir as StrictMark pages, 1:1 by basename, append-only on a rerun.
+//  It reports on the message stream only, so stdout stays free.
+function runChat(args) { require("index/chat.js").chat(args); }
+
 //  ---- the ONE door --------------------------------------------------------
 //  Every view a verb can produce, keyed by the verb: `(arg) -> hunks`.  The CLI
 //  legs above and the PAGER both come through this table, so a click target is
@@ -209,8 +214,8 @@ const VERBS = {
   log: function (arg) {
     const lg = require("index/log.js");
     const q = logQuery(arg);
-    //  The VIEW defaults to 1000 rows so any-size history paints instantly.
-    const max = q.max === null ? 1000 : q.max;
+    //  The VIEW defaults to 256 rows so any-size history paints instantly.
+    const max = q.max === null ? 256 : q.max;
     const o = lg.log(q.target, { max: max });
     if (!o.rows.length) return [];
     //  The uri is the TYPED target, verbatim — an explicit count stays, the
@@ -263,6 +268,7 @@ function main(argv) {
   if (argl.length && argl[0] === "diff") return runDiff(argl.slice(1));
   if (argl.length && argl[0] === "merge") return runMerge(argl.slice(1));
   if (argl.length && argl[0] === "install") return runInstall(argl.slice(1));
+  if (argl.length && argl[0] === "chat") return runChat(argl.slice(1));
   const args = [];
   let plain = false;
   //  `--plain` is the ONE flag; everything else is a path, verbatim.
