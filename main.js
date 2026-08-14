@@ -190,6 +190,17 @@ function runDiff(args) {
   pageHunks(out.hunks);
 }
 
+//  LITE-014: `lite merge <base> <ours> <theirs> [-o <out>] [-p <path>]` — the
+//  git merge-driver contract (result over <ours>, exit code = clean/conflict),
+//  and `lite install [<repo>]` which points a repo's git at it.  Both are silent
+//  on success bar install's one report line; a conflict THROWS (exit 1).
+function runMerge(args) { require("index/merge.js").merge(args); }
+
+function runInstall(args) {
+  const mg = require("index/merge.js");
+  writeFd(1, utf8.Encode(mg.install(args.length ? args[0] : undefined) + "\n"));
+}
+
 //  ---- the ONE door --------------------------------------------------------
 //  Every view a verb can produce, keyed by the verb: `(arg) -> hunks`.  The CLI
 //  legs above and the PAGER both come through this table, so a click target is
@@ -250,6 +261,8 @@ function main(argv) {
   if (argl.length && argl[0] === "log") return runLog(argl.slice(1));
   if (argl.length && argl[0] === "commit") return runCommit(argl.slice(1));
   if (argl.length && argl[0] === "diff") return runDiff(argl.slice(1));
+  if (argl.length && argl[0] === "merge") return runMerge(argl.slice(1));
+  if (argl.length && argl[0] === "install") return runInstall(argl.slice(1));
   const args = [];
   let plain = false;
   //  `--plain` is the ONE flag; everything else is a path, verbatim.

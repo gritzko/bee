@@ -26,40 +26,17 @@
 
 const idx = require("./index.js");
 const lg = require("./log.js");
+const wv = require("./weave.js");
 
-//  --- the source-size policy (be/shared/weave.js, verbatim) -----------------
-//  A source larger than this is a BLOB: not tokenised, not diffed.  Because the
-//  source is capped, its markup is too, so every weave/HUNK buffer is allocated
-//  ONCE at the fixed 4x (a lazy anonymous mmap — only touched pages fault in).
-const MAX_SOURCE_SIZE = 4 << 20;                   // 4 MB
-const MAX_SOURCE_MARKED_UP = MAX_SOURCE_SIZE * 4;  // 16 MB
+//  LITE-014: the source-size policy, the binary gate and the lexer key live in
+//  index/weave.js now — ONE home for both the diff and the merge, as be has.
+const MAX_SOURCE_SIZE = wv.MAX_SOURCE_SIZE;        // 4 MB
+const MAX_SOURCE_MARKED_UP = wv.MAX_SOURCE_MARKED_UP;
+const isBinary = wv.isBinary, extOf = wv.extOf, bytesEq = wv.bytesEq;
 
 //  Two distinct 16-hex hashlet ids for the from/to weave layers (be's own;
 //  the predicates only care about !=).
 const ID_FROM = "0000000000000001", ID_TO = "0000000000000002";
-
-//  git's binary heuristic (be diff.js `isBinary`): a blob is binary iff a NUL
-//  byte appears in its first 8000 bytes.  Skip the tokenise + doomed emit.
-const BIN_PROBE = 8000;
-function isBinary(bytes) {
-  if (!bytes || !bytes.length) return false;
-  const n = bytes.length < BIN_PROBE ? bytes.length : BIN_PROBE;
-  for (let i = 0; i < n; i++) if (bytes[i] === 0) return true;
-  return false;
-}
-
-//  The basename suffix after the last '.' — the weave lexer's language key.
-function extOf(path) {
-  const base = path.slice(path.lastIndexOf("/") + 1);
-  const dot = base.lastIndexOf(".");
-  return dot > 0 ? base.slice(dot + 1) : "";
-}
-
-function bytesEq(a, b) {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
-  return true;
-}
 
 //  --- the fold scratch ------------------------------------------------------
 //  be allocates a fresh 16 MB weave per fold; a whole-tree lite diff folds once
