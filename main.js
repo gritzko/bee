@@ -201,6 +201,42 @@ function runInstall(args) {
 //  It reports on the message stream only, so stdout stays free.
 function runChat(args) { require("index/chat.js").chat(args); }
 
+//  LITE-019: `lite now` — the ron60 clock.  Bare, the CURRENT stamp as RON64
+//  text; with a word, that stamp's calendar date.  CLI-only, not in the door.
+function runNow(args) {
+  const rest = [];
+  //  LITE-019: `--plain` is a no-op here — one line, plain either way.
+  for (const a of args) { if (a !== "--plain") rest.push(a); }
+  const line = rest.length ? ron60ISO(rest[0]) : ron60Text(ron.now());
+  writeFd(1, utf8.Encode(line + "\n"));
+}
+
+//  LITE-019: ALL ten digits — ron.encode drops the LEADING zeros (a 200x year)
+//  and the trailing two ARE the ms, so neither end may go missing.
+function ron60Text(v) { return ron.encode(v).padStart(10, "0"); }
+
+function pad(n, w) { let s = String(n); while (s.length < w) s = "0" + s; return s; }
+
+//  LITE-019: a ron60 word -> `20YY-MM-DDThh:mm:ss.mmm`.  A SHORT word is
+//  LEFT-aligned (ron60Norm: `26812` reads `2681200000`), then unpacked digitwise.
+function ron60ISO(word) {
+  const bad = "now: not a ron60 timestamp: " + word;
+  if (!/^[0-9A-Z_a-z~]{1,10}$/.test(word)) throw bad;
+  const v = ron.decode(word + "0".repeat(10 - word.length));
+  //  RONOfTime's layout: [y/10][y%10][mon][dd/10][dd%10][hh][mm][ss][ms/64][ms%64],
+  //  digit 9 first — the shift-and-mask is the whole unpack.
+  const d = [];
+  for (let i = 0; i < 10; i++) d.push(Number((v >> BigInt(6 * i)) & 63n));
+  const day = d[6] * 10 + d[5], ms = d[1] * 64 + d[0];
+  //  LITE-019: an out-of-range field is a refusal — bar the MS slot, where a
+  //  spelling past the second is real (ron60Inc) and clamps, as RONToTime does.
+  if (d[9] > 9 || d[8] > 9 || d[7] < 1 || d[7] > 12 || d[6] > 3 || d[5] > 9 ||
+      day < 1 || day > 31 || d[4] > 23 || d[3] > 59 || d[2] > 59) throw bad;
+  return String(2000 + d[9] * 10 + d[8]) + "-" + pad(d[7], 2) + "-" + pad(day, 2) +
+         "T" + pad(d[4], 2) + ":" + pad(d[3], 2) + ":" + pad(d[2], 2) +
+         "." + pad(ms > 999 ? 999 : ms, 3);
+}
+
 //  LITE-017: the four READ views — `list` (the browser), `cat` (a file's own
 //  bytes), `tree` (the raw git rows), `blob` (a blob by sha).  All four take
 //  ONE arg and answer the same way: at a terminal the pager, piped or under
@@ -335,6 +371,7 @@ function main(argv) {
   if (argl.length && argl[0] === "merge") return runMerge(argl.slice(1));
   if (argl.length && argl[0] === "install") return runInstall(argl.slice(1));
   if (argl.length && argl[0] === "chat") return runChat(argl.slice(1));
+  if (argl.length && argl[0] === "now") return runNow(argl.slice(1));
   if (argl.length && argl[0] === "list") return runView("index/list.js", "list", argl.slice(1));
   if (argl.length && argl[0] === "cat") return runView("index/cat.js", "cat", argl.slice(1));
   if (argl.length && argl[0] === "tree") return runView("index/tree.js", "tree", argl.slice(1));
@@ -355,6 +392,7 @@ function main(argv) {
 
 if (typeof module !== "undefined")
   module.exports = { main: main, openPath: openPath, openTarget: openTarget,
-                     inRepo: inRepo };
+                     inRepo: inRepo,
+                     ron60ISO: ron60ISO, ron60Text: ron60Text };
 if (process.argv[1] && process.argv[1].slice(-"/main.js".length) === "/main.js")
   main(process.argv);
