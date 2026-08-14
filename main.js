@@ -196,6 +196,15 @@ function runInstall(args) {
   writeFd(1, utf8.Encode(mg.install(args.length ? args[0] : undefined) + "\n"));
 }
 
+//  LITE-026: `lite hook [<repo>]` — the PRE-COMMIT pass the planted
+//  `.git/hooks/pre-commit` runs: fresh `file:line(:col)` refs in the staged text
+//  become [LITE-025] permalinks, and the rewritten files are re-staged.  It
+//  reports on the message stream only, so a commit's own output stays clean.
+function runHook(args) {
+  const note = require("index/hook.js").precommit(args.length ? args[0] : undefined);
+  if (note) writeStderr(note + "\n");
+}
+
 //  LITE-016: `lite chat [dir] [outdir]` renders the Claude Code session logs of
 //  a project dir as StrictMark pages, 1:1 by basename, append-only on a rerun.
 //  It reports on the message stream only, so stdout stays free.
@@ -467,6 +476,7 @@ function main(argv) {
   if (argl.length && argl[0] === "diff") return runDiff(argl.slice(1));
   if (argl.length && argl[0] === "merge") return runMerge(argl.slice(1));
   if (argl.length && argl[0] === "install") return runInstall(argl.slice(1));
+  if (argl.length && argl[0] === "hook") return runHook(argl.slice(1));
   if (argl.length && argl[0] === "chat") return runChat(argl.slice(1));
   if (argl.length && argl[0] === "now") return runNow(argl.slice(1));
   if (argl.length && argl[0] === "list") return runView("index/list.js", "list", argl.slice(1));

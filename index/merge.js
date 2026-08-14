@@ -185,8 +185,11 @@ function install(repoArg) {
   }
   const attrs = gitdir + "/info/attributes";
   if (!attrInstalled(attrs)) { attrAppend(gitdir, attrs); wrote = true; }
+  //  LITE-026: the same wiring plants the pre-commit hook, composing with one
+  //  already there — index/hook.js owns that half.
+  if (require("./hook.js").plant(gitdir, selfPath())) wrote = true;
   return (wrote ? "installed" : "already installed") +
-         ": lite is the merge driver for " + root;
+         ": lite is the merge driver and the pre-commit hook for " + root;
 }
 
 module.exports = { merge: merge, install: install, parse: parse,

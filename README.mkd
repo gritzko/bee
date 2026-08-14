@@ -27,7 +27,8 @@ Usage (`--plain` or a pipe dumps bare bytes; a terminal pages coloured hunks):
  -  `lite cat <path>[?<rev>]` — the file's own bytes, syntax-painted
  -  `lite tree [<hex>|<path>][?<rev>]` — raw git-tree rows, `..` row when descended
  -  `lite blob <hexlet>` — a blob by object name
- -  `lite install [<repo>]` — register lite as the repo's git merge driver
+ -  `lite install [<repo>]` — register lite as the repo's git merge driver and pre-commit hook
+ -  `lite hook [<repo>]` — the pre-commit pass: fresh `file:line(:col)` refs in the staged text become `file:OFF:HASHLET` permalinks, re-staged
  -  `lite merge <base> <ours> <theirs> [-o <out>] [-p <path>]` — CRDT 3-way file merge
      1. clean: merged bytes over `<ours>` (or `<out>`), exit 0
      2. conflict: markerless weave, exit 1

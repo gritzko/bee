@@ -93,6 +93,53 @@ function offsetOf(s) {
   return v >= 0 ? v : -1;
 }
 
+//  --- the mint (LITE-026) ---------------------------------------------------
+//  The INVERSE of hashletHex/offsetOf, beside them so ONE file owns the ron64
+//  packing in both directions.  `ron.encode` drops a leading zero and a hashlet
+//  is read two chars at a time, so a pair is padded back to width 2.
+function packPair(v) { return ron.encode(BigInt(v)).padStart(2, "0"); }
+function packOffset(n) { const s = ron.encode(BigInt(n)); return s === "" ? "0" : s; }
+
+//  A blob sha1 (hex) -> the SHORTEST hashlet that names it among `others` — the
+//  path's own other blobs, which is the whole scope.  Min 4 chars, EVEN (12 bits
+//  a pair), one non-digit (that is what tells segment 2 from a column), extended
+//  BY 2 until unique.  null = even 10 chars collide, so nothing is minted.
+function mintHashlet(sha, others) {
+  for (let pairs = 2; pairs <= 5; pairs++) {
+    const hexn = pairs * 3;
+    if (sha.length < hexn) return null;
+    let h = "";
+    for (let i = 0; i < pairs; i++)
+      h += packPair(parseInt(sha.slice(i * 3, i * 3 + 3), 16));
+    if (!isHashlet(h)) continue;                  // all-digit: extend by 2
+    let clash = false;
+    for (const o of others || [])
+      if (o !== sha && o.slice(0, hexn) === sha.slice(0, hexn)) { clash = true; break; }
+    if (!clash) return h;
+  }
+  return null;
+}
+
+//  The INVERSE of lineCol: a 1-based line:col -> the byte offset, -1 when the
+//  blob has no such line (the caller then mints nothing — never a guess).  A
+//  column past the line's own bytes clamps to it: a compiler counts columns its
+//  own way, and the LINE is what the ref means.
+function byteAt(bytes, line, col) {
+  if (!(line >= 1)) return -1;
+  let at = 0;
+  for (let k = 1; k < line; k++) {
+    while (at < bytes.length && bytes[at] !== 0x0a) at++;
+    if (at >= bytes.length) return -1;
+    at++;
+  }
+  if (at >= bytes.length) return -1;
+  let end = at;
+  while (end < bytes.length && bytes[end] !== 0x0a) end++;
+  let off = at + (col > 1 ? col - 1 : 0);
+  if (off > end) off = end > at ? end - 1 : at;
+  return off;
+}
+
 //  --- the anchored version --------------------------------------------------
 //  EARLIEST WINS: a younger blob sharing the prefix was minted a longer hashlet
 //  of its own, so the old link keeps its old meaning.  The sha breaks a
@@ -126,6 +173,19 @@ function blobAt(ctx, commit, rel) {
   if (e === null || e.dir) return null;
   const o = idx.object(ctx.r, e.sha);
   return o === null || o.type !== "blob" ? null : o.bytes;
+}
+
+//  LITE-026: the DISTINCT blob ids this path ever held, oldest first — the
+//  hashlet SCOPE both halves share: the follow filters it, the mint extends
+//  against it.  One file's blobs, never the repository's.
+function blobHistory(ctx, ix, rel) {
+  const out = [];
+  for (const c of historyOf(ix, ctx.r, rel)) {
+    const e = rd.entryAt(ctx.r, c.m.tree, rel);
+    if (e === null || e.dir) continue;
+    if (out.indexOf(e.sha) < 0) out.push(e.sha);
+  }
+  return out;
 }
 
 //  The commits of this path whose blob AT THIS PATH carries the prefix.  A file
@@ -237,6 +297,29 @@ function foldPair(was, now, ext) {
     if (!("" + err).includes("full")) return null;
     try { return go(""); } catch (e2) { return null; }
   }
+}
+
+//  LITE-026: walk the NOW side of a was->now fold, handing every ALIVE token to
+//  `at(tok, lo, hi, fresh)` — `lo`/`hi` are its bytes in NOW, `fresh` says the
+//  WAS side does not carry it (ADDED TEXT).  The mint's added-line scan and the
+//  follow share this one fold pair; false = the pair is not weavable.
+function walkNew(was, now, ext, at) {
+  if (!weavable(was, now)) return false;
+  const w = foldPair(was, now, ext);
+  if (w === null) return false;
+  const old = new Set();
+  w.rewind(ID_WAS);
+  while (w.next()) if (w.tok.alive) old.add(w.tok.off);
+  w.rewind(ID_NOW);
+  let pos = 0;
+  while (w.next()) {
+    const t = w.tok;
+    if (!t.alive) continue;
+    const lo = pos;
+    pos += t.text.length;
+    at(t, lo, pos, !old.has(t.off));
+  }
+  return true;
 }
 
 //  --- the deleting commit ---------------------------------------------------
@@ -363,7 +446,9 @@ function land(ctx, ix, rel, hexpfx, off) {
 }
 
 module.exports = { follow: follow, earliest: earliest, anchorOf: anchorOf,
-                   blobIdOf: blobIdOf,
+                   blobIdOf: blobIdOf, blobHistory: blobHistory,
                    hashletHex: hashletHex, offsetOf: offsetOf,
+                   mintHashlet: mintHashlet, packOffset: packOffset,
+                   walkNew: walkNew,
                    isHashlet: isHashlet, isOffset: isOffset,
-                   lineCol: lineCol };
+                   lineCol: lineCol, byteAt: byteAt };
