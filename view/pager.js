@@ -13,16 +13,19 @@ const theme = require("view/theme.js");
 //  inline help hunk straight from here.  KEEP IN SYNC with _keyScroll.
 const SHORTCUTS = [
   ["q  :q", "quit the pager"],
-  ["j / k", "scroll down / up one line"],
+  ["j / k", "active line down / up"],
+  ["h / l", "active token prev / next (followable tokens only)"],
+  ["w / s", "scroll up / down one line"],
+  ["a / d", "back / forward through the views"],
   ["space / b", "page down / up"],
   ["g / G", "jump to top / bottom"],
   ["m", "toggle mouse tracking (wheel + click-to-follow)"],
   [":", "open the path bar (type a file or dir path)"],
-  ["Enter", "open the dir entry on the cursor row"],
+  ["Enter", "follow the active token, else the active line"],
   ["- / BS", "back — pop to the previous view"],
   ["R / r", "refresh — re-open the current view (keep the scroll pos)"],
-  ["w", "toggle soft-wrap on / off (views open no-wrap)"],
-  ["h", "this help screen"],
+  ["W", "toggle soft-wrap on / off (views open no-wrap)"],
+  ["?", "this help screen"],
 ];
 
 //  ---- terminal write helpers (raw escapes; no OPOST, so we emit CRLF) -------
@@ -100,7 +103,9 @@ function indexAll(hunks, cols, wrap) {
 
 //  BRO-011: emit one row to a BYTE sink — `enc` appends SGR/ASCII, `raw(lo,hi)` the
 //  VERBATIM text bytes.  BRO-010: colour = the SHARED THEME, runs batched, U/O hidden.
-function emitBody(hunk, off, end, color, pass, enc, raw) {
+//  LITE-023: `wash` (or null) is the CURSOR wash for THIS row — {lo,hi} the
+//  active token's byte span (lo<0: none); the line wash rides every cell.
+function emitBody(hunk, off, end, color, pass, enc, raw, wash) {
   const text = hunk.text, toks = hunk.toks;
   //  bisect to the tok covering `off` (toks sorted by byte end) — the linear
   //  scan from 0 cost O(toks) per painted row, sluggish on a 100k-tok hunk.
@@ -119,7 +124,9 @@ function emitBody(hunk, off, end, color, pass, enc, raw) {
       //  LITE-010: the token's diff SIDE (tok32 [25..24]) rides along — EQ for
       //  every file/dir/log hunk, IN/RM inside a diff hunk's weave.
       const side = ti < toks.length ? ((toks[ti] >>> 24) & 3) : bro.SIDE_EQ;
-      const want = bro.cellAnsi(tag, pass, side);  // PASS_NORMAL
+      let want = bro.cellAnsi(tag, pass, side);    // PASS_NORMAL
+      if (wash) want = bro.aWash(want, pos >= wash.lo && pos < wash.hi
+                                      ? bro.WASH_CUR_TOK : bro.WASH_CUR_LINE);
       if (!bro.aEq(want, cur)) {
         if (runLo >= 0) { raw(runLo, pos); runLo = -1; }
         enc(bro.deltaSGR(want, cur)); cur = want;
@@ -134,11 +141,12 @@ function emitBody(hunk, off, end, color, pass, enc, raw) {
 
 //  STRING form of a painted row (pty tests + any string consumer): the SAME cell
 //  walk, text DECODED to real codepoints so a re-encoding caller sees no mojibake.
-function paintRow(hunk, off, end, color, pass) {
+function paintRow(hunk, off, end, color, pass, wash) {
   let out = "";
   emitBody(hunk, off, end, color, pass,
            function (s) { out += s; },
-           function (lo, hi) { if (hi > lo) out += utf8.Decode(hunk.text.subarray(lo, hi)); });
+           function (lo, hi) { if (hi > lo) out += utf8.Decode(hunk.text.subarray(lo, hi)); },
+           wash);
   return out;
 }
 
@@ -149,8 +157,9 @@ function Pager(fd, opts) {
   this.fd = fd;
   this.color = opts && opts.color !== undefined ? opts.color : true;
   this.open = opts && opts.open;                 // (path) -> hunks | null
-  this.view = null;                              // { hunks, path, rows, scroll, cols, wrap }
+  this.view = null;                              // { hunks, path, rows, scroll, cols, wrap, cur }
   this.stack = [];                               // JAB-030: the view BACK-stack
+  this.fwd = [];                                 // LITE-023: the FORWARD stack (`d`)
   this.mode = "scroll";                          // "scroll" | "command"
   this.cmd = "";                                 // the path-bar edit buffer
   this.pasting = false;                          // inside a bracketed paste burst
@@ -165,19 +174,34 @@ function Pager(fd, opts) {
 Pager.prototype.setHunks = function (hunks, path) {
   const p = path !== undefined ? path
           : hunks && hunks.length ? hunks[0].uri || "" : "";
-  //  BRO-014: a view opens NO-WRAP (long lines clamp at the right edge); `w` wraps.
-  this.view = { hunks: hunks, path: p, rows: null, scroll: 0, cols: 0, wrap: false };
+  //  BRO-014: a view opens NO-WRAP (long lines clamp at the right edge); `W` wraps.
+  //  LITE-023: every view carries its OWN cursor — {row, tok}, tok -1 = no active
+  //  token (the row's followable tokens are a render-side walk, never stored).
+  this.view = { hunks: hunks, path: p, rows: null, scroll: 0, cols: 0, wrap: false,
+                cur: { row: 0, tok: -1 } };
 };
 
 //  JAB-030: PUSH a fresh view, stacking the current one (a follow / a typed path
 //  descends); popView restores the previous one (the back key).
+//  LITE-023: a NEW push clears the forward stack — the branch just taken wins.
 Pager.prototype.pushView = function (hunks, path) {
   if (this.view) this.stack.push(this.view);
+  this.fwd.length = 0;
   this.setHunks(hunks, path);
 };
 Pager.prototype.popView = function () {
   if (!this.stack.length) { this.message = "(no prev view)"; return false; }
+  if (this.view) this.fwd.push(this.view);       // LITE-023: `d` walks back in
   this.view = this.stack.pop();
+  this.view.rows = null;                         // re-index for the live width
+  return true;
+};
+
+//  LITE-023: FORWARD — un-pop a view `-`/`a` backed out of (popView parked it).
+Pager.prototype.fwdView = function () {
+  if (!this.fwd.length) { this.message = "(no next view)"; return false; }
+  if (this.view) this.stack.push(this.view);
+  this.view = this.fwd.pop();
   this.view.rows = null;                         // re-index for the live width
   return true;
 };
@@ -204,6 +228,113 @@ Pager.prototype.rows = function (cols) {
   return v.rows;
 };
 
+//  ---- LITE-023: the cursor (active line + active token) ---------------------
+//  The FOLLOWABLE tokens on a display row, left to right: a visible token with a
+//  hidden `U` follower (the click target) or an `F` nav target.  Each entry is
+//  {lo, hi} — the visible BYTE span, which is what the wash paints.
+Pager.prototype._rowToks = function (r) {
+  if (!r || r.banner) return [];
+  const text = r.hunk.text, toks = r.hunk.toks;
+  if (!toks || !toks.length) return [];
+  let lo = 0, hi = toks.length;
+  while (lo < hi) { const m = (lo + hi) >> 1;
+    if ((toks[m] & 0xffffff) <= r.off) lo = m + 1; else hi = m; }
+  const out = [];
+  for (let ti = lo; ti < toks.length; ti++) {
+    const start = ti > 0 ? (toks[ti - 1] & 0xffffff) : 0;
+    if (start >= r.end) break;
+    const tag = String.fromCharCode(65 + ((toks[ti] >>> 27) & 0x1f));
+    if (tag === "U" || tag === "O") continue;    // hidden bytes take no column
+    const s = start > r.off ? start : r.off;
+    const e = (toks[ti] & 0xffffff) < r.end ? (toks[ti] & 0xffffff) : r.end;
+    if (e <= s || text[s] === 0x0a) continue;    // empty / the row terminator
+    const next = ti + 1 < toks.length
+               ? String.fromCharCode(65 + ((toks[ti + 1] >>> 27) & 0x1f)) : "";
+    if (tag === "F" || next === "U") out.push({ lo: s, hi: e });
+  }
+  return out;
+};
+
+//  The active token's byte span on the active row, or {lo:-1,hi:-1} (line only).
+Pager.prototype._curSpan = function (r) {
+  const c = this.view.cur;
+  if (!c || c.tok < 0) return { lo: -1, hi: -1 };
+  const ts = this._rowToks(r);
+  return c.tok < ts.length ? ts[c.tok] : { lo: -1, hi: -1 };
+};
+
+//  The viewport height (the status bar takes the last screen row).
+Pager.prototype._viewRows = function () {
+  const sz = tty.size(this.fd);
+  return (sz.rows > 1 ? sz.rows : 24) - 1;
+};
+
+//  The live row index, at the width the last frame painted (the `_followRow`
+//  idiom) — key handling runs between frames and must not re-wrap on a guess.
+Pager.prototype._rowsNow = function () {
+  return this.view.rows || this.rows(this._paintCols || 80);
+};
+
+//  Keep the cursor SANE: inside the hunk, inside the viewport (a scroll drags it
+//  along at the edge, vim-window style), and its token inside the row.
+Pager.prototype._clampCur = function (rows, viewRows) {
+  const v = this.view;
+  if (!v.cur) v.cur = { row: 0, tok: -1 };
+  const c = v.cur;
+  const last = rows.length ? rows.length - 1 : 0;
+  if (c.row > last) c.row = last;
+  if (c.row < v.scroll) c.row = v.scroll;
+  else if (c.row > v.scroll + viewRows - 1) c.row = v.scroll + viewRows - 1;
+  if (c.row > last) c.row = last;
+  if (c.row < 0) c.row = 0;
+  if (c.tok >= 0 && c.tok >= this._rowToks(rows[c.row]).length) c.tok = -1;
+};
+
+//  A cursor move that walked off-screen SCROLLS the viewport to it (the other
+//  way round from _clampCur, which drags the cursor after a scroll).
+Pager.prototype._scrollToCur = function (viewRows) {
+  const v = this.view, c = v.cur;
+  if (c.row < v.scroll) v.scroll = c.row;
+  else if (c.row > v.scroll + viewRows - 1) v.scroll = c.row - viewRows + 1;
+  if (v.scroll < 0) v.scroll = 0;
+};
+
+//  Move the active LINE by `d` rows; the active token drops (a new line's tokens
+//  are reached with h/l).
+Pager.prototype._moveRow = function (d) {
+  const rows = this._rowsNow();
+  if (!rows.length) return;
+  const c = this.view.cur;
+  let row = c.row + d;
+  if (row < 0) row = 0;
+  if (row > rows.length - 1) row = rows.length - 1;
+  c.row = row; c.tok = -1;
+  this._scrollToCur(this._viewRows());
+};
+
+//  HOP to the next (`d`>0) / previous followable token, CROSSING rows: the next
+//  row that has one takes the cursor with it.  No hit anywhere = a note, no move.
+Pager.prototype._hopTok = function (d) {
+  const rows = this._rowsNow();
+  if (!rows.length) return;
+  const c = this.view.cur;
+  let row = c.row;
+  for (let n = 0; n <= rows.length; n++) {
+    const ts = this._rowToks(rows[row]);
+    //  On the cursor's OWN row step off the active token (or take the first/last
+    //  when there is none); every row after that offers its first/last.
+    const at = n === 0 && c.tok >= 0 ? c.tok + d : (d > 0 ? 0 : ts.length - 1);
+    if (at >= 0 && at < ts.length) {
+      c.row = row; c.tok = at;
+      this._scrollToCur(this._viewRows());
+      return;
+    }
+    row += d;
+    if (row < 0 || row >= rows.length) break;
+  }
+  this.message = "(no more targets)";
+};
+
 //  Paint one frame: the viewport rows[scroll .. scroll+viewRows] + the bottom
 //  status/path line, in ONE write (the whole frame) to avoid flicker.
 Pager.prototype.render = function () {
@@ -218,6 +349,8 @@ Pager.prototype.render = function () {
   const v = this.view;
   if (v.scroll > rows.length - 1) v.scroll = Math.max(0, rows.length - 1);
   if (v.scroll < 0) v.scroll = 0;
+  //  LITE-023: the cursor rides THIS geometry — a resize/refresh/pop lands it.
+  this._clampCur(rows, viewRows);
 
   //  BRO-011: build the frame as UTF-8 BYTES in a buf — SGR/ASCII via `enc`,
   //  text bytes VERBATIM via `raw` — then ONE write.
@@ -231,13 +364,16 @@ Pager.prototype.render = function () {
       if (r.banner) enc(this._banner(r.hunk, cols));
       else {
         const text = r.hunk.text;
+        //  LITE-023: the ACTIVE row alone carries a wash (its own band on a banner).
+        const cur = this.color && ri === v.cur.row ? this._curSpan(r) : null;
         emitBody(r.hunk, r.off, r.end, this.color, r.pass, enc,
-                 function (lo, hi) { if (hi > lo) chunks.push(text.subarray(lo, hi)); });
+                 function (lo, hi) { if (hi > lo) chunks.push(text.subarray(lo, hi)); },
+                 cur);
       }
     }
     enc("\r\n");
   }
-  enc(this._statusLine(rows, v.scroll, viewRows, cols));
+  enc(this._statusLine(rows, v.scroll, viewRows, cols, v.cur));
   let total = 0; for (const c of chunks) total += c.length;
   const b = io.buf(total + 8);
   for (const c of chunks) b.feed(c);
@@ -256,16 +392,19 @@ Pager.prototype._banner = function (hunk, cols) {
 
 //  The bottom line, inverse video and filled to the width: scroll mode = the TOP
 //  row's `<path>#L<n>` left + TOP/%/BOT right; command mode = the `: ` buffer.
-Pager.prototype._statusLine = function (rows, scroll, viewRows, cols) {
+Pager.prototype._statusLine = function (rows, scroll, viewRows, cols, cur) {
   const open = this.color ? ESC + "[7m" : "";
   const close = this.color ? ESC + "[0m" : "";
   if (this.mode === "command")
     return open + this._fit(": " + this.cmd, cols) + close;
   const r = rows[scroll];
   let left = r ? bro.statusURI(r.hunk, r.banner ? 1 : this._srcLine(r.hunk, r.off)) : "";
+  //  LITE-023: an ACTIVE TOKEN names what Enter would open, in place of the #L.
+  const tgt = cur ? this._curTarget(rows[cur.row], cur) : "";
+  if (tgt) left = tgt;
   if (this.message) left = this.message + "  " + left;
-  //  BRO-007: `<pos>  h: help` RIGHT-aligned, the URI left, the gap padded.
-  const right = bro.statusPos(scroll, rows.length, viewRows) + "  h: help";
+  //  BRO-007: `<pos>  ?: help` RIGHT-aligned, the URI left, the gap padded.
+  const right = bro.statusPos(scroll, rows.length, viewRows) + "  ?: help";
   const space = cols - right.length;
   let line;
   if (space < 1) line = right.slice(0, cols);
@@ -354,6 +493,34 @@ Pager.prototype._targetAt = function (hunk, off) {
   return hi > lo ? utf8.Decode(hunk.text.slice(lo, hi)) : "";
 };
 
+//  LITE-023: what the ACTIVE TOKEN names — its `U` target, else its `F` bytes;
+//  "" when there is no active token (the status bar then keeps the `#L`).
+Pager.prototype._curTarget = function (r, cur) {
+  if (!r || r.banner || !cur || cur.tok < 0) return "";
+  const span = this._curSpan(r);
+  if (span.lo < 0) return "";
+  return this._targetAt(r.hunk, span.lo) || this._uriAt(r.hunk, span.lo);
+};
+
+//  LITE-023: Enter — follow the ACTIVE TOKEN exactly as a click on it would,
+//  falling back to the active LINE (the old top-row `_followRow`).
+Pager.prototype._followCur = function () {
+  const v = this.view;
+  const rows = this._rowsNow();
+  this._clampCur(rows, this._viewRows());
+  const r = rows[v.cur.row];
+  if (r && !r.banner && v.cur.tok >= 0) {
+    const span = this._curSpan(r);
+    if (span.lo >= 0) {
+      const target = this._targetAt(r.hunk, span.lo);
+      if (target) { this._openPush(target); return; }
+      const name = this._uriAt(r.hunk, span.lo);
+      if (name) { this._follow(r.hunk, name); return; }
+    }
+  }
+  this._followRow(v.cur.row);
+};
+
 //  REFRESH — re-`open` the view's path and swap the hunks IN PLACE (no push, no
 //  stack entry), keeping the scroll pos; render() clamps a now-shorter one.
 Pager.prototype._refresh = function () {
@@ -395,10 +562,19 @@ Pager.prototype._page = function () {
 Pager.prototype._keyScroll = function (b) {
   const v = this.view;
   this.message = "";
+  //  LITE-023: every key acts on a cursor that is inside the LIVE geometry.
+  this._clampCur(this._rowsNow(), this._viewRows());
   switch (b) {
     case 0x71: this.quit = true; break;                 // q
-    case 0x6a: v.scroll += 1; break;                    // j  down
-    case 0x6b: v.scroll -= 1; break;                    // k  up
+    //  LITE-023 scheme B: vim keys drive the CURSOR, asdw scrolls + walks views.
+    case 0x6a: this._moveRow(1); break;                 // j  active line down
+    case 0x6b: this._moveRow(-1); break;                // k  active line up
+    case 0x6c: this._hopTok(1); break;                  // l  next token
+    case 0x68: this._hopTok(-1); break;                 // h  prev token
+    case 0x77: v.scroll -= 1; break;                    // w  scroll up
+    case 0x73: v.scroll += 1; break;                    // s  scroll down
+    case 0x61: this.popView(); break;                   // a  back
+    case 0x64: this.fwdView(); break;                   // d  forward
     case 0x20: v.scroll += this._page(); break;         // space  page down
     case 0x62: v.scroll -= this._page(); break;         // b      page up
     case 0x67: v.scroll = 0; break;                     // g  top
@@ -407,16 +583,16 @@ Pager.prototype._keyScroll = function (b) {
     //  bracket to the tty so the terminal stops/starts reporting.
     case 0x6d: this._toggleMouse(); break;              // m  mouse on/off
     case 0x3a: this.mode = "command"; this.cmd = ""; break;          // :  path bar
-    //  Enter OPENS the dir entry on the cursor row (a click takes _followRow too).
-    case 0x0d: case 0x0a: this._followRow(v.scroll); break;          // Enter
+    //  Enter follows the ACTIVE TOKEN, else the active line (a click takes it too).
+    case 0x0d: case 0x0a: this._followCur(); break;                  // Enter
     //  JAB-030: BACK POPS the view stack (a follow/typed path pushed it); popView
     //  re-indexes for the live width, the saved hunks stand.
     case 0x2d: case 0x7f: case 0x08: this.popView(); break;          // - / BS
     case 0x52: case 0x72: this._refresh(); break;                    // R/r refresh
-    //  BRO-014: `w` flips THIS view no-wrap (the open default) ↔ soft-wrap (rows()
+    //  BRO-014: `W` flips THIS view no-wrap (the open default) ↔ soft-wrap (rows()
     //  re-indexes on the new cache key).  Per-view only — no persisted setting.
-    case 0x77: v.wrap = !v.wrap; break;                              // w  toggle
-    case 0x68: this._help(); break;                                  // h  help
+    case 0x57: v.wrap = !v.wrap; break;                              // W  toggle
+    case 0x3f: this._help(); break;                                  // ?  help
     default: break;
   }
 };
@@ -508,6 +684,18 @@ Pager.prototype._mouse = function (seq, press) {
   if (!press) return;
   if ((b & 0x23) !== 0) return;                  // not a plain left press (drag/btn)
   const hit = this._screenToByte(row, col);
+  //  LITE-023: the click SETS the cursor first — the row it landed on and the
+  //  followable token under the cell (none = line only) — then follows as before.
+  const rows = this._rowsNow(), ri = this.view.scroll + (row - 1);
+  if (ri >= 0 && ri < rows.length) {
+    const c = this.view.cur;
+    c.row = ri; c.tok = -1;
+    if (hit) {
+      const ts = this._rowToks(rows[ri]);
+      for (let i = 0; i < ts.length; i++)
+        if (hit.off >= ts[i].lo && hit.off < ts[i].hi) { c.tok = i; break; }
+    }
+  }
   if (hit) {
     const target = this._targetAt(hit.hunk, hit.off);   // a `U` click-target
     if (target) { this._openPush(target); return; }

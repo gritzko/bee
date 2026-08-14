@@ -65,6 +65,25 @@ const SIDE_EQ = 0, SIDE_IN = 1, SIDE_RM = 2;
 function aBg256(n) { return { fm: 0, fg: 0, bm: 2, bg: n, fl: 0 }; }
 const WASH_IN = aBg256(157), WASH_RM = aBg256(217);
 
+//  LITE-023: the CURSOR wash — the active line and the active token take a bg
+//  LIGHTNESS shift (steps DOWN the 256 cube / the grey ramp), never a hue: an
+//  already washed cell keeps its own colour, only darker, so the LITE-010 diff
+//  wash still reads under the cursor.  A cell with no bg starts from white.
+const WASH_CUR_LINE = 1, WASH_CUR_TOK = 3;     // cube steps (grey ramp: x2)
+function washBg(bg, steps) {
+  if (bg >= 232) return bg - 2 * steps > 232 ? bg - 2 * steps : 232;  // grey ramp
+  if (bg < 16) return bg;                       // a basic-16 bg: leave it alone
+  const c = bg - 16, r = (c / 36) | 0, g = ((c % 36) / 6) | 0, b = c % 6;
+  const d = function (x) { return x > steps ? x - steps : 0; };
+  return 16 + 36 * d(r) + 6 * d(g) + d(b);
+}
+//  Shift `a`'s background `steps` darker; fg/flags ride through untouched.
+function aWash(a, steps) {
+  if (!steps) return a;
+  const bg = a.bm === 2 ? washBg(a.bg, steps) : 255 - 2 * steps;
+  return { fm: a.fm, fg: a.fg, bm: 2, bg: bg, fl: a.fl };
+}
+
 //  --- SGR delta speller (abc/ANSI.c ANSIu8sFeedDelta / ANSIu8sFeedReset) ---
 //  Emit only the attributes that transitioned from `prev` to `want`, in the
 //  C order: flags-off, flags-on, fg, bg.  Byte-identical to the C speller so
@@ -327,4 +346,7 @@ module.exports = {
   //  LITE-010: the diff wash slots + the tok32 side vocabulary.
   SIDE_EQ: SIDE_EQ, SIDE_IN: SIDE_IN, SIDE_RM: SIDE_RM,
   WASH_IN: WASH_IN, WASH_RM: WASH_RM,
+  //  LITE-023: the cursor wash — the shifts + the compose the pager paints with.
+  WASH_CUR_LINE: WASH_CUR_LINE, WASH_CUR_TOK: WASH_CUR_TOK,
+  aWash: aWash,
 };
