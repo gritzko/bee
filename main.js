@@ -428,6 +428,9 @@ function openPerma(ref) {
   const hs = openPath(seat.full);
   if (hs === null) return null;
   hs.land = { line: seat.line, col: seat.col };
+  //  LITE-029: the token the resolver walked to rides along as its own bytes —
+  //  the pager selects THAT, instead of re-deriving one from the column.
+  if (seat.hi > seat.lo) { hs.land.lo = seat.lo; hs.land.hi = seat.hi; }
   if (seat.note) hs.land.note = seat.note;
   return hs;
 }

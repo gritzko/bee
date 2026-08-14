@@ -177,8 +177,9 @@ Pager.prototype.setHunks = function (hunks, path) {
   //  BRO-014: a view opens NO-WRAP (long lines clamp at the right edge); `W` wraps.
   //  LITE-023: every view carries its OWN cursor — {row, tok}, tok -1 = no active
   //  token (the row's followable tokens are a render-side walk, never stored).
+  //  LITE-029: `span` is a LANDED token's bytes, which outlive a re-wrap.
   this.view = { hunks: hunks, path: p, rows: null, scroll: 0, cols: 0, wrap: false,
-                cur: { row: 0, tok: -1 } };
+                cur: { row: 0, tok: -1, span: null } };
 };
 
 //  JAB-030: PUSH a fresh view, stacking the current one (a follow / a typed path
@@ -256,8 +257,12 @@ Pager.prototype._rowToks = function (r) {
 };
 
 //  The active token's byte span on the active row, or {lo:-1,hi:-1} (line only).
+//  LITE-029: a LANDED token washes by its own bytes — it need not be followable
+//  (a plain identifier is a fine landing); a hopped one by its followable slot.
 Pager.prototype._curSpan = function (r) {
   const c = this.view.cur;
+  if (c && c.tok < 0 && c.span && !r.banner && r.hunk === c.span.hunk)
+    return { lo: c.span.lo, hi: c.span.hi };
   if (!c || c.tok < 0) return { lo: -1, hi: -1 };
   const ts = this._rowToks(r);
   return c.tok < ts.length ? ts[c.tok] : { lo: -1, hi: -1 };
@@ -279,8 +284,14 @@ Pager.prototype._rowsNow = function () {
 //  along at the edge, vim-window style), and its token inside the row.
 Pager.prototype._clampCur = function (rows, viewRows) {
   const v = this.view;
-  if (!v.cur) v.cur = { row: 0, tok: -1 };
+  if (!v.cur) v.cur = { row: 0, tok: -1, span: null };
   const c = v.cur;
+  //  LITE-029: a landed token keeps its BYTES, so a re-wrap/resize re-seats it
+  //  on the row that now holds them (rows are rebuilt only when geometry moves).
+  if (c.span && c.seatRows !== rows) {
+    c.seatRows = rows;
+    if (this._seatCur(rows, c.span)) this._scrollToCur(viewRows);
+  }
   const last = rows.length ? rows.length - 1 : 0;
   if (c.row > last) c.row = last;
   if (c.row < v.scroll) c.row = v.scroll;
@@ -308,7 +319,7 @@ Pager.prototype._moveRow = function (d) {
   let row = c.row + d;
   if (row < 0) row = 0;
   if (row > rows.length - 1) row = rows.length - 1;
-  c.row = row; c.tok = -1;
+  c.row = row; c.tok = -1; c.span = null;        // LITE-029: a move drops the landing
   this._scrollToCur(this._viewRows());
 };
 
@@ -325,7 +336,7 @@ Pager.prototype._hopTok = function (d) {
     //  when there is none); every row after that offers its first/last.
     const at = n === 0 && c.tok >= 0 ? c.tok + d : (d > 0 ? 0 : ts.length - 1);
     if (at >= 0 && at < ts.length) {
-      c.row = row; c.tok = at;
+      c.row = row; c.tok = at; c.span = null;    // LITE-029: a hop drops the landing
       this._scrollToCur(this._viewRows());
       return;
     }
@@ -447,8 +458,9 @@ Pager.prototype._openPush = function (path) {
 };
 
 //  LITE-024: land the pushed view on the ref's line — the door did the path math
-//  and named `{line, col}`, the pager only scrolls.  `view.land` is where the
-//  LITE-023 cursor goes once it lands; until then the scroll IS the landing.
+//  and named `{line, col}`, the pager only scrolls.  `view.land` is what it named.
+//  LITE-029: with a column the LITE-023 cursor takes the token covering its
+//  byte — the door's own token when the resolver named one, else this hunk's.
 Pager.prototype._land = function (land) {
   const v = this.view;
   if (!v || !land || !land.line) return;
@@ -456,22 +468,72 @@ Pager.prototype._land = function (land) {
   let hunk = null;
   for (const r of rows) if (!r.banner) { hunk = r.hunk; break; }
   if (!hunk) return;
-  //  the byte the line starts at, then the display row that byte falls in.
+  //  the byte the line starts at, and the byte the column points at.
   const t = hunk.text;
   let off = 0, n = 1;
   while (n < land.line && off < t.length) { if (t[off] === 0x0a) n++; off++; }
   if (n < land.line) return;                     // past the last line — stay put
+  let eol = off;
+  while (eol < t.length && t[eol] !== 0x0a) eol++;
+  const col = land.col > 0 ? off + land.col - 1 : -1;
+  //  A column past the line's end names no byte of it: the LINE is the landing.
+  const at = col >= off && col < eol ? col : off;
+  const span = at === col ? this._landTok(hunk, land, at) : null;
+  let ri = this._rowOfByte(rows, hunk, at);
+  if (ri < 0) ri = this._rowOfByte(rows, hunk, off);   // a col the no-wrap tail hides
+  if (ri >= 0) {
+    //  LITE-024: the landed line sits 1/4 down the screen, cursor on it.
+    v.scroll = Math.max(0, ri - (this._page() >> 2));
+    v.cur = { row: ri, tok: -1, span: span, seatRows: rows };
+    if (span) this._seatCur(rows, span);
+  }
+  v.land = land;
+};
+
+//  LITE-029: the token a landing SELECTS — the resolver's own bytes when the
+//  door carried them, else the token covering `at` in this hunk's tok stream.
+//  null = the byte sits in a GAP (whitespace, hidden bytes): the line alone.
+Pager.prototype._landTok = function (hunk, land, at) {
+  const text = hunk.text, toks = hunk.toks;
+  const c = text[at];
+  if (c === 0x20 || c === 0x09 || c === 0x0d || c === 0x0a) return null;
+  if (land.hi > land.lo && land.lo >= 0 && land.hi <= text.length)
+    return { hunk: hunk, lo: land.lo, hi: land.hi, at: at };
+  if (!toks || !toks.length) return null;
+  let lo = 0, hi = toks.length;
+  while (lo < hi) { const m = (lo + hi) >> 1;
+    if ((toks[m] & 0xffffff) <= at) lo = m + 1; else hi = m; }
+  if (lo >= toks.length) return null;
+  const tag = String.fromCharCode(65 + ((toks[lo] >>> 27) & 0x1f));
+  if (tag === "U" || tag === "O" || tag === "W") return null;
+  const s = lo > 0 ? (toks[lo - 1] & 0xffffff) : 0, e = toks[lo] & 0xffffff;
+  return e > s ? { hunk: hunk, lo: s, hi: e, at: at } : null;
+};
+
+//  LITE-029: the display row a byte falls on — a wrapped line's column sits rows
+//  below its first row, and no-wrap hides the clamped tail (-1, no row at all).
+Pager.prototype._rowOfByte = function (rows, hunk, b) {
+  let edge = -1;
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
     if (r.banner || r.hunk !== hunk) continue;
-    //  LITE-024: the landed line sits 1/4 down the screen, cursor on it.
-    if (off >= r.off && off <= r.end) {
-      v.scroll = Math.max(0, i - (this._page() >> 2));
-      v.cur = { row: i, tok: -1 };
-      break;
-    }
+    if (b >= r.off && b < r.end) return i;
+    if (edge < 0 && b === r.end) edge = i;       // an empty line's own row
   }
-  v.land = land;
+  return edge;
+};
+
+//  LITE-029: seat the cursor on a landed token's BYTES at THIS geometry — the
+//  row that holds them, plus the followable slot when the token is one.
+Pager.prototype._seatCur = function (rows, span) {
+  const c = this.view.cur;
+  const ri = this._rowOfByte(rows, span.hunk, span.at);
+  if (ri < 0) return false;
+  c.row = ri; c.tok = -1;
+  const ts = this._rowToks(rows[ri]);
+  for (let k = 0; k < ts.length; k++)
+    if (span.at >= ts[k].lo && span.at < ts[k].hi) { c.tok = k; break; }
+  return true;
 };
 
 //  Follow one F TOKEN: a dir listing joins the name to the hunk's OWN path (its
@@ -721,7 +783,7 @@ Pager.prototype._mouse = function (seq, press) {
   const rows = this._rowsNow(), ri = this.view.scroll + (row - 1);
   if (ri >= 0 && ri < rows.length) {
     const c = this.view.cur;
-    c.row = ri; c.tok = -1;
+    c.row = ri; c.tok = -1; c.span = null;       // LITE-029: a click drops the landing
     if (hit) {
       const ts = this._rowToks(rows[ri]);
       for (let i = 0; i < ts.length; i++)

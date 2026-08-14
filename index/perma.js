@@ -261,6 +261,8 @@ function tokenAt(w, off) {
 
 //  At the HEAD rev: where that same token sits now — `at` is the byte, `dead`
 //  says the token is gone and `at` is merely where it stood.
+//  LITE-029: `lo`/`hi` are the token's own bytes today — the identity the pager
+//  selects, so nothing has to be re-derived from the column.
 function tokenNow(w, id, delta) {
   w.rewind(ID_NOW);
   let pos = 0;
@@ -269,7 +271,8 @@ function tokenNow(w, id, delta) {
     if (t.off === id) {
       if (!t.alive) return { at: pos, dead: true };
       const d = delta < t.text.length ? delta : t.text.length - 1;
-      return { at: pos + (d > 0 ? d : 0), dead: false };
+      return { at: pos + (d > 0 ? d : 0), dead: false,
+               lo: pos, hi: pos + t.text.length };
     }
     if (t.alive) pos += t.text.length;
   }
@@ -436,6 +439,8 @@ function land(ctx, ix, rel, hexpfx, off) {
   if (at === null) return null;
   const lc = lineCol(now, at.at);
   seat.line = lc.line; seat.col = lc.col;
+  //  LITE-029: an ALIVE token hands the pager its bytes, not just a column.
+  if (!at.dead) { seat.lo = at.lo; seat.hi = at.hi; }
   if (at.dead) {
     const who = anchor === null ? null : deleterOf(ctx, ix, rel, anchor, tk.id, ext);
     seat.note = who !== null ? "deleted in " + who.sha.slice(0, 8)
