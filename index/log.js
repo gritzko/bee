@@ -23,11 +23,15 @@
 //      addressed by the row's own 15-hex hashlet60 (ODBHex takes any 6..40
 //      hexlet, so a hashlet is a perfectly good object name).
 //
-//  ORDER = git's own default, which is `--date-order`: no parent before all of
-//  its children are shown, otherwise newest COMMITTER date first.  That is a
-//  reverse Kahn (children, not parents, are the in-degree) drained by a MAX
-//  heap on the commit date.  The DISPLAYED date is the AUTHOR date, as git and
-//  be log both show.
+//  ORDER (LITE-013).  A CAPPED walk is git's OWN DEFAULT order: a MAX heap on
+//  the committer date seeded with the tip, pop -> emit -> push the popped
+//  commit's parents.  It is lazy — it touches ~max commits, not the history —
+//  and, exactly like git's default, under clock skew a parent can print before
+//  a child that has not been discovered yet.  An UNCAPPED walk (`log 0`, the
+//  piped dump) keeps the exact reverse Kahn: no parent before ALL of its
+//  children, otherwise newest committer date first — strict `--date-order`,
+//  affordable because the whole history is being materialized anyway.
+//  The DISPLAYED date is the AUTHOR date, as git and be log both show.
 "use strict";
 
 const idx = require("./index.js");
@@ -137,11 +141,34 @@ function parentsOf(ix, hl) {
 //  unindexed) — the same test the indexer's walk boundary uses.
 function isIndexed(ix, hl) { return cparOf(ix, hl).length > 0; }
 
+//  LITE-013: the CAPPED walk, git's default order — pop newest, push ITS
+//  parents (the `seen` guard pushes each once), so cost is O(rows + frontier).
+function lazyAncestry(ix, r, seed, max) {
+  const tsOf = (hl) => { const m = idx.readCommit(r, idx.hexOfHl(hl)); return m ? m.ts : 0; };
+  const ready = idx.heap(true);                    // MAX heap: newest first
+  const byHex = new Map(), seen = new Set();
+  const push = (hl) => {
+    const hex = idx.hexOfHl(hl);
+    byHex.set(hex, hl);
+    ready.push(tsOf(hl), hex);
+  };
+  seen.add(seed); push(seed);
+  const out = [];
+  while (ready.size && out.length < max) {
+    const hl = byHex.get(ready.pop());
+    out.push(hl);
+    for (const p of parentsOf(ix, hl))
+      if (!seen.has(p)) { seen.add(p); push(p); }
+  }
+  return { hls: out, more: ready.size > 0 };
+}
+
 //  Everything reachable from `seed` over CPAR, newest-first (see the header).
 //  Returns { hls: [hl60], more } — the caller reads each commit off the ODB.
-//  `max` (0 = all) caps the EMIT loop: tsOf is called lazily on the ready
-//  frontier only, so a capped log reads ~max commits from the ODB, not all.
+//  `max` (0 = all) picks the WALK: capped = the lazy git-default heap above,
+//  uncapped = the reverse Kahn over the whole reachable set.
 function ancestry(ix, r, seed, max) {
+  if (max > 0) return lazyAncestry(ix, r, seed, max);
   const par = new Map(), kids = new Map();
   const queue = [seed];
   par.set(seed, null);
