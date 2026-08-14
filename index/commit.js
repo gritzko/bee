@@ -20,9 +20,20 @@
 //
 //  The colour is layered on those same bytes: field names R, sha values L,
 //  other values G, subject N, message body W, line terminators S — view/bro.js
-//  THEME maps every one.  be's hidden `U` click-targets, its `F` ticket spans
-//  and its COMMIT-007 human-date rewrite are NOT carried over: lite has no nav
-//  layer, and a rewritten date would break the byte identity above.
+//  THEME maps every one.  be's `F` ticket spans and its COMMIT-007 human-date
+//  rewrite are still NOT carried over (a rewritten date would break the byte
+//  identity above).
+//
+//  LITE-021: the hidden `U` click-targets ARE carried over now that LITE-017
+//  built the door: a `tree` sha opens `tree <sha>`, a `parent` sha opens
+//  `commit <sha>`.  They are PAGER-ONLY paint -- the target bytes are spliced
+//  into a SECOND body (`textU`/`toksU`, what `hunk()` hands the pager), so the
+//  plain `text` stays the object byte for byte.  TWO spans per hash row
+//  (LITE-017 tree.js's pattern): the pager reads a target as "the span
+//  FOLLOWING the one under the cursor", so Enter (which lands on the row's
+//  FIRST span, the field name) and a click on the sha itself both follow.
+//  The BANNER sha carries NONE: the synthetic `commit <sha40>` line IS the
+//  page, which is be's own ruling there (PROJ.c:431-436).
 "use strict";
 
 const idx = require("./index.js");
@@ -39,7 +50,9 @@ const HEXARG = /^[0-9a-fA-F]{6,40}$/;
 //  R keyword/blue = field names, L number/cyan = sha values, G string/green =
 //  other values, N bold = the subject, W = the message body, S default = the
 //  line terminators (so a span's colour never bleeds across a '\n').
-const TAG_G = 6, TAG_L = 11, TAG_N = 13, TAG_R = 17, TAG_S = 18, TAG_W = 22;
+//  LITE-021: U = the hidden click-target (BRO-006), no colour of its own.
+const TAG_G = 6, TAG_L = 11, TAG_N = 13, TAG_R = 17, TAG_S = 18, TAG_U = 20,
+      TAG_W = 22;
 function tok32(tag, end) { return ((tag & 0x1f) << 27) | (end & 0xffffff); }
 
 const NL = 0x0a, SP = 0x20;
@@ -68,15 +81,16 @@ function isSha40At(b, lo, hi) {
 //  headers and the rest is the message.  Order is the OBJECT's, so gpgsig,
 //  mergetag and encoding survive where git.parseCommit would drop them.
 //
-//  spansOf(bytes, base) -> [[tag, end]] with `end` an offset into the WHOLE
-//  hunk (`base` = the length of the synthetic `commit <sha40>\n` line).
+//  spansOf(bytes, base) -> [[tag, end, nav]] with `end` an offset into the
+//  WHOLE hunk (`base` = the length of the synthetic `commit <sha40>\n` line)
+//  and `nav` the LITE-021 click target riding after that span ("" = none).
 function spansOf(b, base) {
   const n = b.length, spans = [];
   let last = 0;                                          // the previous end
-  const put = (tag, end) => {
+  const put = (tag, end, nav) => {
     if (end <= last) return;                             // an empty run: no span
     last = end;
-    spans.push([tag, base + end]);
+    spans.push([tag, base + end, nav || ""]);
   };
   let i = 0;
   //  the header block
@@ -86,16 +100,24 @@ function spansOf(b, base) {
     while (j < n && b[j] !== NL && b[j] !== SP) j++;
     const name = ascii(b, i, j);
     const nameEnd = (j < n && b[j] === SP) ? j + 1 : j;    // the SP rides the name
-    put(TAG_R, nameEnd);
+    //  LITE-021: `tree <sha40>` opens the tree listing, `parent <sha40>` the
+    //  parent's own page.  The NAME span carries the target too, so Enter on
+    //  the row (which lands on the row's first span) follows it as a click does.
+    let ve = nameEnd;
+    while (ve < n && b[ve] !== NL) ve++;
+    const linky = (name === "tree" || name === "parent") &&
+                  isSha40At(b, nameEnd, ve);
+    const nav = linky
+      ? (name === "tree" ? "tree " : "commit ") + ascii(b, nameEnd, ve) : "";
+    put(TAG_R, nameEnd, nav);
     //  the value, plus every folded continuation line, one span per line so a
     //  colour never bleeds across a '\n'.
     let k = nameEnd, first = true;
     for (;;) {
       let e = k;
       while (e < n && b[e] !== NL) e++;
-      const sha = first && (name === "tree" || name === "parent") &&
-                  isSha40At(b, k, e);
-      put(sha ? TAG_L : TAG_G, e);
+      const sha = first && linky;
+      put(sha ? TAG_L : TAG_G, e, sha ? nav : "");
       first = false;
       if (e >= n) { i = e; break; }
       put(TAG_S, e + 1);
@@ -122,18 +144,49 @@ function build(sha, bytes) {
   const b = io.buf(head.length + bytes.length + 8);
   b.feed(head);
   b.feed(bytes);
-  const spans = [[TAG_R, 7], [TAG_L, 7 + sha.length],
-                 [TAG_S, head.length]].concat(spansOf(bytes, head.length));
+  //  The banner: `commit ` R, the sha L (no target — this page IS that commit),
+  //  the '\n' S.  The object's own spans follow.
+  const spans = [[TAG_R, 7, ""], [TAG_L, 7 + sha.length, ""],
+                 [TAG_S, head.length, ""]].concat(spansOf(bytes, head.length));
+  const text = b.data();
   const toks = new Uint32Array(spans.length);
   for (let i = 0; i < spans.length; i++) toks[i] = tok32(spans[i][0], spans[i][1]);
+  const u = withTargets(text, spans);
+  return { text: text, toks: toks, textU: u.text, toksU: u.toks };
+}
+
+//  LITE-021: the pager's twin body — the very same bytes with each span's nav
+//  target spliced in right after it under a hidden `U` span (bro.js gives a
+//  `U` byte no column, so the visible row is the plain one to the byte).
+function withTargets(text, spans) {
+  let extra = 0;
+  for (const s of spans) if (s[2]) extra += s[2].length;
+  if (extra === 0) {
+    const toks = new Uint32Array(spans.length);
+    for (let i = 0; i < spans.length; i++) toks[i] = tok32(spans[i][0], spans[i][1]);
+    return { text: text, toks: toks };
+  }
+  const b = io.buf(text.length + extra + 8);
+  const out = [];
+  let prev = 0;
+  for (const s of spans) {
+    b.feed(text.slice(prev, s[1]));
+    prev = s[1];
+    out.push([s[0], b.size]);
+    if (s[2]) { b.feedStr(s[2]); out.push([TAG_U, b.size]); }
+  }
+  const toks = new Uint32Array(out.length);
+  for (let i = 0; i < out.length; i++) toks[i] = tok32(out[i][0], out[i][1]);
   return { text: b.data(), toks: toks };
 }
 
 //  The tty shape: the same hunk record a file arg or a log yields, so it goes
 //  through view/pager.js + view/bro.js unchanged.
+//  LITE-021: the pager gets the U-BEARING twin; `out.text` (what --plain and a
+//  pipe write) is untouched, so the plain bytes stay `git cat-file commit`.
 function hunk(out) {
-  return { uri: out.uri, verb: "hunk", text: out.text, toks: out.toks,
-           kind: "commit" };
+  return { uri: out.uri, verb: "hunk", text: out.textU || out.text,
+           toks: out.toksU || out.toks, kind: "commit" };
 }
 
 //  --- the verb --------------------------------------------------------------
@@ -154,7 +207,7 @@ function commit(arg, opts) {
     //  getHex hands back {type, bytes} and no name, so a SHORT hexlet is
     //  re-framed to its own sha the way LITE-007's `seedOf` does.
     const sha = hexlet.length === 40 ? hexlet : hex.encode(lg.frameSha(o.bytes));
-    const out = build(sha, o.bytes);
+    const out = build(sha, o.bytes);      // { text, toks } + the U-bearing twin
     out.sha = sha;
     out.uri = "commit " + (bare ? sha : arg);
     //  The commit's files, under the metadata: a changed or added one gets its

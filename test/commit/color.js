@@ -32,6 +32,9 @@ const out = cm.commit(SHA, { from: repo });
 const h = cm.hunk(out);
 const text = utf8.Decode(h.text);
 const lines = text.split("\n");
+//  LITE-021: the hunk body carries the hidden `U` targets, `out.text` does not
+//  — the PLAIN body is what a painted row must strip back to.
+const ptext = utf8.Decode(out.text), plines = ptext.split("\n");
 
 //  ---- the hunk is the shape bro/pager already render -----------------------
 check("hunk-shape", h.verb === "hunk" && h.kind === "commit" &&
@@ -90,8 +93,20 @@ const treeAt = text.indexOf("\ntree ") + 1;
 const authAt = text.indexOf("\nauthor ") + 1;
 check("field-name-is-the-R-slot", spanAt(treeAt).tag === "R" &&
       spanAt(treeAt).end === treeAt + 5, JSON.stringify(spanAt(treeAt)));
-check("tree-sha-value-is-the-L-slot", spanAt(treeAt + 5).tag === "L" &&
-      spanAt(treeAt + 5).end === treeAt + 5 + 40, JSON.stringify(spanAt(treeAt + 5)));
+//  LITE-021: a hidden `U` target rides between them — `tree <sha40>` — so the
+//  cyan sha span starts after it and a second copy follows the sha (Enter takes
+//  the row's first span, a click the sha's own).
+const treeNav = "tree " + text.slice(treeAt + 50, treeAt + 90);
+check("tree-name-is-followed-by-the-U-target",
+      spanAt(treeAt + 5).tag === "U" &&
+      text.slice(treeAt + 5, spanAt(treeAt + 5).end) === treeNav,
+      JSON.stringify(spanAt(treeAt + 5)));
+check("tree-sha-value-is-the-L-slot", spanAt(treeAt + 50).tag === "L" &&
+      spanAt(treeAt + 50).end === treeAt + 50 + 40, JSON.stringify(spanAt(treeAt + 50)));
+check("tree-sha-is-followed-by-the-U-target-too",
+      spanAt(treeAt + 50 + 40).tag === "U" &&
+      text.slice(treeAt + 50 + 40, spanAt(treeAt + 50 + 40).end) === treeNav,
+      JSON.stringify(spanAt(treeAt + 50 + 40)));
 check("author-value-is-the-G-slot", spanAt(authAt + 7).tag === "G",
       JSON.stringify(spanAt(authAt + 7)));
 const subjAt = text.indexOf("\n\n") + 2;
@@ -119,7 +134,7 @@ check("no-colour-paint-has-no-SGR-at-all", p0.indexOf(ESC) < 0 && p0 === lines[0
 //  colour still stops at every terminator and every row paints back to itself.
 const so = cm.commit(SIG, { from: repo });
 const sh = cm.hunk(so);
-const stext = utf8.Decode(sh.text), slines = stext.split("\n");
+const stext = utf8.Decode(sh.text), slines = utf8.Decode(so.text).split("\n");
 check("folded-commit-first-line", slines[0] === "commit " + SIG, slines[0]);
 check("folded-value-lines-are-in-the-text",
       stext.indexOf("\ngpgsig -----BEGIN PGP SIGNATURE-----\n ") > 0 &&

@@ -25,7 +25,9 @@ function check(name, cond, got) {
 const repo = io.getenv("LITE_FIX"), SHA = io.getenv("LITE_SHA");
 const out = cm.commit(SHA, { from: repo });
 const h = cm.hunk(out);
-const plain = utf8.Decode(h.text).split("\n");
+//  LITE-021: the hunk body carries hidden `U` targets that take no column, so
+//  a painted row strips back to `out.text`'s line, not to the hunk body's.
+const plain = utf8.Decode(out.text).split("\n");
 
 const pty = tty.openpty();
 tty.setSize(pty.slave, 12, 100);
