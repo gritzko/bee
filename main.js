@@ -35,26 +35,17 @@ function openPath(path) {
 }
 
 //  The interactive leg: build a hunk per arg (a miss is reported and skipped),
-//  then hand the pager the SAME openPath so its follow/refresh/`:` reads match.
+//  then page them.
+//  LITE-015: the pager's door is openTarget, like every other view's — a click
+//  inside a file can name a verb line or a file REFERENCE, not just a dir entry.
 function runPager(args) {
-  const pager = require("view/pager.js");
   let hunks = [];
   for (const p of args) {
     const hs = openPath(p);
     if (hs !== null) hunks = hunks.concat(hs);
     else writeStderr("cannot open " + p + "\n");
   }
-  //  The pager reads keys and paints on the CONTROLLING terminal, so stdout may
-  //  stay redirected; fall back to a tty stdin, then to fd 1 (be's loop edge).
-  let fd = null, own = false;
-  try { fd = io.open("/dev/tty", "rw"); own = true; } catch (e) { fd = null; }
-  if (fd === null && io.isatty(0)) fd = 0;
-  if (fd === null) fd = 1;
-  try {
-    const p = new pager.Pager(fd, { color: true, open: openPath });
-    p.setHunks(hunks);
-    p.run();
-  } finally { if (own) { try { io.close(fd); } catch (e) {} } }
+  pageHunks(hunks);
 }
 
 //  The plain leg: per arg one plainHunk, concatenated and written to stdout in
@@ -232,13 +223,44 @@ const VERBS = {
   diff: function (arg) { return require("index/diff.js").diff(arg).hunks; }
 };
 
+//  LITE-015: the FSEG leg of the door — a path that does not stat may be a
+//  PARTIAL one, so the LITE-011 descent gets to name it before the miss stands.
+//  ONE hit opens; SEVERAL become the chooser; none leaves the caller's message.
+function openPartial(partial) {
+  const paths = resolvePartial(partial);
+  if (paths.length === 0) return null;
+  if (paths.length === 1) return openPath(paths[0].full);
+  return [bro.buildChooserHunk(partial, paths)];
+}
+
+//  The resolution itself, at HEAD of the CWD repo, through the ONE resolver.
+//  The recovered text is repo-relative; the fs path anchors at the repo ROOT,
+//  so a reference clicked from a subdir opens the file the name stands for.
+function resolvePartial(partial) {
+  const idx = require("index/index.js");
+  let ctx;
+  try { ctx = idx.openRepo(io.cwd(), true); } catch (e) { return []; }
+  try {
+    const ix = idx.openIndex(ctx.gitdir);
+    try {
+      idx.bringUp(ctx, ix, { track: false });    // the lazy contract, as ever
+      const rel = require("index/resolve.js").resolveAt(ctx, ix, ctx.head.sha, partial);
+      return rel.map(function (p) { return { rel: p, full: ctx.root + "/" + p }; });
+    } finally { try { ix.close(); } catch (e) {} }
+  } catch (e) { return []; }
+  finally { idx.closeRepo(ctx); }
+}
+
 //  Resolve ONE target to hunks (`null` = nothing to open): a `<verb> <arg>`
 //  line goes to its verb, anything else is a PATH.  A target must carry an arg
 //  to read as a verb, so a file merely NAMED `log` still opens as the file.
 function openTarget(target) {
   const sp = target.indexOf(" ");
   const fn = sp > 0 ? VERBS[target.slice(0, sp)] : null;
-  if (!fn) return openPath(target);
+  if (!fn) {
+    const hs = openPath(target);
+    return hs !== null ? hs : openPartial(target);
+  }
   let hunks;
   try { hunks = fn(target.slice(sp + 1).trim()); } catch (e) { return null; }
   return hunks && hunks.length ? hunks : null;

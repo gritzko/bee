@@ -138,6 +138,15 @@ function buildFileHunk(arg, path) {
   return { uri: arg, verb: "hunk", text: bytes, toks: toks, kind: "file" };
 }
 
+//  [tag, byte end] pairs -> the packed tok32 array (tag in [31..27], end in
+//  [23..0]) — the one packer every hand-built hunk here shares.
+function packToks(tagAt) {
+  const toks = new Uint32Array(tagAt.length);
+  for (let i = 0; i < tagAt.length; i++)
+    toks[i] = (((tagAt[i][0].charCodeAt(0) - 65) & 0x1f) << 27) | (tagAt[i][1] & 0xffffff);
+  return toks;
+}
+
 //  Build a DIR hunk: one line per entry (basename, dirs get a trailing '/'),
 //  tagged 'F' (filename) + 'P' for the slash, in FILEScanDir order.  Mirrors
 //  BROListDir / listdir_emit (FILE_SCAN_ALL = include dotfiles).  An empty dir
@@ -156,13 +165,25 @@ function buildDirHunk(arg, path) {
     text += "\n";
     tagAt.push(["W", utf8.Encode(text).length]);
   }
-  const bytes = utf8.Encode(text);
-  const toks = new Uint32Array(tagAt.length);
-  for (let i = 0; i < tagAt.length; i++) {
-    const tagCode = tagAt[i][0].charCodeAt(0) - 65;
-    toks[i] = ((tagCode & 0x1f) << 27) | (tagAt[i][1] & 0xffffff);
+  return { uri: arg, verb: "hunk", text: utf8.Encode(text), toks: packToks(tagAt),
+           kind: "dir" };
+}
+
+//  LITE-015: the CHOOSER hunk — one row per full path a PARTIAL names: the
+//  visible repo-relative text, then the openable path under a hidden `U` span.
+function buildChooserHunk(arg, rows) {
+  let text = "";
+  const tagAt = [];
+  for (const r of rows) {
+    text += r.rel;
+    tagAt.push(["F", utf8.Encode(text).length]);
+    text += r.full;                            // the click target, no column
+    tagAt.push(["U", utf8.Encode(text).length]);
+    text += "\n";
+    tagAt.push(["W", utf8.Encode(text).length]);
   }
-  return { uri: arg, verb: "hunk", text: bytes, toks: toks, kind: "dir" };
+  return { uri: arg, verb: "hunk", text: utf8.Encode(text), toks: packToks(tagAt),
+           kind: "chooser" };
 }
 
 //  ---- row index (BROAppendLines, NORMAL pass) -----------------------------
@@ -280,6 +301,7 @@ function pathExt(path) {
 module.exports = {
   buildFileHunk: buildFileHunk,
   buildDirHunk: buildDirHunk,
+  buildChooserHunk: buildChooserHunk,     // LITE-015: the several-hits view
   fsPath: fsPath,
   pathExt: pathExt,
   indexRows: indexRows,

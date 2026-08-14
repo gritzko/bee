@@ -1,9 +1,10 @@
 #!/bin/sh
-# lite/test/click/run.sh — a log row's sha8 is a CLICK-TARGET into the commit
-# view.  One leg (click.js): the log hunk's hidden `U` span, the shared
-# openTarget door, and the REAL UI path — a tty.openpty() slave, an SGR mouse
-# press written to the master and read back through the pager's own input path,
-# then the pushed commit view asserted.
+# lite/test/click/run.sh — what a CLICK opens.  Two legs, both over the REAL UI
+# path (a tty.openpty() slave, an SGR mouse press written to the master and read
+# back through the pager's own input path, then the pushed view asserted):
+#   click.js  a log row's sha8 -> the commit view (its hidden `U` span)
+#   refs.js   LITE-015: a file REFERENCE in a viewed file -> the file it names,
+#             through the FSEG descent — unique hit, ambiguous chooser, miss.
 #
 # Standalone: `sh lite/test/click/run.sh` from anywhere (it cds itself).
 # $LITEJAB picks the runtime (default `jab`; a quickjab built with
@@ -66,3 +67,34 @@ if [ "$RC" != 0 ]; then
     exit 1
 fi
 echo "PASS [lite/click] runtime $RT"
+
+# --- LITE-015: the file-reference fixture ---------------------------------
+# `abc/FSW.c` names ONE file, the bare `TCP.c` names TWO, `nosuch/gone.c` none;
+# UNCOMMITTED.c sits in the worktree only, so it must not resolve.
+REFREPO="$WORK/refs"
+mkdir -p "$REFREPO"
+(
+  cd "$REFREPO" || exit 1
+  git init -q -b master . && git config user.email t@t && git config user.name T || exit 1
+  export GIT_AUTHOR_NAME=T GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=T GIT_COMMITTER_EMAIL=t@t
+  mkdir -p src/abc net
+  printf 'int FSWMARK;\n' > src/abc/FSW.c
+  printf 'int ABCMARK;\n' > src/abc/TCP.c
+  printf 'int NETMARK;\n' > net/TCP.c
+  git add -A
+  GIT_AUTHOR_DATE="2020-02-01T00:00:00Z" GIT_COMMITTER_DATE="2020-02-01T00:00:00Z" \
+    git commit -q -m "r0 the files a reference can name" || exit 1
+  printf 'int NEWMARK;\n' > src/abc/UNCOMMITTED.c
+) || { echo "refs: cannot build the fixture repo" >&2; exit 2; }
+
+( cd "$REFREPO" && HOME="$FAKEHOME" LITE_FIX3="$REFREPO" \
+  "$RT" --eval "require('$CASE/refs.js')" ) > "$WORK/r.out" 2>"$WORK/r.err"
+RC=$?
+cat "$WORK/r.out"
+if [ "$RC" != 0 ]; then
+    FAILED=1
+    echo "--- stderr ---"; cat "$WORK/r.err"
+    echo "FAIL [lite/refs]" >&2
+    exit 1
+fi
+echo "PASS [lite/refs] runtime $RT"

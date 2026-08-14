@@ -303,11 +303,13 @@ Pager.prototype._openPush = function (path) {
   this.pushView(hunks, path);
 };
 
-//  Follow one dir ENTRY: the F-token name joins the hunk's OWN path (a listing's
-//  rows are relative to the dir it lists); a file row follows nothing.
+//  Follow one F TOKEN: a dir listing joins the name to the hunk's OWN path (its
+//  rows are relative to the dir it lists).
+//  LITE-015: in any other hunk an `F` token IS a file reference — its BYTES go
+//  to the door verbatim, which is the one place that resolves anything.
 Pager.prototype._follow = function (hunk, name) {
-  if (!hunk || hunk.kind !== "dir") { this.message = "(nothing to follow)"; return; }
-  this._openPush(resolvePath(hunk.uri || "", name));
+  if (!hunk) { this.message = "(nothing to follow)"; return; }
+  this._openPush(hunk.kind === "dir" ? resolvePath(hunk.uri || "", name) : name);
 };
 
 //  FOLLOW the entry at display-row `ri` (Enter at the cursor, or a click's row).
