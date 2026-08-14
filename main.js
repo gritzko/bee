@@ -197,6 +197,26 @@ function runInstall(args) {
 //  It reports on the message stream only, so stdout stays free.
 function runChat(args) { require("index/chat.js").chat(args); }
 
+//  LITE-017: the four READ views — `list` (the browser), `cat` (a file's own
+//  bytes), `tree` (the raw git rows), `blob` (a blob by sha).  All four take
+//  ONE arg and answer the same way: at a terminal the pager, piped or under
+//  `--plain` the bare bytes with no `hunk` banner — the log/commit convention,
+//  so a pipe gets exactly the view and nothing framing it.
+function runView(mod, verb, args) {
+  const rest = [];
+  let plain = false;
+  for (const a of args) { if (a === "--plain") plain = true; else rest.push(a); }
+  const out = require(mod)[verb](rest.length ? rest.join(" ") : undefined);
+  if (!io.isatty(1) || plain) {
+    //  `plain` is the view's own byte block (list/tree rows); cat and blob have
+    //  none, their bytes ARE the answer.
+    const bytes = out.plain || out.bytes;
+    if (bytes && bytes.length) writeFd(1, bytes);
+    return;
+  }
+  if (out.hunks.length) pageHunks(out.hunks);
+}
+
 //  ---- the ONE door --------------------------------------------------------
 //  Every view a verb can produce, keyed by the verb: `(arg) -> hunks`.  The CLI
 //  legs above and the PAGER both come through this table, so a click target is
@@ -220,7 +240,14 @@ const VERBS = {
     const o = cm.commit(arg);
     return [cm.hunk(o)].concat(o.hunks);
   },
-  diff: function (arg) { return require("index/diff.js").diff(arg).hunks; }
+  diff: function (arg) { return require("index/diff.js").diff(arg).hunks; },
+  //  LITE-017: the read views come through the same door, so a `tree` row's
+  //  hidden target opens a `blob`, a `list` row's opens a `cat`, and the pager
+  //  stays arg-blind throughout.
+  list: function (arg) { return require("index/list.js").list(arg).hunks; },
+  cat:  function (arg) { return require("index/cat.js").cat(arg).hunks; },
+  tree: function (arg) { return require("index/tree.js").tree(arg).hunks; },
+  blob: function (arg) { return require("index/blob.js").blob(arg).hunks; }
 };
 
 //  LITE-015: the FSEG leg of the door — a path that does not stat may be a
@@ -291,6 +318,10 @@ function main(argv) {
   if (argl.length && argl[0] === "merge") return runMerge(argl.slice(1));
   if (argl.length && argl[0] === "install") return runInstall(argl.slice(1));
   if (argl.length && argl[0] === "chat") return runChat(argl.slice(1));
+  if (argl.length && argl[0] === "list") return runView("index/list.js", "list", argl.slice(1));
+  if (argl.length && argl[0] === "cat") return runView("index/cat.js", "cat", argl.slice(1));
+  if (argl.length && argl[0] === "tree") return runView("index/tree.js", "tree", argl.slice(1));
+  if (argl.length && argl[0] === "blob") return runView("index/blob.js", "blob", argl.slice(1));
   const args = [];
   let plain = false;
   //  `--plain` is the ONE flag; everything else is a path, verbatim.

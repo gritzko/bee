@@ -51,6 +51,10 @@ Each query is a scan of ONE key prefix; no ODB ancestry walk happens at query ti
     lane, which is why a root commit still gets an empty-parent row.
  -  A commit hashlet IS an object name — `git.getHex` takes any 6..40 hexlet —
     so a row's 15-hex `hashlet60` reads date, author and subject off the ODB.
+ -  `lite list`'s last-commit fuse ([LITE-017]) splits along the same line: a
+    FILE is one `path_hl` prefix scan capped at its newest rev, exact and
+    walk-free; a DIR cannot be (see "What is NOT indexed"), so it rides the
+    CPAR ancestry and compares subtree shas, capped LITE-013-style.
  -  A PARTIAL path (`abc/TCP.c`, bare `TCP.c`) resolves via one FSEG scan plus
     a pruned descent of a commit's tree (`index/resolve.js`): the tree entries
     carry the real names, so the answer is TEXT and ambiguity is a list.
@@ -85,3 +89,4 @@ The gaps, stated so a reader does not go looking for them.
 [LITE-006]: /todo/LITE/LITE-006.mkd
 [LITE-007]: /todo/LITE/LITE-007.mkd
 [LITE-011]: /todo/LITE/LITE-011.mkd
+[LITE-017]: /todo/LITE/LITE-017.mkd

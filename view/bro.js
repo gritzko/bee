@@ -43,10 +43,14 @@ const A_BOLD = 0x01;
 //  byte-exact C table: tok-syntax tags only (the diff/quad/button slots are
 //  not part of the lite view).  'W' is the whitespace slot buildDirHunk emits.
 //  An absent tag (the 'S' default, 'U'/'O' hidden cells) falls through to A0.
+//  LITE-017: `list` paints its wt-marker column out of the STATUS-verb slots of
+//  the same C table (dog/THEME.c THEME16TBL) — E mod yellow, X del brown, Q dir
+//  grey; `eq` rides the D grey already here.  No other view emits them.
 const THEME = {
   D: aFgB(90), G: aFg256(149), L: aFgB(96), H: aFgB(35), R: aFgB(94), P: aFgB(90),
   N: aFlag(A_BOLD), C: aFlag(A_BOLD), F: aFg256(56), T: aFg256(56),
   W: aFgB(32),
+  E: aFgB(33), X: aFg256(94), Q: aFgB(90),
 };
 function themeAt(tag) { return THEME[tag] || A0; }
 const THEME_BANNER = { fm: 2, fg: 0, bm: 2, bg: 230, fl: 0 };
