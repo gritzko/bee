@@ -373,9 +373,29 @@ function digitTail(s) {
   return i;
 }
 
+//  LITE-025: the PERMALINK form `file.c:k4:d8K3` — the SAME fused `F` token,
+//  decided by SEGMENT 2: a hashlet (even, 4..10 ron64 chars, one non-digit) says
+//  permalink, an all-digit segment 2 stays LITE-024's column.  -1 = not one.
+function permaTail(s) {
+  const i = s.lastIndexOf(":");
+  if (i <= 0 || i === s.length - 1) return -1;
+  const j = s.lastIndexOf(":", i - 1);
+  if (j <= 0 || j === i - 1) return -1;
+  const pm = require("index/perma.js");
+  return pm.isHashlet(s.slice(i + 1)) && pm.isOffset(s.slice(j + 1, i)) ? j : -1;
+}
+
 //  LITE-024: split a ref (DOG-034 fuses `abc/TCP.c:12:24` into ONE `F` token)
 //  into the path the fs sees and the landing the pager scrolls to.
+//  LITE-025: the same split answers for a permalink — `off`/`hash` instead of
+//  line:col; `tail` is the anchor as written, which the chooser rows carry.
 function splitRef(target) {
+  const p = permaTail(target);
+  if (p >= 0) {
+    const k = target.indexOf(":", p + 1);
+    return { path: target.slice(0, p), tail: target.slice(p), line: 0, col: 0,
+             off: target.slice(p + 1, k), hash: target.slice(k + 1) };
+  }
   const i = digitTail(target);
   if (i < 0) return { path: target, tail: "", line: 0, col: 0 };
   const last = Number(target.slice(i + 1));
@@ -386,6 +406,23 @@ function splitRef(target) {
            col: last };
 }
 
+//  LITE-025: the permalink leg of the door — the resolver names the file AND the
+//  row:col the anchored token sits on today, so the pager still does no path
+//  math.  Nothing resolves => null, and the caller's quiet bar message stands.
+function openPerma(ref) {
+  let seat;
+  try { seat = require("index/perma.js").follow(ref.path, ref.off, ref.hash); }
+  catch (e) { return null; }
+  if (seat === null) return null;
+  //  Several files answer the anchor: the chooser, carrying it, as LITE-024 does.
+  if (seat.rels) return [bro.buildChooserHunk(ref.path + ref.tail, seat.rels, ref.tail)];
+  const hs = openPath(seat.full);
+  if (hs === null) return null;
+  hs.land = { line: seat.line, col: seat.col };
+  if (seat.note) hs.land.note = seat.note;
+  return hs;
+}
+
 function openTarget(target) {
   const sp = target.indexOf(" ");
   const fn = sp > 0 ? VERBS[target.slice(0, sp)] : null;
@@ -393,6 +430,9 @@ function openTarget(target) {
     //  LITE-024: shed the tail HERE — the ONE split point the click and the `:`
     //  bar share — then hand the landing back riding the hunks.
     const ref = splitRef(target);
+    //  LITE-025: a permalink names a commit, so the fs cannot answer it alone —
+    //  the resolver walks; a miss stays the caller's quiet bar message.
+    if (ref.hash) return openPerma(ref);
     const at = openPath(ref.path);
     const hs = at !== null ? at : openPartial(ref.path, ref.tail);
     if (hs !== null && ref.line) hs.land = { line: ref.line, col: ref.col };
@@ -449,7 +489,7 @@ function main(argv) {
 
 if (typeof module !== "undefined")
   module.exports = { main: main, openPath: openPath, openTarget: openTarget,
-                     inRepo: inRepo,
+                     inRepo: inRepo, splitRef: splitRef,
                      ron60ISO: ron60ISO, ron60Text: ron60Text };
 if (process.argv[1] && process.argv[1].slice(-"/main.js".length) === "/main.js")
   main(process.argv);

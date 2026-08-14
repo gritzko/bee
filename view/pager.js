@@ -441,6 +441,9 @@ Pager.prototype._openPush = function (path) {
   if (!hunks || hunks.length === 0) { this.message = "cannot open " + path; return; }
   this.pushView(hunks, path);
   if (hunks.land) this._land(hunks.land);
+  //  LITE-025: a permalink whose line is GONE lands where it stood and the door
+  //  says so in plain words — the pager only shows it.
+  if (hunks.land && hunks.land.note) this.message = hunks.land.note;
 };
 
 //  LITE-024: land the pushed view on the ref's line — the door did the path math
