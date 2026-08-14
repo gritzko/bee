@@ -1,10 +1,10 @@
 #!/bin/sh
 # lite/test/chat/run.sh — LITE-016: `lite chat [dir] [outdir]` renders every
 # Claude Code session log (JSONL) under `<claude home>/projects/<mangled-dir>/`
-# as a [/wiki/StrictMark] page, strict 1:1 by basename, in FORMAT v2.  The three
-# legs are //CHAT-001's test/chat/{render,append,strict} ported over — same
-# fixtures, same expected bytes, minus the be-only `jab mark` render check
-# (lite has no mark verb):
+# as a [/wiki/StrictMark] page, strict 1:1, in FORMAT v2.  The first three legs
+# are //CHAT-001's test/chat/{render,append,strict} ported over — same fixtures,
+# same expected bytes, minus the be-only `jab mark` render check (lite has no
+# mark verb); the fourth is LITE-022's naming:
 #   render — format v2 itself: the Session header (LOCAL time, OS user, stamped
 #            from the first RENDERED row), quoted user turns, verbatim Claude
 #            prose, one 4-backtick fence per assistant row holding one line per
@@ -17,6 +17,17 @@
 #            header / ref def / meta pair / never-closed fence run takes one `\`,
 #            a BALANCED fence and its body stay byte-verbatim, and the sanitizer
 #            being a pure function of one message keeps the append invariant.
+#   names  — LITE-022: the page is named by the basename's 10-char ron60 digest,
+#            never by the session UUID; a pre-LITE-022 `<uuid>.mkd` page MIGRATES
+#            (renamed, then reentrant as ever) instead of being duplicated, and a
+#            page owned by another jsonl is refused loudly.  name.js pins the
+#            digest itself, hand-computed from sha1 and the RON64 alphabet.
+#
+# EXPECTED NAMES.  Every leg's page path is the ron60 of its log's basename,
+# hard-coded here (see name.js for the derivation), so the harness never asks
+# the code under test what it named a page:
+#   sess-one c5WgO4DAxQ   sess-two MB05JVWDBe   grow mxNNMO5~rr
+#   noisy    uN3aTzq82l   sess     XhzDlVrnFU
 #
 # The Claude home is pointed at the scratch tree via $CLAUDE_CONFIG_DIR, so no
 # leg ever reads (or writes near) the real ~/.claude.
@@ -60,6 +71,7 @@ norex() { if grep -q -- "$2" "$1"; then bad "$3 (matched /$2/)" "$1"; else ok "$
 eq()    { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1: got [$2] want [$3]"; fi; }
 
 FAKEHOME="$WORK/home"; mkdir -p "$FAKEHOME"
+ln -sf "$LITE" "$WORK/jsrc"                      # unpacked-runtime require climb
 : "${XDG_CACHE_HOME:=${HOME}/.cache}"
 export XDG_CACHE_HOME
 echo "chat: runtime $RT, fixtures $WORK"
@@ -97,17 +109,24 @@ run() { D=$1; N=$2; shift 2
 }
 
 run "$R/src" r1 . out || { cat "$WORK/r1.err" >&2; bad "lite chat failed" "$WORK/r1.err"; }
-PAGE="$R/src/out/sess-one.mkd"
+PAGE="$R/src/out/c5WgO4DAxQ.mkd"                 # ron60 of "sess-one"
 
 # every page written is REPORTED, one line each, on the runtime's message stream
 N=$(grep -c 'chat: wrote ' "$WORK/r1.all")
 eq "2 'chat: wrote' report lines (2 logs)" "$N" "2"
-has "$WORK/r1.all" 'out/sess-one.mkd' "the report names the page written"
+has "$WORK/r1.all" 'out/c5WgO4DAxQ.mkd' "the report names the page written"
 
-if [ -f "$PAGE" ]; then ok "wrote out/sess-one.mkd"; else bad "no out/sess-one.mkd"; fi
-if [ -f "$R/src/out/sess-two.mkd" ]; then ok "1:1 fan-out: out/sess-two.mkd"
-else bad "no out/sess-two.mkd (1:1 fan-out)"; fi
-if [ -f "$R/src/out/notes.mkd" ]; then bad "a non-jsonl file was converted"
+if [ -f "$PAGE" ]; then ok "wrote out/c5WgO4DAxQ.mkd"; else bad "no out/c5WgO4DAxQ.mkd"; fi
+if [ -f "$R/src/out/MB05JVWDBe.mkd" ]; then ok "1:1 fan-out: out/MB05JVWDBe.mkd"
+else bad "no out/MB05JVWDBe.mkd (1:1 fan-out)"; fi
+# LITE-022: the UUID-shaped basename never names a page any more
+if [ -f "$R/src/out/sess-one.mkd" ]; then bad "the page is still named by the basename"
+else ok "no page carries the log's raw basename"; fi
+# every page in the dir is TEN RON64 digits, nothing else
+eq "2 pages, both 10-char ron60" \
+   "$(ls "$R/src/out" | grep -c '^[0-9A-Za-z_~]\{10\}\.mkd$')" "2"
+eq "the out dir holds nothing else" "$(ls "$R/src/out" | wc -l | tr -d ' ')" "2"
+if [ -f "$R/src/out/EiqwaX8GBn.mkd" ]; then bad "a non-jsonl file was converted"
 else ok "a non-jsonl neighbour is ignored"; fi
 
 # ---- (1) the Session header: first RENDERED row, LOCAL time, OS user --------
@@ -181,7 +200,7 @@ ALOGS="$CLAUDE_CONFIG_DIR/projects/$(mangle "$A/src")"
 mkdir -p "$ALOGS"
 LOG="$ALOGS/grow.jsonl"
 cp "$CASE/session.jsonl" "$LOG"
-PAGE="$A/src/out/grow.mkd"
+PAGE="$A/src/out/mxNNMO5~rr.mkd"
 want_ref() { printf '[log]: file:%s "%s"' "$LOG" "$(wc -c < "$LOG" | tr -d ' ')"; }
 
 # ---- run 1: the baseline page ------------------------------------------------
@@ -242,7 +261,7 @@ eq "run 5 left 1 [log]: ref def" "$(grep -c '^\[log\]: ' "$PAGE")" "1"
 NOISY="$ALOGS/noisy.jsonl"
 head -n 3 "$CASE/session.jsonl" > "$NOISY"
 run "$A/src" a6 . out || bad "lite chat failed (noise 1)" "$WORK/a6.err"
-NPAGE="$A/src/out/noisy.mkd"
+NPAGE="$A/src/out/uN3aTzq82l.mkd"
 if [ -f "$NPAGE" ]; then ok "an all-noise log still gets its page (1:1)"
 else bad "an all-noise log got no page"; fi
 eq "an all-noise page is 1 line (the ref def alone)" \
@@ -273,7 +292,7 @@ export CLAUDE_CONFIG_DIR="$S/claude"
 SLOGS="$CLAUDE_CONFIG_DIR/projects/$(mangle "$S/src")"
 mkdir -p "$SLOGS"
 LOG="$SLOGS/sess.jsonl"
-PAGE="$S/src/out/sess.mkd"
+PAGE="$S/src/out/XhzDlVrnFU.mkd"
 
 # ---- the append invariant, with the sanitizer in the path --------------------
 # The sanitizer must be a pure function of ONE message: rows rendered by an
@@ -293,7 +312,7 @@ else bad "an appended page differs from a from-scratch render" \
 
 # ---- every created/updated page is reported; an up-to-date one is silent -----
 has "$WORK/s3.all" 'chat: wrote ' "a written page is reported"
-has "$WORK/s3.all" 'out/sess.mkd' "the report names the page"
+has "$WORK/s3.all" 'out/XhzDlVrnFU.mkd' "the report names the page"
 run "$S/src" s4 . out || bad "lite chat failed (again)" "$WORK/s4.err"
 hasnt "$WORK/s4.all" 'chat: wrote ' "an up-to-date page is silent"
 
@@ -347,6 +366,128 @@ has "$PAGE" '>   BEFORE the adversarial turn.' "the preceding user turn"
 has "$PAGE" '>   AFTER the adversarial turn.'  "the following user turn"
 has "$PAGE" 'Wrapping up.'                     "the following Claude turn"
 rex "$PAGE" '^    Read /a/b\.txt$'             "the following tool invocation"
+
+# --------------------------------------------------------------------------
+# leg 4 — names: LITE-022, ron60 pages, migration, clash refusal
+# --------------------------------------------------------------------------
+# A REAL session UUID drives this leg, and its page name is hand-computed (see
+# name.js): sha1("d12979f3-336b-4666-88b1-d7e6765c817e") = 640a...; its top 60
+# bits, ten RON64 digits msb-first, are MQitMZ6mBT.
+UUID=d12979f3-336b-4666-88b1-d7e6765c817e
+R60=MQitMZ6mBT
+
+M="$WORK/name"; mkdir -p "$M/src"
+export CLAUDE_CONFIG_DIR="$M/claude"
+MLOGS="$CLAUDE_CONFIG_DIR/projects/$(mangle "$M/src")"
+mkdir -p "$MLOGS"
+LOG="$MLOGS/$UUID.jsonl"
+head -n 6 "$CASE/session.jsonl" > "$LOG"
+
+# ---- (1) a UUID log gets a ron60 page, and NOTHING named by the UUID --------
+run "$M/src" m1 . out || bad "lite chat failed (name 1)" "$WORK/m1.err"
+if [ -f "$M/src/out/$R60.mkd" ]; then ok "a UUID log is written to out/$R60.mkd"
+else bad "no out/$R60.mkd" "$WORK/m1.all"; fi
+if [ -f "$M/src/out/$UUID.mkd" ]; then bad "the UUID still names a page"
+else ok "the UUID names no page"; fi
+eq "the out dir holds exactly that one page" \
+   "$(ls "$M/src/out" | tr -d ' ')" "$R60.mkd"
+has "$WORK/m1.all" "out/$R60.mkd" "the report names the ron60 page"
+
+# ---- (2) the name is STABLE: a rerun writes nothing, appends to the same page
+cp "$M/src/out/$R60.mkd" "$WORK/m-base.mkd"
+run "$M/src" m2 . out || bad "lite chat failed (name 2)" "$WORK/m2.err"
+hasnt "$WORK/m2.all" 'chat: wrote ' "a rerun on the ron60 page writes nothing"
+if cmp -s "$M/src/out/$R60.mkd" "$WORK/m-base.mkd"
+then ok "a rerun leaves the ron60 page untouched"
+else bad "a rerun rewrote the ron60 page"; fi
+sed -n '7,$p' "$CASE/session.jsonl" >> "$LOG"
+run "$M/src" m3 . out || bad "lite chat failed (name 3)" "$WORK/m3.err"
+eq "the grown log restamps the SAME ron60 page" \
+   "$(tail -n 1 "$M/src/out/$R60.mkd")" \
+   "[log]: file:$LOG \"$(wc -c < "$LOG" | tr -d ' ')\""
+eq "the append made no second page" "$(ls "$M/src/out" | wc -l | tr -d ' ')" "1"
+has "$M/src/out/$R60.mkd" '>   Render the session log, please.' \
+    "the appended-to page kept its earlier turns"
+
+# ---- (3) MIGRATION: a pre-LITE-022 `<uuid>.mkd` page is RENAMED -------------
+# The old-world page is the very bytes this tree writes, under the old name —
+# so if the rerun REGENERATED instead of renaming, it would report a write.
+G="$WORK/migr"; mkdir -p "$G/src"
+export CLAUDE_CONFIG_DIR="$G/claude"
+GLOGS="$CLAUDE_CONFIG_DIR/projects/$(mangle "$G/src")"
+mkdir -p "$GLOGS"
+GLOG="$GLOGS/$UUID.jsonl"
+cp "$CASE/session.jsonl" "$GLOG"
+run "$G/src" g1 . out || bad "lite chat failed (migr 1)" "$WORK/g1.err"
+mv "$G/src/out/$R60.mkd" "$G/src/out/$UUID.mkd"      # back to the old world
+cp "$G/src/out/$UUID.mkd" "$WORK/g-old.mkd"
+run "$G/src" g2 . out || bad "lite chat failed (migr 2)" "$WORK/g2.err"
+if [ -f "$G/src/out/$R60.mkd" ]; then ok "migration: the ron60 page is there"
+else bad "migration: no ron60 page" "$WORK/g2.all"; fi
+if [ -f "$G/src/out/$UUID.mkd" ]; then bad "migration: the UUID page survived"
+else ok "migration: the UUID page is gone (renamed, not copied)"; fi
+eq "migration left ONE page, not two" "$(ls "$G/src/out" | wc -l | tr -d ' ')" "1"
+if cmp -s "$G/src/out/$R60.mkd" "$WORK/g-old.mkd"
+then ok "migration carried the old page over byte for byte"
+else bad "migration did not carry the page over" "$WORK/g-old.mkd"; fi
+hasnt "$WORK/g2.all" 'chat: wrote ' "migration alone rewrites nothing"
+# and the migrated page stays reentrant: a grown log appends onto it
+cat "$CASE/tail.jsonl" >> "$GLOG"
+run "$G/src" g3 . out || bad "lite chat failed (migr 3)" "$WORK/g3.err"
+has "$G/src/out/$R60.mkd" '>   SECOND ROUND question.' \
+    "the migrated page still appends"
+has "$G/src/out/$R60.mkd" '>   Render the session log, please.' \
+    "the migrated page kept its old turns"
+eq "the migrated page is still the only one" \
+   "$(ls "$G/src/out" | wc -l | tr -d ' ')" "1"
+
+# ---- (4) CLASH: a page whose cursor names ANOTHER jsonl is refused ----------
+C="$WORK/clash"; mkdir -p "$C/src/out"
+export CLAUDE_CONFIG_DIR="$C/claude"
+CLOGS="$CLAUDE_CONFIG_DIR/projects/$(mangle "$C/src")"
+mkdir -p "$CLOGS"
+CLOG="$CLOGS/$UUID.jsonl"
+cp "$CASE/session.jsonl" "$CLOG"
+# an honest page of a DIFFERENT session, parked on this name
+OTHER="$CLOGS/impostor.jsonl"
+cp "$CASE/session.jsonl" "$OTHER"
+{ printf 'Someone else\047s conversation.\n\n'
+  printf '[log]: file:%s "%s"\n' "$OTHER" "$(wc -c < "$OTHER" | tr -d ' ')"
+} > "$C/src/out/$R60.mkd"
+cp "$C/src/out/$R60.mkd" "$WORK/c-before.mkd"
+if run "$C/src" c1 . out
+then bad "a clashing page was accepted" "$WORK/c1.all"
+else ok "a clashing page is REFUSED (nonzero rc)"; fi
+has "$WORK/c1.all" "$OTHER" "the refusal names the page's own jsonl"
+has "$WORK/c1.all" "$CLOG" "the refusal names the jsonl being converted"
+if cmp -s "$C/src/out/$R60.mkd" "$WORK/c-before.mkd"
+then ok "the clashing page is left untouched"
+else bad "the clashing page was overwritten"; fi
+
+# ---- (5) both names present, the ron60 page carrying no cursor -> refuse ----
+B="$WORK/both"; mkdir -p "$B/src/out"
+export CLAUDE_CONFIG_DIR="$B/claude"
+BLOGS="$CLAUDE_CONFIG_DIR/projects/$(mangle "$B/src")"
+mkdir -p "$BLOGS"
+cp "$CASE/session.jsonl" "$BLOGS/$UUID.jsonl"
+printf 'hand-written, no cursor\n' > "$B/src/out/$R60.mkd"
+printf 'the old page\n' > "$B/src/out/$UUID.mkd"
+if run "$B/src" b1 . out
+then bad "an ambiguous pair was accepted" "$WORK/b1.all"
+else ok "an ambiguous uuid+ron60 pair is REFUSED"; fi
+has "$WORK/b1.all" "out/$R60.mkd" "the refusal names the ron60 page"
+has "$WORK/b1.all" "out/$UUID.mkd" "the refusal names the uuid page"
+
+# ---- (6) the name function itself, hand-computed ----------------------------
+( cd "$WORK" && HOME="$FAKEHOME" "$RT" --eval "require('$CASE/name.js')" ) \
+    > "$WORK/name.out" 2>&1
+NRC=$?
+sed 's/^/     /' "$WORK/name.out"
+NN=$(grep -c '^ok   ' "$WORK/name.out")
+CHECKS=$((CHECKS + NN))
+if [ "$NRC" = 0 ] && ! grep -q '^FAIL ' "$WORK/name.out"
+then ok "name.js: the ron60 name function is pinned ($NN checks)"
+else bad "name.js failed (rc $NRC)" "$WORK/name.out"; fi
 
 # ==========================================================================
 if [ "$FAILED" != 0 ]; then

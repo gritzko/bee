@@ -2,30 +2,37 @@
 
 This project implements beagle-lite functionality for git repos.
 
-Usage:
-
- -  `lite` — bare, no args, no verb: inside a git repo it is `lite index && lite list` in ONE process. The first run builds the whole `.git/be/` index (reporting on stderr as it goes) and then opens the `list` browser on the repo root; every later run is the watermark no-op and the board opens at once. The repo joins `$HOME/.config/be/tracks`, which is the `index` half of it — `lite list` on its own still writes no tracks row. Piped or under `--plain` the same bring-up happens and the plain rows come out. Outside a git repo nothing changed: an empty viewport at a terminal, the usage line when piped.
- -  `lite [--plain] <path>...` — file/dir args page interactively at a terminal, dump as plain hunks when piped or under `--plain`.
- -  `lite index [<repo>]` — index a git repo (root, `.git` dir or gitfile; default the cwd) into its own `<repo>/.git/be/` and list it in `$HOME/.config/be/tracks`. Lazy: a second run is a watermark no-op, a later one indexes only the gap. Everything under `.git/be/` is derived — `rm -rf` it and the next run rebuilds it from the ODB.
- -  `lite log [--plain] [<hex>|<path>]` — the commit log off that index (bare = the checked-out tip, `<hex>` = a commit's ancestors, anything else = a file's revisions), one `<sha8> <date> <subject> (<author>)` row per commit, newest first. At a terminal it pages as a coloured hunk, the same way a file arg does; piped or under `--plain` it is the bare rows. In a DAG log (bare or `<hex>`) the straight chain — the first-parent line from the tip — keeps its colours and everything merged in off it greys, whole row, so the mainline reads through the noise; a file's revisions never grey, and `--plain` is unaffected either way, greying being paint and not text. It brings the index up to date itself, so there is never an `index` call to remember.
- -  `lite commit [--plain] [<hex>]` — one commit's metadata: the header block in the object's own order (folded `gpgsig`/`mergetag` continuations and `encoding` included), then the message. Bare = the checked-out tip, otherwise any 6..40 hexlet. The plain bytes are exactly `commit <sha40>` + `git cat-file commit <sha>`, so a pipe gets the object itself; at a terminal the same bytes page as a coloured hunk. At a terminal the HASHES are links: the `tree` sha opens the `lite tree` listing of that tree, every `parent` sha opens that parent's own commit page, `-` goes back. Enter follows the row under the cursor, a click follows the hash it lands on; the banner sha carries no link, that line being the page itself. The link bytes are hidden pager paint only — `--plain` and a pipe stay byte-identical. Pure ODB — it reads no index, so it answers on a repo that was never indexed and on a commit off the branch.
- -  `lite diff [--plain] [<hex>|<path>]` — the change, as be's CFOLD 2-layer diff shows it: bare = the worktree against HEAD over the tracked paths, `<path>` = that path only (a file whole, a dir scoped), `<hex>` = that commit against its FIRST parent. At a terminal each changed file is a hunk in the pager, added tokens washed salad green and removed ones salmon; piped or under `--plain` it is the unified `--- / +++ / @@` bytes under the usual `hunk <uri>` banner. It reads the ODB and the worktree only — no index, so it works in a repo whose `.git/be` was never built. It does not read `.git/index` (a STAGED-only add is invisible), detects no renames, recurses no submodule and applies no gitattributes filter, so a CRLF-checkout repo reports the eol difference git normalizes away.
- -  `lite list [<path>][?<rev>]` — the directory browser: one row per tracked entry, `<marker> <name> <last-commit summary> <age>`, github-style. A DIR is attributed the newest commit touching anything UNDER it, which is the one thing `ls` cannot say. The marker is the worktree against the listed tree — `eq`, `mod`, `del`, or a flat `dir` — framed the way `lite diff` frames it, so nothing reads `.git/index` and a staged-only edit reads as a worktree one. It lists the TRACKED tree, not the raw worktree: lite has no ignore machinery, so an untracked file (and `.git`) has no row. At a terminal every row is clickable — a dir opens deeper in the browser, a file opens in `cat`; piped or under `--plain` it is the bare rows. Like `lite log` it brings the index up to date itself, building it from scratch when the repo has none, so there is never an `index` call to remember.
- -  `lite cat <path>[?<rev>]` — the file's OWN bytes, syntax-painted as one pager hunk banner'd `cat <path>`; there is no diff in it, for a diff there is `lite diff`. A bare path is the worktree file, `?<rev>` is the blob at that rev (a branch name or any 6..40 hexlet) — so a file deleted from the checkout still reads, and a path absent at that rev fails loudly instead of silently empty. `--plain` (and a pipe) is the bytes verbatim, so it is `cat(1)` on the same file. Being a repo verb it resolves its path in the repository and refuses a climb out of it; the bare `lite <path>` pager stays the unconfined filesystem view it always was.
- -  `lite tree [<hex>|<path>][?<rev>]` — the raw git tree, one fixed row per entry: `<mode6> <type6> <sha40>` TAB `<name>[/]`, in the tree's own order, with a bare `..` row first when the arg descended below the root. Bare = the checked-out tip, a hexlet = that commit's tree (or a tree object itself), anything else = a path. Gitlinks are rows here (`160000 commit`), not holes. Pure ODB, so it answers in a repo whose `.git/be` was never built; `--plain` is the row block alone, no banner, which is the byte shape `be tree:` writes.
- -  `lite blob <hexlet>` — a blob by object name, `cat`'s by-sha twin: any 6..40 hexlet, emitted as a hunk banner'd with the RESOLVED full sha, verbatim bytes under `--plain`. It is what a `tree` row's click target opens. Pure ODB; an empty blob says nothing.
-
- -  `lite install [<repo>]` — make lite git's merge driver for that repo (root, `.git` dir or gitfile; default the cwd): the driver command goes into `.git/config` as `merge.lite.driver` (git never reads driver commands from a tracked file) and `* merge=lite` into `.git/info/attributes`, so the install is purely local and uncommitted. A second run changes nothing.
- -  `lite merge <base> <ours> <theirs> [-o <out>] [-p <path>]` — the driver itself, and a usable three-file merge on its own. It CRDT-weaves the three blobs (base folds first, ours and theirs fold concurrently on it), writes the merged bytes over `<ours>` (or `<out>`) and exits 0 when they are clean, 1 when they are not. Edits that only git's line-at-a-time merge calls a conflict — two words of the same line, adjacent lines — merge cleanly here. A real conflict is written MARKERLESS: both sides' tokens in weave order, no `<<<<`/`====`/`>>>>` fences, so the file stays tokenizable and a later merge weaves over it (`git mergetool` finds no fences by design, DIS-080). `-p` names the real path, which is where the tokenizer's language comes from — the driver's `%O %A %B` temps have junk names. A binary or over-4-MB file is not weavable: it goes to `git merge-file`, never to a silent ours.
-
- -  `lite chat [dir] [outdir]` — render the Claude Code session logs of a project dir (both args default `.`) as StrictMark pages: every `*.jsonl` under `~/.claude/projects/<mangled abs path>/` becomes `<outdir>/<basename>.mkd`, strict 1:1. A page is a plain conversation — a `#   Session: <date> <time> <user>` head, user turns blockquoted, Claude's prose verbatim, one 4-backtick fence per assistant row holding one line per tool call. Tool results, thinking, sidechains and every machine-injected XML envelope are dropped. The last line is the hidden ref def `[log]: file:/<abs jsonl> "<bytes>"`, so a rerun is append-only off that cursor (grown log → only the new turns, rewritten log → a fresh page, unchanged log → not even a write). It reports one `chat: wrote <path>` per page written and stays silent when everything is up to date; `$CLAUDE_CONFIG_DIR` overrides the Claude home.
-
 Build: quickjab is standalone — it carries dog/ (libdog) and test/ (the
 jab-shared API suite) as submodules, no jab tree involved:
 
     cmake -S <quickjab> -B build -GNinja \
         -DJAB_JSRC=<this tree> -DQUICKJAB_JSRC_PACK=ON
     ninja -C build quickjab
+
+Usage (`--plain` or a pipe dumps bare bytes; a terminal pages coloured hunks):
+
+ -  `lite` — in a git repo: index it, open the `list` browser; elsewhere as `lite <path>`
+ -  `lite <path>...` — page files/dirs off the filesystem
+ -  `lite index [<repo>]` — build/refresh `<repo>/.git/be/`; lazy, fully derived
+ -  `lite log [<hex>|<path>]` — commit log, newest first; off-mainline rows grey
+     1. bare: the checked-out tip's ancestry
+     2. `<hex>`: that commit's ancestry
+     3. `<path>`: the file's revisions
+ -  `lite commit [<hex>]` — one commit, header + message; tree/parent hashes are links
+ -  `lite diff [<hex>|<path>]` — the token-level diff
+     1. bare: worktree vs HEAD
+     2. `<hex>`: that commit vs its first parent
+     3. `<path>`: that file/dir only
+ -  `lite list [<path>][?<rev>]` — dir browser: marker, name, last commit, age
+ -  `lite cat <path>[?<rev>]` — the file's own bytes, syntax-painted
+ -  `lite tree [<hex>|<path>][?<rev>]` — raw git-tree rows, `..` row when descended
+ -  `lite blob <hexlet>` — a blob by object name
+ -  `lite install [<repo>]` — register lite as the repo's git merge driver
+ -  `lite merge <base> <ours> <theirs> [-o <out>] [-p <path>]` — CRDT 3-way file merge
+     1. clean: merged bytes over `<ours>` (or `<out>`), exit 0
+     2. conflict: markerless weave, exit 1
+     3. binary/oversize: falls back to `git merge-file`
+ -  `lite chat [dir] [outdir]` — Claude session logs to StrictMark pages, append-only reruns
 
 [q]: https://github.com/gritzko/quickjab
 [d]: https://github.com/gritzko/libdog

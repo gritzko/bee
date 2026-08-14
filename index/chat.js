@@ -11,7 +11,9 @@
 //  (`/home/gritzko/src/journal` -> `-home-gritzko-src-journal`).  `dir` is a
 //  PROJECT dir — a plain filesystem path resolved against the cwd, never a URI.
 //
-//  Every `*.jsonl` in that dir becomes `<outdir>/<basename>.mkd`, strict 1:1.
+//  Every `*.jsonl` in that dir becomes one page, strict 1:1.  LITE-022: the
+//  page is named by the basename's 10-char ron60 digest, not by the session
+//  UUID — `<outdir>/<ron60x10>.mkd`; see pageName() below.
 //
 //  FORMAT v2 — the page is a READABLE CONVERSATION, no chrome.  The only
 //  furniture is the opening `#   Session: <date> <time> <user>`, stamped from
@@ -121,6 +123,18 @@ function claudeHome() { return io.getenv("CLAUDE_CONFIG_DIR") || (home() + "/.cl
 //  (the leading `/` mangles too, hence the leading `-`).
 function logDirFor(dir) {
   return claudeHome() + "/projects/" + dir.replace(/[^a-zA-Z0-9]/g, "-");
+}
+
+//  LITE-022: the page NAME — ron60 of the TOP 60 bits of sha1(basename), the
+//  index/index.js hashlet60 exactly.  A pure, machine-independent function of
+//  the basename, so a rerun always lands on the same page and no state is kept
+//  anywhere.  Ten RON64 digits msb-first: `ron.encode` drops the leading zeros
+//  (RONutf8sFeed), and RON64's zero digit IS `0`, so a left pad restores them.
+function pageName(base) {
+  const sha = sha1(utf8.Encode(String(base)));
+  let h = 0n;
+  for (let i = 0; i < 8; i++) h = (h << 8n) | BigInt(sha[i]);
+  return ron.encode(h >> 4n).padStart(10, "0");
 }
 
 function pad2(n) { return (n < 10 ? "0" : "") + n; }
@@ -288,17 +302,40 @@ function renderRows(text, needHead) {
 //  hidden in render, so this is provenance + cursor at zero visual cost.
 function logRef(src, bytes) { return "[log]: file:" + src + ' "' + bytes + '"\n'; }
 
-//  Read a page's cursor: { off, head } — the consumed byte count and everything
-//  BEFORE the ref def line (the header plus the turns to append onto).  null
-//  when the page is absent or carries no cursor.
+//  Read a page's cursor: { src, off, head } — the jsonl the page was rendered
+//  from (LITE-022: its provenance, hence its OWNER), the consumed byte count,
+//  and everything BEFORE the ref def line (the header plus the turns to append
+//  onto).  null when the page is absent or carries no cursor.
 function readCursor(dst) {
   const text = tryText(dst);
   if (text === null) return null;
   const nl = text.lastIndexOf("\n", text.length - 2);   // start of the last line
   const at = nl < 0 ? 0 : nl + 1;
-  const m = /^\[log\]: file:\S* "(\d+)"\s*$/.exec(text.slice(at));
+  const m = /^\[log\]: file:(\S*) "(\d+)"\s*$/.exec(text.slice(at));
   if (!m) return null;
-  return { off: Number(m[1]), head: text.slice(0, at) };
+  return { src: m[1], off: Number(m[2]), head: text.slice(0, at) };
+}
+
+function statOf(p) { try { return io.stat(p); } catch (e) { return null; } }
+
+//  LITE-022: claim the ron60 page for THIS jsonl before rendering into it.
+//  Two things happen here, both off the `[log]:` ref def the page already
+//  carries: a page owned by ANOTHER jsonl is refused in plain words (60-bit
+//  birthday odds make it ~never, the check makes it safe anyway), and a
+//  pre-LITE-022 `<uuid>.mkd` page is RENAMED to its ron60 name, after which the
+//  rerun appends to it exactly as before.  One extra stat per file, no
+//  directory-wide pass: `old` is absent on every run after the first.
+function claim(src, old, dst) {
+  const own = readCursor(dst);                   // the page's own provenance
+  if (own && own.src !== src)
+    throw "chat: " + dst + " is the page of " + own.src + ", not of " + src +
+          " — two sessions cannot share one page";
+  if (old === dst || !statOf(old)) return;       // THE one extra stat
+  if (own) { say("chat: " + old + " is superseded by " + dst); return; }
+  if (statOf(dst))
+    throw "chat: " + dst + " carries no log cursor, so it cannot be told from " +
+          old + " — remove the stale page";
+  io.rename(old, dst);
 }
 
 //  The offset just past the LAST complete line at/after `from`; `from` itself
@@ -345,11 +382,14 @@ function chat(args) {
   io.mkdir(out);
   let wrote = 0, fresh = 0;
   for (const n of logs) {
-    const dst = out + "/" + n.slice(0, -".jsonl".length) + ".mkd";
-    if (convert(logDir + "/" + n, dst) === "write") { say("chat: wrote " + dst); wrote++; }
+    const base = n.slice(0, -".jsonl".length);
+    const src = logDir + "/" + n;
+    const dst = out + "/" + pageName(base) + ".mkd";     // LITE-022
+    claim(src, out + "/" + base + ".mkd", dst);
+    if (convert(src, dst) === "write") { say("chat: wrote " + dst); wrote++; }
     else fresh++;
   }
   say("chat: " + wrote + " page(s) written, " + fresh + " up to date -> " + out);
 }
 
-module.exports = { chat: chat };
+module.exports = { chat: chat, pageName: pageName };
