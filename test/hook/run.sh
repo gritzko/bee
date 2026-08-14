@@ -137,6 +137,14 @@ if [ -z "$(g status --porcelain)" ]
 then ok "...leaving a CLEAN tree — the rewrite was re-staged, not left dirty"
 else bad "the worktree is dirty after the commit" ; g status --porcelain; fi
 
+# A FULLY staged file ends with index and disk in lockstep, both upgraded.
+g show ":doc/new.mkd" > "$WORK/idx.new" 2>/dev/null
+if cmp -s "$WORK/idx.new" "$REPO/doc/new.mkd" &&
+   grep -q 'src/abc/FSW.c:' "$WORK/idx.new" &&
+   ! grep -q 'src/abc/FSW.c:20 ' "$WORK/idx.new"
+then ok "...index and disk carry the SAME upgraded bytes"
+else bad "index/disk lockstep" "$WORK/idx.new"; fi
+
 # --- the assertions -------------------------------------------------------
 ( cd "$REPO" && HOME="$FAKEHOME" LITE_FIX="$REPO" \
   LITE_BFSW="$B_FSW" LITE_BTCP0="$B_TCP0" LITE_BTCP1="$B_TCP1" \
@@ -159,31 +167,73 @@ if [ "$RC" = 0 ] && cmp -s "$WORK/new.before" "$REPO/doc/new.mkd"
 then ok "a commit with no fresh refs rewrites nothing"
 else bad "second commit (rc $RC)" "$WORK/c2" "$WORK/c2e"; fi
 
-# --- a PARTIALLY staged file is left alone --------------------------------
-# Rewriting it would swallow the half the author did not stage, so the hook
-# says so and stands back — it never guesses which half to keep.
+# --- a PARTIALLY staged file: the INDEX is what gets rewritten -------------
+# The hook rewrites the STAGED bytes and points the index at them; the working
+# file is only written when it was in lockstep with the index to begin with.
+# Here it is not, so the commit carries the permalink while the unstaged edits
+# stay on disk, unstaged and untouched — the diff honestly shows the old ref.
 printf 'part ref src/abc/FSW.c:9 here\n' >> "$REPO/doc/new.mkd"
 g add doc/new.mkd
 printf 'a tail nobody staged\n' >> "$REPO/doc/new.mkd"
 cp "$REPO/doc/new.mkd" "$WORK/part.before"
-rtin "$REPO" hook > "$WORK/p1" 2>"$WORK/p1e"; RC=$?
-if [ "$RC" = 0 ] && cmp -s "$WORK/part.before" "$REPO/doc/new.mkd" &&
-   grep -q 'the worktree copy is not what is staged' "$WORK/p1e"
-then ok "a PARTIALLY staged file is left alone, and the hook says why"
-else bad "partial stage (rc $RC)" "$WORK/p1" "$WORK/p1e"; fi
+( cd "$REPO" && HOME="$FAKEHOME" \
+  GIT_AUTHOR_NAME=T GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=T GIT_COMMITTER_EMAIL=t@t \
+  git commit -q -m "r3 a partially staged ref" ) > "$WORK/p1" 2>"$WORK/p1e"; RC=$?
+PERMA9=$(g show "HEAD:doc/new.mkd" | grep '^part ref ' || echo "")
+if [ "$RC" = 0 ] && [ "$PERMA9" != "part ref src/abc/FSW.c:9 here" ] &&
+   [ -n "$(printf '%s' "$PERMA9" | grep 'src/abc/FSW.c:')" ]
+then ok "a PARTIALLY staged ref is upgraded in the COMMITTED blob"
+else bad "partial stage commit (rc $RC) line='$PERMA9'" "$WORK/p1" "$WORK/p1e"; fi
+
+if grep -qxF "$PERMA9" "$REPO/doc/new.mkd" &&
+   grep -qxF 'a tail nobody staged' "$REPO/doc/new.mkd"
+then ok "...and the DIRTY working file carries the SAME permalink, its edits intact"
+else bad "the working file was not upgraded in place" "$REPO/doc/new.mkd"; fi
+
+# The whole point: index vs worktree now differs by the REAL edit and nothing
+# else — no ref shows up in one link form on one side and another on the other.
+g diff -- doc/new.mkd > "$WORK/p1d" 2>/dev/null
+if [ "$(grep -c '^+[^+]' "$WORK/p1d")" = 1 ] &&
+   grep -qx '+a tail nobody staged' "$WORK/p1d" &&
+   ! grep -q 'src/abc/FSW.c:9 ' "$WORK/p1d"
+then ok "...so the unstaged diff shows ONLY that edit — no link-form noise"
+else bad "the unstaged diff carries link-form noise" "$WORK/p1d"; fi
 g checkout -q -- doc/new.mkd || true
 g reset -q --hard HEAD > /dev/null 2>&1
 
 # --- the very FIRST commit ------------------------------------------------
-# A repo with no HEAD cannot be indexed (index.js's own gate), so nothing
-# resolves — but a hook must never BLOCK a commit over its own limits.
+# A repo with NO commits has no HEAD to index and no blob history to extend a
+# hashlet against — but every path in it IS staged, so the staged set alone
+# answers every ref and the ROOT commit mints like any other.
 FRESH="$WORK/fresh"; mkdir -p "$FRESH"
-( cd "$FRESH" && git init -q -b master . && printf 'see a.c:1 here\n' > n.mkd &&
-  printf 'int A;\n' > a.c && git add -A ) > /dev/null 2>&1
-rtin "$FRESH" hook > "$WORK/f1" 2>"$WORK/f1e"; RC=$?
-if [ "$RC" = 0 ] && grep -q 'no permalinks minted' "$WORK/f1e"
-then ok "a repo with no HEAD yet does not block the commit — it says so"
-else bad "first-commit hook (rc $RC)" "$WORK/f1" "$WORK/f1e"; fi
+(
+  cd "$FRESH" || exit 1
+  git init -q -b master . && git config user.email t@t && git config user.name T || exit 1
+  mkdir -p src
+  i=1
+  : > src/A.c
+  while [ "$i" -le 20 ]; do printf 'int SRCMARK%03d;\n' "$i" >> src/A.c; i=$((i + 1)); done
+  printf 'see src/A.c:5 here\nself n.mkd:1 stays\ngone no/such.c:2 nothing\n' > n.mkd
+  git add -A
+) || { echo "hook: cannot build the fresh repo" >&2; exit 2; }
+B_A=$(git -C "$FRESH" rev-parse ":src/A.c") || exit 2
+
+rtin "$FRESH" install > "$WORK/f0" 2>"$WORK/f0e" || true
+( cd "$FRESH" && HOME="$FAKEHOME" \
+  GIT_AUTHOR_NAME=T GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=T GIT_COMMITTER_EMAIL=t@t \
+  GIT_AUTHOR_DATE="2020-01-01T00:00:00Z" GIT_COMMITTER_DATE="2020-01-01T00:00:00Z" \
+  git commit -q -m "r0 the very first commit" ) > "$WORK/f1" 2>"$WORK/f1e"; RC=$?
+if [ "$RC" = 0 ]; then ok "the very FIRST commit lands with the hook in the way"
+else bad "first commit (rc $RC)" "$WORK/f1" "$WORK/f1e"; fi
+
+( cd "$FRESH" && HOME="$FAKEHOME" LITE_FIX="$FRESH" LITE_BA="$B_A" \
+  "$RT" --eval "require('$CASE/first.js')" ) > "$WORK/f.out" 2>"$WORK/f.err"
+RC=$?
+cat "$WORK/f.out"
+if [ "$RC" != 0 ]; then
+    FAILED=$((FAILED + 1))
+    echo "--- stderr ---"; cat "$WORK/f.err"
+fi
 
 if [ "$FAILED" = 0 ]; then
     echo "PASS [lite/hook] $CHECKS shell checks, plus hook.js"

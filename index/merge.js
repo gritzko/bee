@@ -167,7 +167,17 @@ function attrAppend(gitdir, file) {
 //  pattern line in `.git/info/attributes`.
 function install(repoArg) {
   const idx = require("./index.js");
-  const ctx = idx.openRepo(repoArg === undefined ? io.cwd() : repoArg);
+  const arg = repoArg === undefined ? io.cwd() : repoArg;
+  let ctx = null;
+  try { ctx = idx.openRepo(arg); }
+  catch (e) {
+    //  LITE-026: a repo with NO COMMITS YET is wired all the same — a fresh
+    //  `git init` is exactly when you install, and the hook mints on the very
+    //  first commit.  openRepo's HEAD gate is right for the read verbs and is
+    //  left as it is; hook.js owns the HEAD-less handle.
+    ctx = require("./hook.js").openUnborn(arg);
+    if (ctx === null) throw e;
+  }
   let root, gitdir;
   try { root = ctx.root; gitdir = ctx.gitdir; } finally { idx.closeRepo(ctx); }
 

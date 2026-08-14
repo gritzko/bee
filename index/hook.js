@@ -19,8 +19,14 @@
 //      otherwise; the line:col becomes a byte offset in exactly that blob and
 //      the blob's id becomes the hashlet, extended against the path's own
 //      other blobs ([LITE-025] scope: one file, never the repository);
-//   5. the rewritten files are written back and RE-STAGED — standard pre-commit
-//      practice, and the only staging this ticket allows.
+//   5. the rewrite lands in the INDEX — `hash-object -w` then `update-index`,
+//      never the working file used as a proxy for what a commit takes — and the
+//      working file then gets the SAME upgrades ref for ref, so an unstaged
+//      diff never shows a meaningless link-form difference.
+//
+//  THE FIRST COMMIT mints too: a repo with no HEAD has nothing to index and no
+//  blob history to extend a hashlet against, but EVERY path in it is staged, so
+//  the staged set answers every ref by itself and the empty tree is the base.
 //
 //  LEFT ALONE, NEVER GUESSED: a path nothing answers, a path several files
 //  answer, a line past the end of the target, and a SELF-link — rewriting a
@@ -38,6 +44,7 @@ const wv = require("./weave.js");
 //  a genuine cycle; a set still moving at the ceiling is left ALONE.
 const ROUNDS = 4;
 const TAG_F = 0x46;                                //  the lexer's `F` anchor
+const TOK32_F = TAG_F - 65;                        //  the same tag in a tok32
 
 //  --- bytes ------------------------------------------------------------------
 function readFile(path) {
@@ -105,13 +112,18 @@ function allZero(s) {
 }
 
 //  --- what this commit changes ----------------------------------------------
+//  git's EMPTY TREE — the baseline a repo with no HEAD diffs against, so on the
+//  FIRST commit every staged path reads as added.  git knows this object
+//  without anyone having written it.
+const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
 //  -> Map rel -> the staged blob id, for every path whose staged blob differs
 //  from HEAD's.  `-z` throughout, so a path with a tab or a quote in it reads
 //  back verbatim.  A deletion (no new blob) and an unmerged slot are skipped.
 function stagedFiles(ctx) {
   const tmp = ctx.gitdir + "/lite-hook." + io.getpid();
   const text = capture(["git", "-C", ctx.root, "diff-index", "--cached", "--raw",
-                        "-z", ctx.head.sha], tmp);
+                        "-z", ctx.head === null ? EMPTY_TREE : ctx.head.sha], tmp);
   if (text === null) return null;
   //  `:<mode> <mode> <old> <new> <status>\0<path>\0` (no -M, so no renames).
   const out = new Map(), parts = text.split("\0");
@@ -120,7 +132,7 @@ function stagedFiles(ctx) {
     if (meta.length === 0 || meta[0] !== ":") continue;
     const f = meta.slice(1).split(" ");
     if (f.length < 5 || allZero(f[3])) continue;
-    out.set(rel, f[3]);
+    out.set(rel, { sha: f[3], mode: f[1] });
   }
   return out;
 }
@@ -159,6 +171,8 @@ function freshRefs(rel, was, now) {
 //  A ref's path -> the ONE repo-relative file it names, or null.  The commit's
 //  own new files answer first (no tree carries them yet), then the LITE-011
 //  descent at HEAD.  Several answers = an ambiguity, and the hook never guesses.
+//  On the FIRST commit the staged set IS the whole tree, so it answers alone —
+//  the descent has nothing to add and there is no index to ask.
 function targetOf(ctx, ix, staged, partial) {
   const q = rs.split(partial);
   if (q === null) return null;
@@ -181,43 +195,110 @@ function mintRef(ctx, ix, staged, images, srcRel, ref) {
   const off = pm.byteAt(bytes, ref.line, ref.col);
   if (off < 0) return null;                              // no such line there
   const sha = own ? pm.blobIdOf(bytes) : headEntry(ctx, rel).sha;
-  const h = pm.mintHashlet(sha, pm.blobHistory(ctx, ix, rel));
+  //  On the FIRST commit the scope degenerates to that ONE staged blob: no
+  //  history to collide with, so the minimum hashlet always names it.
+  const h = pm.mintHashlet(sha, ix === null ? [] : pm.blobHistory(ctx, ix, rel));
   if (h === null) return null;
   return ref.path + ":" + pm.packOffset(off) + ":" + h;
 }
 
 //  The staged bytes of one file with every mintable ref replaced; null when
 //  none of them minted.  Ascending order, so the splice needs no re-indexing.
+//  `subs` maps each ref AS WRITTEN to its permalink — what the working copy is
+//  upgraded by, so the two halves say exactly the same thing.
 function rewrite(ctx, ix, staged, images, rel, src, refs) {
-  const parts = [];
+  const parts = [], subs = new Map();
   let at = 0, minted = 0;
   for (const ref of refs) {
     const s = mintRef(ctx, ix, staged, images, rel, ref);
     if (s === null) continue;
     parts.push(src.slice(at, ref.lo));
     parts.push(utf8.Encode(s));
+    subs.set(utf8.Decode(src.slice(ref.lo, ref.hi)), s);
     at = ref.hi;
     minted++;
   }
   if (minted === 0) return null;
   parts.push(src.slice(at));
-  return { bytes: concat(parts), minted: minted };
+  return { bytes: concat(parts), minted: minted, subs: subs };
+}
+
+//  --- the write-back ---------------------------------------------------------
+//  Store the rewritten bytes as a blob and point the INDEX entry at them.
+//  `--no-filters`: these bytes already ARE index-side content (they came off the
+//  ODB), so no clean filter may run over them a second time.
+function stageBytes(ctx, rel, mode, bytes) {
+  const tmp = ctx.gitdir + "/lite-hook.blob." + io.getpid();
+  writeFile(tmp, bytes);
+  const out = capture(["git", "-C", ctx.root, "hash-object", "-w", "--no-filters",
+                       "--", tmp], tmp + ".id");
+  try { io.unlink(tmp); } catch (e) {}
+  if (out === null) return false;
+  const id = out.split("\n")[0].trim();
+  if (id.length !== 40) return false;
+  return run(["git", "-C", ctx.root, "update-index", "--cacheinfo",
+              mode + "," + id + "," + rel]) === 0;
+}
+
+//  The SAME upgrades over the WORKING file: an `F` token that IS one of the refs
+//  just minted becomes its permalink, wherever it sits in the dirty content;
+//  every other byte, the unstaged edits included, is untouched.  Token equality,
+//  never a substring hunt — `FSW.c:9` is a prefix of `FSW.c:90`.
+//  A ref that exists ONLY on disk was not part of this commit: it waits its turn.
+function applySubs(bytes, ext, subs) {
+  if (!subs || subs.size === 0) return null;
+  let toks;
+  try { toks = tok.parse(bytes, ext); } catch (e) { return null; }
+  const parts = [];
+  let at = 0, hit = 0;
+  for (let i = 0; i < toks.length; i++) {
+    if (((toks[i] >>> 27) & 0x1f) !== TOK32_F) continue;
+    const lo = i > 0 ? (toks[i - 1] & 0xffffff) : 0, hi = toks[i] & 0xffffff;
+    if (lo < at) continue;
+    const s = subs.get(utf8.Decode(bytes.slice(lo, hi)));
+    if (s === undefined) continue;
+    parts.push(bytes.slice(at, lo));
+    parts.push(utf8.Encode(s));
+    at = hi;
+    hit++;
+  }
+  if (hit === 0) return null;
+  parts.push(bytes.slice(at));
+  return concat(parts);
 }
 
 //  --- the pass ---------------------------------------------------------------
+//  The handle openRepo builds, MINUS its HEAD gate — a repo with no commits has
+//  no HEAD to index, and the FIRST commit needs only the ODB and the two paths.
+//  `head` is null, which every leg below reads as "the empty tree is the base".
+//  openRepo itself is shared by every verb and stays as it is.
+function openUnborn(arg) {
+  let repo = null;
+  try { repo = io.realpath(arg); } catch (e) { return null; }
+  let h;
+  try { h = git.open(repo); } catch (e) { return null; }
+  const gitdir = h.dir;
+  const root = gitdir.length > 5 && gitdir.slice(-5) === "/.git"
+             ? gitdir.slice(0, -5) : repo;
+  return { h: h, repo: repo, gitdir: gitdir, root: root, head: null,
+           r: idx.reader(h) };
+}
+
 function precommit(repoArg) {
-  let ctx;
-  try { ctx = idx.openRepo(repoArg === undefined ? io.cwd() : repoArg); }
-  catch (e) {
-    //  A repo with no HEAD yet (the very FIRST commit) cannot be indexed —
-    //  index.js's own gate — so no ref has anything to resolve against.  A hook
-    //  never blocks a commit over its own limits: it says so and stands back.
-    return "lite: no permalinks minted — " + e;
-  }
+  const arg = repoArg === undefined ? io.cwd() : repoArg;
+  let ctx = null, why = "";
+  try { ctx = idx.openRepo(arg); }
+  catch (e) { why = "" + e; ctx = openUnborn(arg); }   // no HEAD: the first commit
+  //  Not a repository at all.  A hook never blocks a commit over its own
+  //  limits: it says so, in plain words, and stands back.
+  if (ctx === null) return "lite: no permalinks minted — " + why;
   try {
     const staged = stagedFiles(ctx);
     if (staged === null) throw "hook: git could not say what is staged for commit";
     if (staged.size === 0) return "";
+    //  No HEAD: nothing to index and no blob history to extend a hashlet
+    //  against — but everything is STAGED, so the staged set answers for itself.
+    if (ctx.head === null) return pass(ctx, null, staged);
     const ix = idx.openIndex(ctx.gitdir);
     try {
       idx.bringUp(ctx, ix, { track: false });
@@ -229,8 +310,8 @@ function precommit(repoArg) {
 function pass(ctx, ix, staged) {
   //  The staged bytes, and the fresh refs each one carries.
   const base = new Map(), cands = new Map();
-  for (const [rel, sha] of staged) {
-    const now = blobOf(ctx, sha);
+  for (const [rel, st] of staged) {
+    const now = blobOf(ctx, st.sha);
     if (now === null) continue;
     base.set(rel, now);
     const he = headEntry(ctx, rel);
@@ -241,47 +322,48 @@ function pass(ctx, ix, staged) {
   }
   if (cands.size === 0) return "";
 
-  let images = new Map(base), stable = false, minted = 0;
+  let images = new Map(base), subs = new Map(), stable = false, minted = 0;
   for (let round = 0; round < ROUNDS; round++) {
-    const next = new Map(base);
+    const next = new Map(base), nsub = new Map();
     minted = 0;
     for (const [rel, refs] of cands) {
       const r = rewrite(ctx, ix, staged, images, rel, base.get(rel), refs);
       if (r === null) continue;
       next.set(rel, r.bytes);
+      nsub.set(rel, r.subs);
       minted += r.minted;
     }
     let same = true;
     for (const [rel, b] of next) if (!wv.bytesEq(b, images.get(rel))) { same = false; break; }
+    images = next; subs = nsub;
     if (same) { stable = true; break; }
-    images = next;
   }
   if (!stable)
     return "lite: these links name each other's changing text — none was upgraded";
   if (minted === 0) return "";
 
-  //  Write and RE-STAGE.  A file whose worktree copy is NOT what is staged is
-  //  left alone: rewriting it would swallow the unstaged half.  Said in words.
-  const add = [], held = [];
+  //  The STAGED content is what a commit takes, so the rewrite lands in the
+  //  INDEX — never through the working file as a proxy for it.  The working
+  //  file then gets the SAME upgrades ref for ref, so the unstaged diff never
+  //  shows a meaningless link-form difference.
+  const done = [];
   for (const [rel, bytes] of images) {
     if (wv.bytesEq(bytes, base.get(rel))) continue;
+    if (!stageBytes(ctx, rel, staged.get(rel).mode, bytes))
+      throw "hook: git would not stage the upgraded " + rel;
+    done.push(rel);
     const full = ctx.root + "/" + rel;
     const wt = readFile(full);
-    if (wt === null || !wv.bytesEq(wt, base.get(rel))) { held.push(rel); continue; }
-    writeFile(full, bytes);
-    add.push(rel);
+    if (wt === null) continue;
+    //  In lockstep with the index it IS the rewritten content; dirty, only the
+    //  refs move and every unstaged byte around them stays put.
+    if (wv.bytesEq(wt, base.get(rel))) { writeFile(full, bytes); continue; }
+    const up = applySubs(wt, wv.extOf(rel), subs.get(rel));
+    if (up !== null) writeFile(full, up);
   }
-  let note = "";
-  if (add.length) {
-    if (run(["git", "-C", ctx.root, "add", "--"].concat(add)) !== 0)
-      throw "hook: git would not re-stage " + add.join(", ");
-    note = "lite: " + minted + " reference" + (minted === 1 ? "" : "s") +
-           " upgraded to permalinks in " + add.join(", ");
-  }
-  if (held.length)
-    note += (note ? "\n" : "") + "lite: left " + held.join(", ") +
-            " alone — the worktree copy is not what is staged";
-  return note;
+  if (done.length === 0) return "";
+  return "lite: " + minted + " reference" + (minted === 1 ? "" : "s") +
+         " upgraded to permalinks in " + done.join(", ");
 }
 
 //  --- the plant --------------------------------------------------------------
@@ -315,5 +397,5 @@ function plant(gitdir, self) {
   return true;
 }
 
-module.exports = { precommit: precommit, plant: plant,
+module.exports = { precommit: precommit, plant: plant, openUnborn: openUnborn,
                    freshRefs: freshRefs, stagedFiles: stagedFiles };
