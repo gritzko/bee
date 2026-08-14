@@ -4,6 +4,10 @@
 //  views/bro/bro.js broRun flow with the spell/verb/loop layer removed — the
 //  args are paths, not spells, and there is ONE fs open for both modes.
 //
+//  LITE-018: with ZERO args INSIDE a git repo there is no fs story to tell —
+//  `lite` indexes the repo and opens the `list` browser on its root.  Outside
+//  one it is the old no-arg behaviour, untouched.
+//
 //  Exit is by THROW, never process.exit: the runtime maps an uncaught throw to
 //  the non-zero exit (BE-002 discipline — no args → BROUSAGE, args but none
 //  opened → BRONONE).
@@ -202,11 +206,11 @@ function runChat(args) { require("index/chat.js").chat(args); }
 //  ONE arg and answer the same way: at a terminal the pager, piped or under
 //  `--plain` the bare bytes with no `hunk` banner — the log/commit convention,
 //  so a pipe gets exactly the view and nothing framing it.
-function runView(mod, verb, args) {
+function runView(mod, verb, args, opts) {
   const rest = [];
   let plain = false;
   for (const a of args) { if (a === "--plain") plain = true; else rest.push(a); }
-  const out = require(mod)[verb](rest.length ? rest.join(" ") : undefined);
+  const out = require(mod)[verb](rest.length ? rest.join(" ") : undefined, opts);
   if (!io.isatty(1) || plain) {
     //  `plain` is the view's own byte block (list/tree rows); cat and blob have
     //  none, their bytes ARE the answer.
@@ -215,6 +219,19 @@ function runView(mod, verb, args) {
     return;
   }
   if (out.hunks.length) pageHunks(out.hunks);
+}
+
+//  LITE-018: is the cwd inside a git repository?  The probe is `openRepo`'s own
+//  — the climb every lite view does — and it is a probe ONLY: it closes what it
+//  opened and lets `list` open the repo for real, so no error of the view's is
+//  swallowed here.  No repo (or no HEAD yet) -> false, and bare `lite` stays
+//  today's filesystem story to the byte.
+function inRepo() {
+  const idx = require("index/index.js");
+  let ctx = null;
+  try { ctx = idx.openRepo(io.cwd(), true); } catch (e) { return false; }
+  idx.closeRepo(ctx);
+  return true;
 }
 
 //  ---- the ONE door --------------------------------------------------------
@@ -326,11 +343,18 @@ function main(argv) {
   let plain = false;
   //  `--plain` is the ONE flag; everything else is a path, verbatim.
   for (const a of argl) { if (a === "--plain") plain = true; else args.push(a); }
+  //  LITE-018: ZERO args inside a git repo == `lite index && lite list`, one
+  //  process.  `list` owns the bring-up, so the index is built (visibly, on
+  //  stderr) strictly before the pager takes the tty, and `track` makes this
+  //  run the `index` half proper — the repo joins the tracks list.
+  if (args.length === 0 && inRepo())
+    return runView("index/list.js", "list", argl, { track: true });
   if (io.isatty(1) && !plain) runPager(args);      // no args → an empty viewport
   else runPlain(args);
 }
 
 if (typeof module !== "undefined")
-  module.exports = { main: main, openPath: openPath, openTarget: openTarget };
+  module.exports = { main: main, openPath: openPath, openTarget: openTarget,
+                     inRepo: inRepo };
 if (process.argv[1] && process.argv[1].slice(-"/main.js".length) === "/main.js")
   main(process.argv);

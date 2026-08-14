@@ -34,6 +34,10 @@
 //      way LITE-013 capped log (DIR_WALK_CAP): past the cap an entry keeps its
 //      row and simply carries no summary and no age, which is be's own
 //      ceiling behaviour.
+//
+//  LITE-018: the view OWNS its freshness whole — a repo with no `.git/be` at
+//  all is derived here, not merely topped up, so bare `lite`, `lite list` and a
+//  clicked row all open the same board on a repo nobody ever indexed.
 "use strict";
 
 const idx = require("./index.js");
@@ -174,7 +178,8 @@ function hunkOf(uriStr, rows) {
 
 //  --- the verb --------------------------------------------------------------
 //  list(arg, opts) -> { uri, rows, plain, hunks }.  `opts.cap` overrides the
-//  dir-fuse walk ceiling (the tests pin it).
+//  dir-fuse walk ceiling (the tests pin it); LITE-018's `opts.track` adds the
+//  repo to the tracks list, which is the bare `lite` run's `index` half.
 function list(arg, opts) {
   opts = opts || {};
   const cap = opts.cap === undefined ? DIR_WALK_CAP : opts.cap;
@@ -199,11 +204,14 @@ function list(arg, opts) {
                            : markerOf(ctx.root + "/" + pfx + name, ent.sha) });
 
     //  The fuse rides the lane, so it brings the index up to date itself —
-    //  `lite log`'s lazy contract, and it writes nothing else.
-    const ix = idx.openIndex(ctx.gitdir);
+    //  `lite log`'s lazy contract.  LITE-018: it owns the FULL bring-up, so a
+    //  repo that was never indexed is derived right here, at the bulk handle
+    //  `lite index` uses (a small memtable would seal per commit); `opts.track`
+    //  is the tracks-list half, which only the bare `lite` run asks for.
+    const ix = idx.openIndex(ctx.gitdir, idx.fresh(ctx.gitdir));
     let commits = {};
     try {
-      idx.bringUp(ctx, ix, { track: false });
+      idx.bringUp(ctx, ix, { track: opts.track === true });
       const files = [], dirs = [];
       for (const en of entries) (en.dir ? dirs : files).push(en.name);
       commits = fileCommits(ix, ctx.r, pfx, files);
