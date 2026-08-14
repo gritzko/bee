@@ -235,6 +235,72 @@ if [ "$RC" != 0 ]; then
     echo "--- stderr ---"; cat "$WORK/f.err"
 fi
 
+# --- a LINK CYCLE (LITE-027) ----------------------------------------------
+# A links B and B links A: a hash naming content that contains the hash, so
+# neither ref can ever be minted.  Only THOSE refs degrade — the bystander C,
+# and A's own ref to an acyclic file, mint as in any commit.  A second commit
+# is the DAG guard: X names a line of Y that Y's OWN rewrite moves.
+CYC="$WORK/cyc"; mkdir -p "$CYC"
+(
+  cd "$CYC" || exit 1
+  git init -q -b master . && git config user.email t@t && git config user.name T || exit 1
+  export GIT_AUTHOR_NAME=T GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=T GIT_COMMITTER_EMAIL=t@t
+  mkdir -p data cyc
+  i=1
+  : > data/D.c
+  while [ "$i" -le 20 ]; do printf 'int DDDMARK%03d;\n' "$i" >> data/D.c; i=$((i + 1)); done
+  printf 'the A page\n' > cyc/A.mkd
+  printf 'the B page\n' > cyc/B.mkd
+  printf 'the C page\n' > cyc/C.mkd
+  printf 'the X page\n' > cyc/X.mkd
+  printf 'the Y page\nthe Y tail\n' > cyc/Y.mkd
+  git add -A
+  GIT_AUTHOR_DATE="2020-04-01T00:00:00Z" GIT_COMMITTER_DATE="2020-04-01T00:00:00Z" \
+    git commit -q -m "r0 the pages" || exit 1
+) || { echo "hook: cannot build the cycle repo" >&2; exit 2; }
+c() { git -C "$CYC" "$@"; }
+rtin "$CYC" install > "$WORK/y0" 2>"$WORK/y0e" || true
+B_D=$(c rev-parse "HEAD:data/D.c") || exit 2
+B_Y0=$(c rev-parse "HEAD:cyc/Y.mkd") || exit 2
+
+printf 'link cyc/B.mkd:1 there\nalso data/D.c:7 fine\n' >> "$CYC/cyc/A.mkd"
+printf 'link cyc/A.mkd:1 back\n' >> "$CYC/cyc/B.mkd"
+printf 'look data/D.c:5 here\n' >> "$CYC/cyc/C.mkd"
+c add -A
+( cd "$CYC" && HOME="$FAKEHOME" \
+  GIT_AUTHOR_NAME=T GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=T GIT_COMMITTER_EMAIL=t@t \
+  GIT_AUTHOR_DATE="2020-05-01T00:00:00Z" GIT_COMMITTER_DATE="2020-05-01T00:00:00Z" \
+  git commit -q -m "r1 a link cycle" ) > "$WORK/y1" 2>"$WORK/y1e"; RC=$?
+if [ "$RC" = 0 ]; then ok "a LINK CYCLE never blocks the commit"
+else bad "cycle commit (rc $RC)" "$WORK/y1" "$WORK/y1e"; fi
+
+if grep -q 'line:col' "$WORK/y1e" && grep -q 'cyc/A.mkd' "$WORK/y1e"
+then ok "...and the hook says in plain words which refs stayed line:col"
+else bad "no plain-words note about the cycle" "$WORK/y1e"; fi
+
+# The DAG guard: Y's own ref line sits ABOVE the line X names, so the offset X
+# mints is right only if Y was rewritten FIRST.
+printf 'xref cyc/Y.mkd:3 there\n' >> "$CYC/cyc/X.mkd"
+printf 'the Y page\nyref data/D.c:9 here\nthe Y tail\n' > "$CYC/cyc/Y.mkd"
+c add -A
+( cd "$CYC" && HOME="$FAKEHOME" \
+  GIT_AUTHOR_NAME=T GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=T GIT_COMMITTER_EMAIL=t@t \
+  GIT_AUTHOR_DATE="2020-06-01T00:00:00Z" GIT_COMMITTER_DATE="2020-06-01T00:00:00Z" \
+  git commit -q -m "r2 a chain" ) > "$WORK/y2" 2>"$WORK/y2e"; RC=$?
+if [ "$RC" = 0 ]; then ok "the chained commit lands too"
+else bad "chain commit (rc $RC)" "$WORK/y2" "$WORK/y2e"; fi
+B_Y1=$(c rev-parse "HEAD:cyc/Y.mkd") || exit 2
+
+( cd "$CYC" && HOME="$FAKEHOME" LITE_FIX="$CYC" \
+  LITE_BD="$B_D" LITE_BY0="$B_Y0" LITE_BY1="$B_Y1" \
+  "$RT" --eval "require('$CASE/cycle.js')" ) > "$WORK/y.out" 2>"$WORK/y.err"
+RC=$?
+cat "$WORK/y.out"
+if [ "$RC" != 0 ]; then
+    FAILED=$((FAILED + 1))
+    echo "--- stderr ---"; cat "$WORK/y.err"
+fi
+
 if [ "$FAILED" = 0 ]; then
     echo "PASS [lite/hook] $CHECKS shell checks, plus hook.js"
 else

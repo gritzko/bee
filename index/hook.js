@@ -19,6 +19,8 @@
 //      otherwise; the line:col becomes a byte offset in exactly that blob and
 //      the blob's id becomes the hashlet, extended against the path's own
 //      other blobs ([LITE-025] scope: one file, never the repository);
+//   4a. [LITE-027] a hashlet names its target's FINAL bytes, so the carriers are
+//      minted in TOPOLOGICAL order — every target before anything naming it;
 //   5. the rewrite lands in the INDEX — `hash-object -w` then `update-index`,
 //      never the working file used as a proxy for what a commit takes — and the
 //      working file then gets the SAME upgrades ref for ref, so an unstaged
@@ -29,8 +31,10 @@
 //  the staged set answers every ref by itself and the empty tree is the base.
 //
 //  LEFT ALONE, NEVER GUESSED: a path nothing answers, a path several files
-//  answer, a line past the end of the target, and a SELF-link — rewriting a
-//  file changes the blob a link into it names ([LITE-025]).
+//  answer, a line past the end of the target, and a ref on a LINK CYCLE — two
+//  files naming each other's text have no final bytes to name, the self-link
+//  ([LITE-025]) being that cycle of one.  Only those refs degrade; the rest of
+//  the commit mints.
 "use strict";
 
 const idx = require("./index.js");
@@ -39,10 +43,6 @@ const pm = require("./perma.js");
 const rs = require("./resolve.js");
 const wv = require("./weave.js");
 
-//  A rewrite moves the blob a link into that same file names, so the mint is
-//  re-run until the images stop moving.  Two rounds settle everything short of
-//  a genuine cycle; a set still moving at the ceiling is left ALONE.
-const ROUNDS = 4;
 const TAG_F = 0x46;                                //  the lexer's `F` anchor
 const TOK32_F = TAG_F - 65;                        //  the same tag in a tok32
 
@@ -185,10 +185,11 @@ function targetOf(ctx, ix, staged, partial) {
 }
 
 //  One ref -> its permalink spelling, or null when it is left alone.  The path
-//  is kept AS WRITTEN — only the anchor segments change.
-function mintRef(ctx, ix, staged, images, srcRel, ref) {
-  const rel = targetOf(ctx, ix, staged, ref.path);
-  if (rel === null || rel === srcRel) return null;       // nothing, or a SELF-link
+//  is kept AS WRITTEN — only the anchor segments change.  `ref.dst` is the file
+//  the path answered to, resolved once before any rewrite ran.
+function mintRef(ctx, ix, images, ref) {
+  const rel = ref.dst;
+  if (rel === null) return null;
   const own = images.has(rel);
   const bytes = own ? images.get(rel) : blobOf(ctx, (headEntry(ctx, rel) || {}).sha);
   if (bytes === null || bytes === undefined) return null;
@@ -202,15 +203,23 @@ function mintRef(ctx, ix, staged, images, srcRel, ref) {
   return ref.path + ":" + pm.packOffset(off) + ":" + h;
 }
 
-//  The staged bytes of one file with every mintable ref replaced; null when
-//  none of them minted.  Ascending order, so the splice needs no re-indexing.
-//  `subs` maps each ref AS WRITTEN to its permalink — what the working copy is
-//  upgraded by, so the two halves say exactly the same thing.
-function rewrite(ctx, ix, staged, images, rel, src, refs) {
+//  The staged bytes of one file with every mintable ref replaced; `bytes` is
+//  null when none of them minted.  Ascending order, so the splice needs no
+//  re-indexing.  `subs` maps each ref AS WRITTEN to its permalink — what the
+//  working copy is upgraded by, so the two halves say exactly the same thing.
+//  A ref whose target sits in the carrier's OWN component is on a cycle: it has
+//  no final bytes to name, so it stays `line:col`.  `stuck` counts only the
+//  REAL cycles — a component of one is the self-link, silent and expected.
+function rewrite(ctx, ix, images, comp, rel, src, refs) {
   const parts = [], subs = new Map();
-  let at = 0, minted = 0;
+  let at = 0, minted = 0, stuck = 0;
+  const mine = comp.get(rel);
   for (const ref of refs) {
-    const s = mintRef(ctx, ix, staged, images, rel, ref);
+    if (ref.dst !== null && comp.get(ref.dst) === mine) {
+      if (mine.length > 1) stuck++;
+      continue;
+    }
+    const s = mintRef(ctx, ix, images, ref);
     if (s === null) continue;
     parts.push(src.slice(at, ref.lo));
     parts.push(utf8.Encode(s));
@@ -218,9 +227,51 @@ function rewrite(ctx, ix, staged, images, rel, src, refs) {
     at = ref.hi;
     minted++;
   }
-  if (minted === 0) return null;
+  if (minted === 0) return { bytes: null, minted: 0, subs: null, stuck: stuck };
   parts.push(src.slice(at));
-  return { bytes: concat(parts), minted: minted, subs: subs };
+  return { bytes: concat(parts), minted: minted, subs: subs, stuck: stuck };
+}
+
+//  --- the link graph ---------------------------------------------------------
+//  [LITE-027] Carrier -> target edges, over the files this commit REWRITES: a
+//  target no rewrite touches is already final and is no edge at all.  Tarjan
+//  answers with the strongly connected components in SINK-FIRST order — which is
+//  exactly the mint order, every target settled before anything naming it — and
+//  a component of more than one file is a link cycle.  A self-link puts a file
+//  in its own component with an edge to itself, so both cases read the same:
+//  carrier and target in ONE component means the ref cannot be minted.
+//  -> [[rel, ...], ...], sinks first.
+function components(nodes, edges) {
+  const seen = new Map(), low = new Map(), on = new Set();
+  const path = [], out = [];
+  let clock = 0;
+  for (const root of nodes) {
+    if (seen.has(root)) continue;
+    const work = [{ v: root, i: 0 }];
+    while (work.length) {
+      const fr = work[work.length - 1], v = fr.v;
+      if (fr.i === 0) { seen.set(v, clock); low.set(v, clock); clock++; path.push(v); on.add(v); }
+      const es = edges.get(v) || [];
+      let down = false;
+      while (fr.i < es.length) {
+        const w = es[fr.i++];
+        if (!seen.has(w)) { work.push({ v: w, i: 0 }); down = true; break; }
+        if (on.has(w) && seen.get(w) < low.get(v)) low.set(v, seen.get(w));
+      }
+      if (down) continue;
+      if (low.get(v) === seen.get(v)) {
+        const c = [];
+        for (;;) { const w = path.pop(); on.delete(w); c.push(w); if (w === v) break; }
+        out.push(c);
+      }
+      work.pop();
+      if (work.length) {
+        const p = work[work.length - 1].v;
+        if (low.get(v) < low.get(p)) low.set(p, low.get(v));
+      }
+    }
+  }
+  return out;
 }
 
 //  --- the write-back ---------------------------------------------------------
@@ -322,25 +373,38 @@ function pass(ctx, ix, staged) {
   }
   if (cands.size === 0) return "";
 
-  let images = new Map(base), subs = new Map(), stable = false, minted = 0;
-  for (let round = 0; round < ROUNDS; round++) {
-    const next = new Map(base), nsub = new Map();
-    minted = 0;
-    for (const [rel, refs] of cands) {
-      const r = rewrite(ctx, ix, staged, images, rel, base.get(rel), refs);
-      if (r === null) continue;
-      next.set(rel, r.bytes);
-      nsub.set(rel, r.subs);
-      minted += r.minted;
+  //  Every ref's target, resolved ONCE: the answer is a question about paths,
+  //  not about bytes, so no rewrite can change it.  Edges only to carriers.
+  const edges = new Map();
+  for (const [rel, refs] of cands) {
+    const es = [];
+    for (const ref of refs) {
+      ref.dst = targetOf(ctx, ix, staged, ref.path);
+      if (ref.dst !== null && cands.has(ref.dst) && es.indexOf(ref.dst) < 0) es.push(ref.dst);
     }
-    let same = true;
-    for (const [rel, b] of next) if (!wv.bytesEq(b, images.get(rel))) { same = false; break; }
-    images = next; subs = nsub;
-    if (same) { stable = true; break; }
+    edges.set(rel, es);
   }
-  if (!stable)
-    return "lite: these links name each other's changing text — none was upgraded";
-  if (minted === 0) return "";
+  const comps = components(cands.keys(), edges), comp = new Map();
+  for (const c of comps) for (const rel of c) comp.set(rel, c);
+
+  //  One pass, targets first: when a carrier's turn comes every file it names
+  //  is already final in `images`, so nothing minted here is ever re-minted.
+  const images = new Map(base), subs = new Map(), stuck = [];
+  let minted = 0;
+  for (const c of comps) for (const rel of c) {
+    const r = rewrite(ctx, ix, images, comp, rel, base.get(rel), cands.get(rel));
+    if (r.stuck) stuck.push(rel);
+    if (r.bytes === null) continue;
+    images.set(rel, r.bytes);
+    subs.set(rel, r.subs);
+    minted += r.minted;
+  }
+  //  A cycle costs its own refs, never the commit: they keep the `line:col`
+  //  form the author typed and the hook says which files that happened in.
+  const note = stuck.length === 0 ? ""
+    : "lite: links naming text that names them back stay as line:col in " +
+      stuck.join(", ");
+  if (minted === 0) return note;
 
   //  The STAGED content is what a commit takes, so the rewrite lands in the
   //  INDEX — never through the working file as a proxy for it.  The working
@@ -361,9 +425,9 @@ function pass(ctx, ix, staged) {
     const up = applySubs(wt, wv.extOf(rel), subs.get(rel));
     if (up !== null) writeFile(full, up);
   }
-  if (done.length === 0) return "";
+  if (done.length === 0) return note;
   return "lite: " + minted + " reference" + (minted === 1 ? "" : "s") +
-         " upgraded to permalinks in " + done.join(", ");
+         " upgraded to permalinks in " + done.join(", ") + (note ? "\n" + note : "");
 }
 
 //  --- the plant --------------------------------------------------------------
