@@ -1,6 +1,6 @@
 #!/bin/sh
 # lite/test/lindex/run.sh — LITE-033: `lite lindex`, the BACKLINK SUSPECTS in
-# the one `.lite2.idx` lane.  Two legs over the landed lite tree:
+# the one `.lite.idx` lane.  Two legs over the landed lite tree:
 #   verb  — this script: the CLI contract over a fixture git repo — who links to
 #           a file, who links to a ticket code, the incremental (mark..tip) run,
 #           a rerun that writes NOTHING, the stale row a removed link leaves,

@@ -7,8 +7,8 @@
 //  Stepped, not run(): a self-pty has no concurrent reader, so ONE render is
 //  followed by ONE blocking drain (lite/test/pager/pty.js's note).
 "use strict";
-const pagerlib = require("view/pager.js");
-const lg = require("index/log.js");
+const pagerlib = require("pager.js");
+const lg = require("view/log.js");
 
 const ESC = "\x1b";
 let n = 0, bad = 0;
@@ -37,7 +37,7 @@ const frame = k > 0 ? utf8.Decode(rb.data().slice()) : "";
 const lines = frame.split("\n");
 
 check("frame-painted", frame.length > 0, "bytes " + frame.length);
-//  The banner band is bro.js's own THEME_BANNER (black on cream) carrying the
+//  The banner band is render/ansi.js's own THEME_BANNER (black on cream) carrying the
 //  log's uri — the SAME band a file hunk gets.
 check("banner-band-carries-the-log-uri",
       lines[0].indexOf(ESC + "[38;5;0;48;5;230m") >= 0 &&

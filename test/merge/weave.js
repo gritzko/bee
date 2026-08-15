@@ -101,7 +101,7 @@ function S(bytes) { return utf8.Decode(bytes); }
 
 //  --- 6. the shared policy: diff.js reads the SAME constants ---------------
 {
-  const df = require("index/diff.js");
+  const df = require("view/diff.js");
   check("one-size-policy-source",
         df.MAX_SOURCE_SIZE === wv.MAX_SOURCE_SIZE &&
         df.MAX_SOURCE_MARKED_UP === wv.MAX_SOURCE_MARKED_UP &&

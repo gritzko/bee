@@ -1,4 +1,4 @@
-//  index/commit.js — LITE-009: `lite commit [<hex>]`, ONE commit's metadata,
+//  view/commit.js — LITE-009: `lite commit [<hex>]`, ONE commit's metadata,
 //  ported from be/views/commit/commit.js.
 //
 //  A commit view is PURE ODB: `git.getHex` takes any 6..40 hexlet, so the arg
@@ -19,7 +19,7 @@
 //  DECODED text and re-concatenates it; that is the one shape change here.)
 //
 //  The colour is layered on those same bytes: field names R, sha values L,
-//  other values G, subject N, message body W, line terminators S — view/bro.js
+//  other values G, subject N, message body W, line terminators S — render/ansi.js
 //  THEME maps every one.  be's `F` ticket spans and its COMMIT-007 human-date
 //  rewrite are still NOT carried over (a rewritten date would break the byte
 //  identity above).
@@ -36,7 +36,7 @@
 //  page, which is be's own ruling there (PROJ.c:431-436).
 "use strict";
 
-const idx = require("./index.js");
+const idx = require("index/index.js");
 const lg = require("./log.js");
 //  LITE-009: the metadata is followed by the commit's OWN diff (vs its first
 //  parent) — the LITE-010 fold, one hunk set per changed or added file.
@@ -137,7 +137,7 @@ function spansOf(b, base) {
 }
 
 //  --- the hunk --------------------------------------------------------------
-//  `commit <sha40>\n` + the object, in ONE growing io.buf (index/log.js's own
+//  `commit <sha40>\n` + the object, in ONE growing io.buf (view/log.js's own
 //  hunk pattern), with the spans packed over it.
 function build(sha, bytes) {
   const head = utf8.Encode("commit " + sha + "\n");
@@ -156,8 +156,8 @@ function build(sha, bytes) {
 }
 
 //  LITE-021: the pager's twin body — the very same bytes with each span's nav
-//  target spliced in right after it under a hidden `U` span (bro.js gives a
-//  `U` byte no column, so the visible row is the plain one to the byte).
+//  target spliced in right after it under a hidden `U` span (render/wrap.js gives
+//  a `U` byte no column, so the visible row is the plain one to the byte).
 function withTargets(text, spans) {
   let extra = 0;
   for (const s of spans) if (s[2]) extra += s[2].length;
@@ -181,17 +181,21 @@ function withTargets(text, spans) {
 }
 
 //  The tty shape: the same hunk record a file arg or a log yields, so it goes
-//  through view/pager.js + view/bro.js unchanged.
-//  LITE-021: the pager gets the U-BEARING twin; `out.text` (what --plain and a
-//  pipe write) is untouched, so the plain bytes stay `git cat-file commit`.
-function hunk(out) {
-  return { uri: out.uri, verb: "hunk", text: out.textU || out.text,
-           toks: out.toksU || out.toks, kind: "commit" };
+//  through pager.js + render/ansi.js unchanged.
+//  LITE-021: the pager gets the U-BEARING twin; the `plain` bytes (what a pipe
+//  writes) are the object untouched, so they stay `git cat-file commit` with
+//  one line in front.  LITE-045: metadata IS the answer, hence `bare`.
+function hunk(uri, b) {
+  return { uri: uri, verb: "hunk", text: b.textU || b.text,
+           toks: b.toksU || b.toks, kind: "commit",
+           plain: b.text, bare: true };
 }
 
 //  --- the verb --------------------------------------------------------------
-//  commit(arg, opts) -> { sha, uri, text, toks }.  No arg = the checked-out
-//  tip.  `opts.from` is the dir to find the repo above (the cwd by default).
+//  commit(arg, opts) -> { sha, uri, hunks }.  No arg = the checked-out tip.
+//  `opts.from` is the dir to find the repo above (the cwd by default).
+//  LITE-045: the metadata hunk leads the list — a commit view is its fields and
+//  then its files, and a caller never assembles the two halves itself.
 function commit(arg, opts) {
   opts = opts || {};
   const ctx = idx.openRepo(opts.from || io.cwd(), true);
@@ -207,14 +211,13 @@ function commit(arg, opts) {
     //  getHex hands back {type, bytes} and no name, so a SHORT hexlet is
     //  re-framed to its own sha the way LITE-007's `seedOf` does.
     const sha = hexlet.length === 40 ? hexlet : hex.encode(lg.frameSha(o.bytes));
-    const out = build(sha, o.bytes);      // { text, toks } + the U-bearing twin
-    out.sha = sha;
-    out.uri = "commit " + (bare ? sha : arg);
+    const b = build(sha, o.bytes);        // { text, toks } + the U-bearing twin
+    const uri = "commit " + (bare ? sha : arg);
     //  The commit's files, under the metadata: a changed or added one gets its
     //  diff hunks, a removed one an EMPTY hunk (the banner alone).
     const m = idx.readCommit(ctx.r, sha);
-    out.hunks = m === null ? [] : df.commitHunks(ctx, m, []);
-    return out;
+    const files = m === null ? [] : df.commitHunks(ctx, m, []);
+    return { sha: sha, uri: uri, hunks: [hunk(uri, b)].concat(files) };
   } finally { idx.closeRepo(ctx); }
 }
 

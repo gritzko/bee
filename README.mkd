@@ -9,7 +9,13 @@ jab-shared API suite) as submodules, no jab tree involved:
         -DJAB_JSRC=<this tree> -DQUICKJAB_JSRC_PACK=ON
     ninja -C build quickjab
 
-Usage (`--plain` or a pipe dumps bare bytes; a terminal pages coloured hunks):
+Layout: `index/` reads the lane and the ODB, `view/` turns an arg into hunks
+(one module per verb), `render/` turns hunks into bytes (`plain` `ansi` `html`
+over `wrap` + `theme`), `door.js` turns a target into a view, and `main.js`
+`pager.js` `serve.js` `merge.js` `chat.js` are the apps.
+
+Usage — a terminal with no flag pages coloured hunks; otherwise one mode flag
+picks the sink, `--plain` (also what a pipe defaults to), `--color`, `--html`:
 
  -  `lite` — in a git repo: index it, open the `list` browser; elsewhere as `lite <path>`
  -  `lite <path>...` — page files/dirs off the filesystem

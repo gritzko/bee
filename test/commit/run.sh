@@ -1,6 +1,6 @@
 #!/bin/sh
 # lite/test/commit/run.sh — LITE-009: the `lite commit <hex>` suite.
-# Three legs over the LANDED lite tree (main.js, index/commit.js):
+# Three legs over the LANDED lite tree (main.js, view/commit.js):
 #   bytes  — this script: the ACCEPTANCE test, `lite commit <sha>` byte-equal to
 #            `commit <sha40>\n` + `git cat-file commit <sha>`, over a root, a
 #            merge, a folded-header (gpgsig + encoding) commit and an UNINDEXED

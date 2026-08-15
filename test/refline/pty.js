@@ -8,8 +8,8 @@
 //  Stepped, not run(): a self-pty has no concurrent reader, so a render is
 //  followed by a blocking drain.
 "use strict";
-const pagerlib = require("view/pager.js");
-const entry = require("main.js");
+const pagerlib = require("pager.js");
+const entry = require("door.js");        // LITE-045: the door, not the CLI
 
 const ESC = "\x1b";
 let n = 0, bad = 0;
@@ -54,18 +54,18 @@ check("a ref with :line:col opens the file", at !== null && at.length === 1,
       at === null ? "null" : "hunks " + at.length);
 check("...the one the FSEG descent named, tail SHED",
       at !== null && ends(at[0].uri, "/src/abc/FSW.c"), at === null ? "null" : at[0].uri);
-check("...and the landing rides back", at !== null && at.land &&
-      at.land.line === 12 && at.land.col === 4,
-      at === null ? "null" : JSON.stringify(at.land || null));
+check("...and the landing rides back", at !== null && at[0].land &&
+      at[0].land.line === 12 && at[0].land.col === 4,
+      at === null ? "null" : JSON.stringify(at[0].land || null));
 
 const lineOnly = entry.openTarget("abc/FSW.c:12");
 check("a ref with :line only lands with no column",
-      lineOnly !== null && lineOnly.land && lineOnly.land.line === 12 && lineOnly.land.col === 0,
-      lineOnly === null ? "null" : JSON.stringify(lineOnly.land || null));
+      lineOnly !== null && lineOnly[0].land && lineOnly[0].land.line === 12 && lineOnly[0].land.col === 0,
+      lineOnly === null ? "null" : JSON.stringify(lineOnly[0].land || null));
 
 const bare = entry.openTarget("abc/FSW.c");
 check("a ref with NO tail carries no landing",
-      bare !== null && !bare.land, bare === null ? "null" : JSON.stringify(bare.land || null));
+      bare !== null && !bare[0].land, bare === null ? "null" : JSON.stringify(bare[0].land || null));
 
 //  a lone colon is not a tail (`b.c:` never fuses one either)
 const colon = entry.openTarget("abc/FSW.c:");
@@ -256,8 +256,8 @@ io.chdir(nogit);
 const ng = entry.openTarget("log0.js:20");
 check("NO-GIT: the fs walk resolves the ref", ng !== null && ng.length === 1 &&
       ends(String(ng[0].uri), "/deep/log0.js"), ng === null ? "null" : String(ng[0].uri));
-check("...the landing rides back", ng !== null && ng.land && ng.land.line === 20,
-      ng === null ? "null" : JSON.stringify(ng.land || null));
+check("...the landing rides back", ng !== null && ng[0].land && ng[0].land.line === 20,
+      ng === null ? "null" : JSON.stringify(ng[0].land || null));
 check("NO-GIT: an unmatched ref stays a quiet null", entry.openTarget("gone.js:9") === null,
       "opened");
 

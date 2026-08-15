@@ -18,7 +18,7 @@
 //
 //  `LITE_FIX` names the fixture repo, `LITE_TIP` its tip.
 "use strict";
-const ls = require("index/list.js");
+const ls = require("view/list.js");
 const idx = require("index/index.js");
 const rd = require("index/read.js");
 
@@ -151,7 +151,7 @@ const vis = [];
   }
 }
 check("the visible bytes ARE the plain block",
-      utf8.Decode(new Uint8Array(vis)) === utf8.Decode(out.plain),
+      utf8.Decode(new Uint8Array(vis)) === utf8.Decode(out.hunks[0].plain),
       utf8.Decode(new Uint8Array(vis)));
 
 //  The U targets: a dir stays in the browser, a file opens in cat.

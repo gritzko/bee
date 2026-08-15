@@ -176,7 +176,7 @@ function blobOf(ctx, sha) {
 //  order, each as { lo, hi, path, line, col } over the STAGED bytes.
 function freshRefs(rel, was, now) {
   const out = [];
-  const split = require("main.js").splitRef;       // the ONE ref split point
+  const split = require("door.js").splitRef;       // the ONE ref split point
   pm.walkNew(was, now, wv.extOf(rel), function (t, lo, hi, fresh) {
     if (!fresh || t.tag !== TAG_F) return;
     const sp = split(utf8.Decode(t.text));

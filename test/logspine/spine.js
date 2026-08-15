@@ -12,7 +12,7 @@
 //  `LITE_FIX` = the merge fixture, `LITE_FIX_LIN` = the linear one, `LITE_EXP`
 //  = "c0=<sha> c1=<sha> s1=<sha> s2=<sha> m=<sha> c2=<sha>".
 "use strict";
-const lg = require("index/log.js");
+const lg = require("view/log.js");
 
 let n = 0, bad = 0;
 function w1(s) { const b = utf8.Encode(s); const x = io.buf(b.length + 8); x.feed(b); io.writeAll(1, x); }

@@ -1,4 +1,4 @@
-//  lite/test/chat/name.js — LITE-022, the NAME leg: `index/chat.js`'s pageName,
+//  lite/test/chat/name.js — LITE-022, the NAME leg: `chat.js`'s pageName,
 //  the map from a session log's basename to its page name.  Every expectation
 //  below is hand-computed (python3 hashlib + the RON64 table), never asked of
 //  the code under test:
@@ -17,7 +17,7 @@
 //
 //  RED before the verb: chat.js named a page by its raw basename.
 "use strict";
-const chat = require("index/chat.js");
+const chat = require("chat.js");
 
 let n = 0, bad = 0;
 function w1(s) { const b = utf8.Encode(s); const x = io.buf(b.length + 8); x.feed(b); io.writeAll(1, x); }

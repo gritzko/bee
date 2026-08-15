@@ -4,7 +4,7 @@
 //  module (build/buildDag/foldCommit) is NOT here: a git merge driver is handed
 //  three BLOBS, so there is no history to walk and no store reader to carry.
 //
-//  This file is also THE source-size policy home (index/diff.js imports it, so
+//  This file is also THE source-size policy home (view/diff.js imports it, so
 //  the caps live in one place as they do in be) and the one "can we weave it"
 //  gate: over the cap or binary => the caller falls back, never silent-ours.
 "use strict";

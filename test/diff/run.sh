@@ -1,6 +1,6 @@
 #!/bin/sh
 # lite/test/diff/run.sh — LITE-010: the `lite diff` suite.
-# Three legs over the landed lite tree (main.js, index/diff.js, view/*):
+# Three legs over the landed lite tree (main.js, view/diff.js, render/*):
 #   verb   — this script: the CLI contract over a fixture git repo — the three
 #            forms (bare / <path> / <hex>), add / modify / delete / binary /
 #            empty-file / symlink, the SET and the per-file +/- counts against

@@ -1,4 +1,4 @@
-//  index/cat.js — LITE-017: `lite cat <path>[?<rev>]`, ported from
+//  view/cat.js — LITE-017: `lite cat <path>[?<rev>]`, ported from
 //  be/views/cat/cat.js (JAB-020).
 //
 //  THE RULING (gritzko, JAB-020): cat shows the file's OWN bytes.  There is no
@@ -20,10 +20,10 @@
 //  makes any `F` token in a file hunk a REFERENCE the pager's door resolves.
 "use strict";
 
-const idx = require("./index.js");
+const idx = require("index/index.js");
 const df = require("./diff.js");
-const bro = require("view/bro.js");
-const rd = require("./read.js");
+const fs = require("view/fs.js");
+const rd = require("index/read.js");
 
 //  A worktree file's bytes.  An EMPTY regular file short-circuits (mmap of zero
 //  bytes has nothing to map); everything else is diff.js's own reader, which
@@ -39,7 +39,7 @@ function wtBytes(abs) {
 }
 
 //  --- the verb --------------------------------------------------------------
-//  cat(arg, opts) -> { uri, rel, bytes, hunks }.  `hunks` is empty for an empty
+//  cat(arg, opts) -> { uri, rel, hunks }.  `hunks` is empty for an empty
 //  file, which is be's own no-banner-for-nothing case.
 function cat(arg, opts) {
   opts = opts || {};
@@ -66,8 +66,8 @@ function cat(arg, opts) {
       if (bytes === null) throw "cat: there is no " + rel + " in the worktree";
     }
     const hunks = bytes.length === 0 ? []
-                : [rd.textHunk(uriStr, bytes, bro.pathExt(rel), "cat")];
-    return { uri: uriStr, rel: rel, bytes: bytes, hunks: hunks };
+                : [rd.textHunk(uriStr, bytes, fs.pathExt(rel), "cat")];
+    return { uri: uriStr, rel: rel, hunks: hunks };
   } finally { idx.closeRepo(ctx); }
 }
 

@@ -1,7 +1,7 @@
 //  lite/test/pager/pty.js — LITE-004 leg 3: the REAL UI path.  The lite Pager is
 //  driven over a tty.openpty() slave fd — raw mode, a frame painted to a REAL
 //  tty, keys pushed in through the master, the frame read back and asserted.
-//  The opener is main.js's OWN openPath, so this exercises the shipped
+//  The opener is door.js's OWN openPath, so this exercises the shipped
 //  entry → pager wiring, not a mock.
 //
 //  STEPPED, not run(): the loop is driven render/drain/send cycle by cycle.
@@ -21,11 +21,10 @@
 //  ~/tmp fixture path would push `#L1` off the bar.  The jsrc pin is MAIN-SCRIPT
 //  -dir relative, so these requires resolve through lite/jsrc -> . regardless.
 "use strict";
-const pager = require("view/pager.js");
-const bro = require("view/bro.js");
-//  main.js exports {main, openPath} and self-runs ONLY when argv[1] ends
-//  /main.js — required from here it just hands over the one fs door.
-const entry = require("main.js");
+const pager = require("pager.js");
+//  door.js exports the fs door (openPath/openTarget) and nothing that runs:
+//  required from here it just hands over the one fs door.
+const entry = require("door.js");        // LITE-045: the door, not the CLI
 
 const ESC = "\x1b";
 let n = 0, bad = 0;

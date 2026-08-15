@@ -6,9 +6,12 @@
 //  pin is MAIN-SCRIPT-dir relative, so these requires resolve through the
 //  lite/jsrc -> . self-symlink above this file, whatever the cwd is.
 "use strict";
-const bro = require("view/bro.js");
-const pager = require("view/pager.js");
-const theme = require("view/theme.js");
+const ansi = require("render/ansi.js");
+const fs = require("view/fs.js");
+const plain = require("render/plain.js");
+const wrap = require("render/wrap.js");
+const pager = require("pager.js");
+const theme = require("render/theme.js");
 
 const ESC = "\x1b";
 let n = 0, bad = 0;
@@ -28,11 +31,11 @@ function check(name, cond, got) {
 //  counted — the line carries the pointer to the finding.
 function skip(name, why) { w1("skip " + name + " — " + why + "\n"); }
 
-//  A file hunk built exactly the way main.js's openPath builds it.
-function open1(p) { return bro.buildFileHunk(p, bro.fsPath(p)); }
+//  A file hunk built exactly the way door.js's openPath builds it.
+function open1(p) { return fs.buildFileHunk(p, fs.fsPath(p)); }
 //  The FIRST display row of a hunk, painted (colour on/off).
 function row0(h, color) {
-  const rows = bro.indexRows(h, 80, true);
+  const rows = wrap.indexRows(h, 80, true);
   return pager.paintRow(h, rows[0].off, rows[0].end, color, rows[0].pass);
 }
 
@@ -54,8 +57,8 @@ skip("txt-toks-empty", "tok.parse tokenizes ANY ext (got " + txt.toks.length +
 //  (buildFileHunk's `ext ? … : new Uint32Array(0)` short-circuit).
 const noext = open1("plainfile");
 check("noext-toks-empty", noext.toks.length === 0, "toks " + noext.toks.length);
-check("pathExt", bro.pathExt("code.js") === "js" && bro.pathExt("note.txt") === "txt" &&
-      bro.pathExt("nonl") === "", bro.pathExt("code.js") + "/" + bro.pathExt("nonl"));
+check("pathExt", fs.pathExt("code.js") === "js" && fs.pathExt("note.txt") === "txt" &&
+      fs.pathExt("nonl") === "", fs.pathExt("code.js") + "/" + fs.pathExt("nonl"));
 
 //  ---- SGR: a painted row opens a delta and closes with a reset -------------
 const jsRow = row0(js, true);
@@ -69,7 +72,7 @@ const cRow = row0(c, true);
 check("c-comment-opens-90", cRow.indexOf(ESC + "[90m") === 0, cRow);
 
 //  A LATER row paints a different tag than the comment (the delta speller runs).
-const jsRows = bro.indexRows(js, 80, true);
+const jsRows = wrap.indexRows(js, 80, true);
 const jsRow1 = pager.paintRow(js, jsRows[1].off, jsRows[1].end, true, jsRows[1].pass);
 check("js-code-row-painted", jsRow1.indexOf(ESC + "[") >= 0 &&
       jsRow1.indexOf(ESC + "[90m") !== 0, jsRow1);
@@ -84,13 +87,13 @@ skip("txt-row-no-paint", "the generic lexer paints .txt punctuation: " +
 check("noext-row-no-paint", row0(noext, true).indexOf(ESC) < 0, row0(noext, true));
 
 //  The plain sink never paints, whatever the toks say (BROPlain !BRO_COLOR).
-const plain = utf8.Decode(bro.plainHunk(js));
-check("plainHunk-no-esc", plain.indexOf(ESC) < 0, plain);
-check("plainHunk-banner", plain.indexOf("hunk code.js\n") === 0, plain);
+const bytes = utf8.Decode(plain.plainHunk(js));
+check("plainHunk-no-esc", bytes.indexOf(ESC) < 0, bytes);
+check("plainHunk-banner", bytes.indexOf("hunk code.js\n") === 0, bytes);
 
 //  ---- the banner band -----------------------------------------------------
 let band = "";
-bro.bannerColor("code.js", 40, function (s) { band += s; });
+ansi.bannerColor("code.js", 40, function (s) { band += s; });
 check("band-bg", band.indexOf("48;5;230") >= 0, band);
 check("band-fill", band.replace(/\x1b\[[0-9;]*m/g, "") === "code.js" + " ".repeat(33) + "\n", band);
 check("band-close", band.slice(-5) === ESC + "[0m\n", band);
@@ -100,10 +103,10 @@ check("theme-banner-sgr", theme.DEFAULT.bannerOpen().indexOf("48;5;230") >= 0 &&
       theme.DEFAULT.bannerOpen() + "|" + theme.DEFAULT.bannerClose());
 
 //  ---- a dir hunk is F-tagged and paints ------------------------------------
-const dir = bro.buildDirHunk(".", ".");
+const dir = fs.buildDirHunk(".", ".");
 check("dir-toks-nonempty", dir !== null && dir.kind === "dir" && dir.toks.length > 0,
       dir === null ? "null" : "toks " + dir.toks.length);
-const dRows = bro.indexRows(dir, 80, true);
+const dRows = wrap.indexRows(dir, 80, true);
 const dRow = pager.paintRow(dir, dRows[0].off, dRows[0].end, true, dRows[0].pass);
 check("dir-row-painted", dRow.indexOf(ESC + "[") >= 0 && dRow.slice(-4) === ESC + "[0m", dRow);
 

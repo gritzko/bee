@@ -1,4 +1,4 @@
-//  index/merge.js — LITE-014: the git MERGE DRIVER and the wiring that points
+//  merge.js — LITE-014: the git MERGE DRIVER and the wiring that points
 //  git at it.  Two verbs, one feature:
 //
 //    lite merge <base> <ours> <theirs> [-o <out>] [-p <path>]
@@ -18,7 +18,7 @@
 //  to exit 1, and 1 is exactly what git reads as "conflict".
 "use strict";
 
-const wv = require("./weave.js");
+const wv = require("index/weave.js");
 
 //  --- bytes in, bytes out ---------------------------------------------------
 //  A file's whole content.  An EMPTY file is answered without mmap (a zero
@@ -166,7 +166,7 @@ function attrAppend(gitdir, file) {
 //  `git config` (git NEVER reads driver commands from a tracked file) and the
 //  pattern line in `.git/info/attributes`.
 function install(repoArg) {
-  const idx = require("./index.js");
+  const idx = require("index/index.js");
   const arg = repoArg === undefined ? io.cwd() : repoArg;
   let ctx = null;
   try { ctx = idx.openRepo(arg); }
@@ -175,7 +175,7 @@ function install(repoArg) {
     //  `git init` is exactly when you install, and the hook mints on the very
     //  first commit.  openRepo's HEAD gate is right for the read verbs and is
     //  left as it is; hook.js owns the HEAD-less handle.
-    ctx = require("./hook.js").openUnborn(arg);
+    ctx = require("index/hook.js").openUnborn(arg);
     if (ctx === null) throw e;
   }
   let root, gitdir;
@@ -197,7 +197,7 @@ function install(repoArg) {
   if (!attrInstalled(attrs)) { attrAppend(gitdir, attrs); wrote = true; }
   //  LITE-026: the same wiring plants the pre-commit hook, composing with one
   //  already there — index/hook.js owns that half.
-  if (require("./hook.js").plant(gitdir, selfPath())) wrote = true;
+  if (require("index/hook.js").plant(gitdir, selfPath())) wrote = true;
   return (wrote ? "installed" : "already installed") +
          ": lite is the merge driver and the pre-commit hook for " + root;
 }

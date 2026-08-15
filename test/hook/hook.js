@@ -9,8 +9,8 @@
 //  16 bytes each and the blob ids come from `git rev-parse`, so the expected
 //  permalink is spelled here from first principles.
 "use strict";
-const pagerlib = require("view/pager.js");
-const entry = require("main.js");
+const pagerlib = require("pager.js");
+const entry = require("door.js");        // LITE-045: the door, not the CLI
 const idx = require("index/index.js");
 const rd = require("index/read.js");
 
@@ -125,20 +125,20 @@ check("the minted permalink opens the file it names",
       a20 !== null && a20.length === 1 && ends(a20[0].uri, "/src/abc/FSW.c"),
       a20 === null ? "null" : a20[0].uri);
 check("...on the very line the `:20` ref meant",
-      a20 !== null && a20.land && a20.land.line === 20 && a20.land.col === 1,
-      a20 === null ? "null" : JSON.stringify(a20.land || null));
+      a20 !== null && a20[0].land && a20[0].land.line === 20 && a20[0].land.col === 1,
+      a20 === null ? "null" : JSON.stringify(a20[0].land || null));
 const a20c = entry.openTarget(P_FSW20C);
 check("...and the column ref on that line's column 5",
-      a20c !== null && a20c.land && a20c.land.line === 20 && a20c.land.col === 5,
-      a20c === null ? "null" : JSON.stringify(a20c.land || null));
+      a20c !== null && a20c[0].land && a20c[0].land.line === 20 && a20c[0].land.col === 5,
+      a20c === null ? "null" : JSON.stringify(a20c[0].land || null));
 const a41 = entry.openTarget(P_TCP41);
 check("the staged-blob permalink follows to the line that commit added",
-      a41 !== null && ends(a41[0].uri, "/src/abc/TCP.c") && a41.land &&
-      a41.land.line === 41, a41 === null ? "null" : JSON.stringify(a41.land || null));
+      a41 !== null && ends(a41[0].uri, "/src/abc/TCP.c") && a41[0].land &&
+      a41[0].land.line === 41, a41 === null ? "null" : JSON.stringify(a41[0].land || null));
 const a7 = entry.openTarget(P_FSW7);
 check("the ref minted in an EDITED file follows too",
-      a7 !== null && a7.land && a7.land.line === 7,
-      a7 === null ? "null" : JSON.stringify(a7.land || null));
+      a7 !== null && a7[0].land && a7[0].land.line === 7,
+      a7 === null ? "null" : JSON.stringify(a7[0].land || null));
 
 //  ---- the REAL click on the committed page ---------------------------------
 //  The page opens through the door exactly as `lite doc/new.mkd` opens it, and

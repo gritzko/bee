@@ -1,6 +1,6 @@
 //  lite/test/list/pty.js — LITE-017, the REAL UI path for the four read views:
 //  a list frame painted on an actual `tty.openpty()` slave by the SHIPPED
-//  Pager, then NAVIGATED through the SHIPPED door (main.js's own openTarget) —
+//  Pager, then NAVIGATED through the SHIPPED door (door.js's own openTarget) —
 //  Enter on a file row lands in `cat`, Enter on a dir row lands in a deeper
 //  `list`, Enter on a tree row lands in `blob`, `-` backs out.  fuse.js proves
 //  the spans; THIS proves the wiring the user actually touches.
@@ -9,10 +9,10 @@
 //  followed by ONE blocking drain, and raw is entered ONCE up front
 //  (tty.raw's TCSAFLUSH drops a pre-queued key).  See test/pager/pty.js.
 "use strict";
-const pagerlib = require("view/pager.js");
-const entry = require("main.js");
-const ls = require("index/list.js");
-const tr = require("index/tree.js");
+const pagerlib = require("pager.js");
+const entry = require("door.js");        // LITE-045: the door, not the CLI
+const ls = require("view/list.js");
+const tr = require("view/tree.js");
 
 const ESC = "\x1b";
 let n = 0, bad = 0;
@@ -72,7 +72,7 @@ try {
   p.setHunks(listHunks, "list");
   const f0 = frame(p);
   check("a list paints a frame", f0.length > 0, "bytes " + f0.length);
-  //  The banner band is bro.js's own, carrying the view's name.
+  //  The banner band is render/ansi.js's own, carrying the view's name.
   check("the banner band names the view",
         f0.indexOf(ESC + "[38;5;0;48;5;230m") >= 0 && f0.indexOf("list") >= 0,
         f0.split("\n")[0]);

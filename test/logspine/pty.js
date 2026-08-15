@@ -7,9 +7,10 @@
 //  Stepped, not run(): a self-pty has no concurrent reader, so ONE render is
 //  followed by ONE blocking drain (test/index/logpty.js's note).
 "use strict";
-const pagerlib = require("view/pager.js");
-const bro = require("view/bro.js");
-const lg = require("index/log.js");
+const pagerlib = require("pager.js");
+const ansi = require("render/ansi.js");
+const wrap = require("render/wrap.js");
+const lg = require("view/log.js");
 
 const ESC = "\x1b";
 let n = 0, bad = 0;
@@ -47,9 +48,9 @@ for (let i = 1; i < lines.length && body.length < out.rows.length; i++)
   body.push(lines[i]);
 
 //  The slots, spelled by lite's OWN theme table — never a hand-rolled SGR.
-const Q = bro.deltaSGR(bro.themeAt("Q"), bro.themeAt("S"));   // ESC[90m, the grey
-const L = bro.deltaSGR(bro.themeAt("L"), bro.themeAt("S"));   // ESC[96m, the cyan
-const G = bro.deltaSGR(bro.themeAt("G"), bro.themeAt("L"));   // the green sep
+const Q = ansi.deltaSGR(ansi.themeAt("Q"), ansi.themeAt("S"));   // ESC[90m, the grey
+const L = ansi.deltaSGR(ansi.themeAt("L"), ansi.themeAt("S"));   // ESC[96m, the cyan
+const G = ansi.deltaSGR(ansi.themeAt("G"), ansi.themeAt("L"));   // the green sep
 
 check("the-theme-Q-slot-is-the-grey-be-uses", Q === ESC + "[90m", Q);
 
@@ -79,7 +80,7 @@ check("LITE-020-every-painted-row-strips-back-to-its-plain-row", allPlain, wrong
 
 //  The uncoloured paint of an off-spine row has no SGR at all — a `--plain`
 //  sink sees no trace of the greying.
-const rows = bro.indexRows(h, 100, true);
+const rows = wrap.indexRows(h, 100, true);
 const p2 = pagerlib.paintRow(h, rows[2].off, rows[2].end, false, rows[2].pass);
 check("LITE-020-an-off-spine-row-with-colour-off-is-the-bare-row",
       p2.indexOf(ESC) < 0 && p2 === out.rows[2], p2);

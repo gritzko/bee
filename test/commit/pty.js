@@ -7,8 +7,8 @@
 //  Stepped, not run(): a self-pty has no concurrent reader, so ONE render is
 //  followed by ONE blocking drain (lite/test/pager/pty.js's note).
 "use strict";
-const pagerlib = require("view/pager.js");
-const cm = require("index/commit.js");
+const pagerlib = require("pager.js");
+const cm = require("view/commit.js");
 
 const ESC = "\x1b";
 let n = 0, bad = 0;
@@ -24,10 +24,10 @@ function check(name, cond, got) {
 
 const repo = io.getenv("LITE_FIX"), SHA = io.getenv("LITE_SHA");
 const out = cm.commit(SHA, { from: repo });
-const h = cm.hunk(out);
+const h = out.hunks[0];      // LITE-045: the metadata hunk leads the view
 //  LITE-021: the hunk body carries hidden `U` targets that take no column, so
-//  a painted row strips back to `out.text`'s line, not to the hunk body's.
-const plain = utf8.Decode(out.text).split("\n");
+//  a painted row strips back to the hunk's PLAIN line, not to its body's.
+const plain = utf8.Decode(h.plain).split("\n");
 
 const pty = tty.openpty();
 tty.setSize(pty.slave, 12, 100);
@@ -40,7 +40,7 @@ const frame = k > 0 ? utf8.Decode(rb.data().slice()) : "";
 const lines = frame.split("\n");
 
 check("frame-painted", frame.length > 0, "bytes " + frame.length);
-//  The banner band is bro.js's own THEME_BANNER carrying the commit uri — the
+//  The banner band is render/ansi.js's own THEME_BANNER carrying the commit uri — the
 //  SAME band a file hunk gets.
 check("banner-band-carries-the-commit-uri",
       lines[0].indexOf(ESC + "[38;5;0;48;5;230m") >= 0 &&

@@ -9,9 +9,10 @@
 //  the plain line byte for byte.  `LITE_FIX` names the fixture repo, `LITE_SHA`
 //  the merge commit and `LITE_SIG` the folded-header (gpgsig) commit.
 "use strict";
-const cm = require("index/commit.js");
-const bro = require("view/bro.js");
-const pager = require("view/pager.js");
+const cm = require("view/commit.js");
+const ansi = require("render/ansi.js");
+const wrap = require("render/wrap.js");
+const pager = require("pager.js");
 
 const ESC = "\x1b";
 let n = 0, bad = 0;
@@ -29,12 +30,12 @@ const repo = io.getenv("LITE_FIX");
 const SHA = io.getenv("LITE_SHA"), SIG = io.getenv("LITE_SIG");
 
 const out = cm.commit(SHA, { from: repo });
-const h = cm.hunk(out);
+const h = out.hunks[0];      // LITE-045: the metadata hunk leads the view
 const text = utf8.Decode(h.text);
 const lines = text.split("\n");
-//  LITE-021: the hunk body carries the hidden `U` targets, `out.text` does not
+//  LITE-021: the hunk body carries the hidden `U` targets, its `plain` does not
 //  — the PLAIN body is what a painted row must strip back to.
-const ptext = utf8.Decode(out.text), plines = ptext.split("\n");
+const ptext = utf8.Decode(h.plain), plines = ptext.split("\n");
 
 //  ---- the hunk is the shape bro/pager already render -----------------------
 check("hunk-shape", h.verb === "hunk" && h.kind === "commit" &&
@@ -77,7 +78,7 @@ check("commit-sha-is-the-L-slot", spanAt(7).tag === "L" && spanAt(7).end === 47,
       JSON.stringify(spanAt(7)));
 
 //  EVERY newline is its own default-tag span, so no colour bleeds across a
-//  line — the anti-bleed rule index/log.js's hunk follows too.
+//  line — the anti-bleed rule view/log.js's hunk follows too.
 let bleed = null;
 for (let i = 0; i < h.text.length; i++) {
   if (h.text[i] !== 0x0a) continue;
@@ -114,14 +115,14 @@ check("subject-is-the-N-slot", spanAt(subjAt).tag === "N",
       JSON.stringify(spanAt(subjAt)));
 
 //  ---- the paint ------------------------------------------------------------
-const rows = bro.indexRows(h, 200, true);
+const rows = wrap.indexRows(h, 200, true);
 check("one-row-per-line", rows.length === lines.length - (text.slice(-1) === "\n" ? 1 : 0),
       rows.length + " rows vs " + lines.length + " lines");
 const r0 = pager.paintRow(h, rows[0].off, rows[0].end, true, rows[0].pass);
 check("row-opens-with-the-R-slot",
-      r0.indexOf(bro.deltaSGR(bro.themeAt("R"), bro.A0)) === 0, r0.slice(0, 12));
+      r0.indexOf(ansi.deltaSGR(ansi.themeAt("R"), ansi.A0)) === 0, r0.slice(0, 12));
 check("row-carries-the-L-slot-for-the-sha",
-      r0.indexOf(bro.deltaSGR(bro.themeAt("L"), bro.themeAt("R"))) > 0, r0);
+      r0.indexOf(ansi.deltaSGR(ansi.themeAt("L"), ansi.themeAt("R"))) > 0, r0);
 check("row-closes-with-a-full-reset", r0.slice(-4) === ESC + "[0m", r0.slice(-8));
 check("painted-row-strips-back-to-the-plain-line",
       r0.replace(/\x1b\[[0-9;]*m/g, "") === lines[0],
@@ -133,8 +134,8 @@ check("no-colour-paint-has-no-SGR-at-all", p0.indexOf(ESC) < 0 && p0 === lines[0
 //  A gpgsig value is many lines; each continuation is its OWN span, so the
 //  colour still stops at every terminator and every row paints back to itself.
 const so = cm.commit(SIG, { from: repo });
-const sh = cm.hunk(so);
-const stext = utf8.Decode(sh.text), slines = utf8.Decode(so.text).split("\n");
+const sh = so.hunks[0];
+const stext = utf8.Decode(sh.text), slines = utf8.Decode(sh.plain).split("\n");
 check("folded-commit-first-line", slines[0] === "commit " + SIG, slines[0]);
 check("folded-value-lines-are-in-the-text",
       stext.indexOf("\ngpgsig -----BEGIN PGP SIGNATURE-----\n ") > 0 &&
@@ -153,7 +154,7 @@ for (let i = 0; i < sh.text.length; i++) {
 }
 check("folded-commit-newlines-are-all-S-spans", sbleed === null,
       sbleed === null ? "" : "byte " + sbleed);
-const srows = bro.indexRows(sh, 200, true);
+const srows = wrap.indexRows(sh, 200, true);
 let allback = true, off = 0;
 for (let i = 0; i < srows.length; i++) {
   const painted = pager.paintRow(sh, srows[i].off, srows[i].end, true, srows[i].pass);

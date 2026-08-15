@@ -1,7 +1,7 @@
-//  index/diff.js — LITE-010: `lite diff`, the CFOLD 2-layer diff view PORTED
+//  view/diff.js — LITE-010: `lite diff`, the CFOLD 2-layer diff view PORTED
 //  from be/views/diff/diff.js (`diffFile`/`fold2`/`emitHunks`) over the same
 //  quickjab containers lite already links: `abc.ram("CFOLD")` folds the pair,
-//  `abc.ram("HUNK")` takes the emitted records, `view/pager.js` paints them.
+//  `abc.ram("HUNK")` takes the emitted records, `pager.js` paints them.
 //
 //  It lives in index/ beside log.js because the SOURCES are what differ from
 //  be, not the render: a lite diff reads the ODB (`git.tree` walk, `git.getHex`)
@@ -24,9 +24,9 @@
 //  simply absent here: a lite diff has ONE axis, from vs to.
 "use strict";
 
-const idx = require("./index.js");
+const idx = require("index/index.js");
 const lg = require("./log.js");
-const wv = require("./weave.js");
+const wv = require("index/weave.js");
 
 //  LITE-014: the source-size policy, the binary gate and the lexer key live in
 //  index/weave.js now — ONE home for both the diff and the merge, as be has.
@@ -326,7 +326,7 @@ function resolvePartial(ctx, arg) {
   const ix = idx.openIndex(ctx.gitdir);
   try {
     idx.bringUp(ctx, ix, { track: false });
-    return require("./resolve.js").pick("diff", ix, ctx, arg);
+    return require("index/resolve.js").pick("diff", ix, ctx, arg);
   } finally { try { ix.close(); } catch (e) {} }
 }
 

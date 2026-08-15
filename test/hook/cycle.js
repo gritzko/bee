@@ -12,7 +12,7 @@
 //  Run AFTER both real commits, so every assertion is over the COMMITTED blobs.
 //  The oracle is arithmetic, as in hook.js: 16-byte lines and `git rev-parse`.
 "use strict";
-const entry = require("main.js");
+const entry = require("door.js");        // LITE-045: the door, not the CLI
 const idx = require("index/index.js");
 const rd = require("index/read.js");
 
@@ -91,9 +91,9 @@ check("...and the ref naming it takes the offset of the REWRITTEN target",
 
 const at = entry.openTarget(P_Y3);
 check("the chained permalink follows to line 3, not to where it used to be",
-      at !== null && at.land && at.land.line === 3 &&
+      at !== null && at[0].land && at[0].land.line === 3 &&
       at.length === 1 && at[0].uri.slice(-10) === "/cyc/Y.mkd",
-      at === null ? "null" : JSON.stringify(at.land || null) + " " + at[0].uri);
+      at === null ? "null" : JSON.stringify(at[0].land || null) + " " + at[0].uri);
 
 w1((bad ? "FAIL " : "PASS ") + "[lite/hook cycle] " + n + " checks, " + bad + " bad\n");
 if (bad) throw "HOOKCYCLE";

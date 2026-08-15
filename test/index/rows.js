@@ -174,7 +174,7 @@ check("cpar-root-parent-slot-is-empty",
       root.length === 1 && root[0].parent === idx.CPAR_NONE && root[0].ord === 0n,
       root.length === 1 ? root[0].parent : "no row");
 //  ...and that row must NOT read back as a parent edge.
-const lg = require("index/log.js");
+const lg = require("view/log.js");
 check("cpar-root-has-no-parent-edge",
       lg.parentsOf(ix, idx.hlOfSha(exp.c0)).length === 0);
 check("cpar-root-still-reads-as-indexed",

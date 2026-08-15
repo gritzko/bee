@@ -17,7 +17,7 @@
 "use strict";
 
 const idx = require("./index.js");
-const lg = require("./log.js");
+const lg = require("view/log.js");
 const refs = require("./refs.js");
 
 //  --- the arg ---------------------------------------------------------------
@@ -98,12 +98,16 @@ function entryAt(r, tree, rel) {
 
 //  --- the hunk --------------------------------------------------------------
 //  Bytes -> the lite hunk record the pager takes: the bytes verbatim, tokenized
-//  by `ext` (an unknown ext yields no toks — bro.buildFileHunk's own gate).
+//  by `ext` (an unknown ext yields no toks — view/fs.js buildFileHunk's own gate).
 function textHunk(uriStr, bytes, ext, kind) {
   let toks;
   try { toks = ext ? tok.parse(bytes, ext) : new Uint32Array(0); }
   catch (e) { toks = new Uint32Array(0); }
-  return { uri: uriStr, verb: "hunk", text: bytes, toks: toks, kind: kind };
+  //  LITE-045: a `cat`/`blob` hunk IS the file — on a pipe it writes those
+  //  bytes and NOTHING else, so a `lite cat x | diff -` sees the source.  The
+  //  text needs no `plain` twin: it is already the readable bytes.
+  return { uri: uriStr, verb: "hunk", text: bytes, toks: toks, kind: kind,
+           bare: true };
 }
 
 //  --- the age column (be view/render.js relAge, over epoch SECONDS) ---------

@@ -9,9 +9,9 @@
 //  target token starts.  Stepped, not run(): a self-pty has no concurrent
 //  reader, so a render is followed by a blocking drain.
 "use strict";
-const pagerlib = require("view/pager.js");
-const bro = require("view/bro.js");
-const entry = require("main.js");
+const pagerlib = require("pager.js");
+const ansi = require("render/ansi.js");
+const entry = require("door.js");        // LITE-045: the door, not the CLI
 
 const ESC = "\x1b";
 const ends = (s, tail) => typeof s === "string" && s.slice(-tail.length) === tail;
@@ -69,25 +69,25 @@ const mid = entry.openTarget(MID);
 check("a `:line:col` ref opens the file", mid !== null && mid.length === 1,
       mid === null ? "null" : "hunks " + mid.length);
 check("...handing the pager the COLUMN, not just the line",
-      mid !== null && mid.land && mid.land.line === 25 && mid.land.col === 7,
-      mid === null ? "null" : JSON.stringify(mid.land || null));
+      mid !== null && mid[0].land && mid[0].land.line === 25 && mid[0].land.col === 7,
+      mid === null ? "null" : JSON.stringify(mid[0].land || null));
 
 const bare = entry.openTarget(BARE);
 check("a bare `:line` still lands with no column",
-      bare !== null && bare.land && bare.land.line === 25 && bare.land.col === 0,
-      bare === null ? "null" : JSON.stringify(bare.land || null));
+      bare !== null && bare[0].land && bare[0].land.line === 25 && bare[0].land.col === 0,
+      bare === null ? "null" : JSON.stringify(bare[0].land || null));
 
 const per = entry.openTarget(PERMA);
 check("a permalink opens the file it names", per !== null && per.length === 1,
       per === null ? "null" : "hunks " + per.length);
 check("...on the line the later commit MOVED, column and all",
-      per !== null && per.land && per.land.line === 25 && per.land.col === 7,
-      per === null ? "null" : JSON.stringify(per.land || null));
+      per !== null && per[0].land && per[0].land.line === 25 && per[0].land.col === 7,
+      per === null ? "null" : JSON.stringify(per[0].land || null));
 //  the resolver walked to the token itself; its BYTES ride the door, so the
 //  pager selects what the resolver named instead of re-deriving from the col.
 check("...and the RESOLVER's own token comes through the door",
-      per !== null && per.land && per.land.lo === TOK_LO && per.land.hi === TOK_HI,
-      per === null ? "null" : JSON.stringify(per.land || null));
+      per !== null && per[0].land && per[0].land.lo === TOK_LO && per[0].land.hi === TOK_HI,
+      per === null ? "null" : JSON.stringify(per[0].land || null));
 
 //  ---- the pty: a real click on each ref form -------------------------------
 //  Every ref line opens with the same 7-byte prefix, so the ref starts at col 8.
@@ -134,8 +134,8 @@ function frameRow(f, i) { return f.split("\r\n")[i] || ""; }
 
 //  The two washes as the SGR they spell — a cell with no bg of its own washes
 //  down the grey ramp from white (the LITE-023 shape).
-const LINE_BG = "48;5;" + (255 - 2 * bro.WASH_CUR_LINE);
-const TOK_BG = "48;5;" + (255 - 2 * bro.WASH_CUR_TOK);
+const LINE_BG = "48;5;" + (255 - 2 * ansi.WASH_CUR_LINE);
+const TOK_BG = "48;5;" + (255 - 2 * ansi.WASH_CUR_TOK);
 //  The TEXT a wash paints: from the SGR that turns `bg` on to the next escape.
 function washed(row, bg) {
   let i = row.indexOf(bg);

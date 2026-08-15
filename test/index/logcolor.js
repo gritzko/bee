@@ -1,5 +1,5 @@
 //  lite/test/index/logcolor.js — LITE-007 ruling 2026-08-13: at a terminal a
-//  log is a HUNK, painted by the SAME view/bro.js theme + view/pager.js row
+//  log is a HUNK, painted by the SAME render/ansi.js theme + pager.js row
 //  painter a file arg goes through.  Headless (no tty needed): build the hunk
 //  and paint its rows, exactly as main.js's tty leg does.
 //
@@ -8,9 +8,10 @@
 //  final S span over the "\n" so the next row's L cannot bleed onto this line's
 //  terminator.  `LITE_FIX` names the fixture repo.
 "use strict";
-const lg = require("index/log.js");
-const bro = require("view/bro.js");
-const pager = require("view/pager.js");
+const lg = require("view/log.js");
+const ansi = require("render/ansi.js");
+const wrap = require("render/wrap.js");
+const pager = require("pager.js");
 
 const ESC = "\x1b";
 let n = 0, bad = 0;
@@ -50,7 +51,7 @@ for (let i = 0; i < h.toks.length; i++) {
 }
 check("hunk-visible-bytes-are-the-plain-rows",
       vis === out.rows.join("\n") + "\n", vis.slice(0, 60));
-//  tok ends must ascend and finish exactly at the text length (bro.rowEnd
+//  tok ends must ascend and finish exactly at the text length (wrap.rowEnd
 //  walks them in order; a stray end would mis-column every row after it).
 let ok = true, prev = -1;
 for (let i = 0; i < h.toks.length; i++) {
@@ -62,19 +63,19 @@ check("tok-ends-ascend-and-cover-the-text",
       ok && prev === h.text.length, prev + " vs " + h.text.length);
 
 //  ---- the paint ----------------------------------------------------------
-const rows = bro.indexRows(h, 100, true);
+const rows = wrap.indexRows(h, 100, true);
 check("one-row-per-commit", rows.length === out.rows.length,
       rows.length + " vs " + out.rows.length);
 const r0 = pager.paintRow(h, rows[0].off, rows[0].end, true, rows[0].pass);
 //  the be-log column palette, read off lite's OWN theme table (never a
 //  hand-rolled SGR): L for the sha, G for the separator, D for the author.
-const sgrL = bro.deltaSGR(bro.themeAt("L"), bro.cellAnsi ? bro.themeAt("S") : null);
+const sgrL = ansi.deltaSGR(ansi.themeAt("L"), ansi.cellAnsi ? ansi.themeAt("S") : null);
 check("row-opens-with-the-L-slot", r0.indexOf(ESC + "[") === 0, r0.slice(0, 12));
 check("row-closes-with-a-full-reset", r0.slice(-4) === ESC + "[0m", r0.slice(-8));
 check("row-carries-the-G-separator-slot",
-      r0.indexOf(bro.deltaSGR(bro.themeAt("G"), bro.themeAt("L"))) > 0, r0);
+      r0.indexOf(ansi.deltaSGR(ansi.themeAt("G"), ansi.themeAt("L"))) > 0, r0);
 check("author-tail-is-the-D-slot",
-      r0.indexOf(bro.deltaSGR(bro.themeAt("D"), bro.themeAt("S"))) > 0, r0);
+      r0.indexOf(ansi.deltaSGR(ansi.themeAt("D"), ansi.themeAt("S"))) > 0, r0);
 //  ...and the visible text of a painted row is the plain row, byte for byte.
 const bare = r0.replace(/\x1b\[[0-9;]*m/g, "");
 check("painted-row-strips-back-to-the-plain-row", bare === out.rows[0],

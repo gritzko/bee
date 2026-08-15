@@ -7,8 +7,8 @@
 //  Stepped, not run(): a self-pty has no concurrent reader, so ONE render is
 //  followed by ONE blocking drain (lite/test/pager/pty.js's note).
 "use strict";
-const pagerlib = require("view/pager.js");
-const df = require("index/diff.js");
+const pagerlib = require("pager.js");
+const df = require("view/diff.js");
 
 const ESC = "\x1b";
 let n = 0, bad = 0;
@@ -36,7 +36,7 @@ const frame = k > 0 ? utf8.Decode(rb.data().slice()) : "";
 const lines = frame.split("\n");
 
 check("frame-painted", frame.length > 0, "bytes " + frame.length);
-//  Row 0 is the first changed file's banner — bro.js's THEME_BANNER band
+//  Row 0 is the first changed file's banner — render/ansi.js's THEME_BANNER band
 //  (black on cream), carrying the hunk's own `<path>#L<n>` uri.
 check("banner-band-names-the-first-changed-file",
       lines[0].indexOf(ESC + "[38;5;0;48;5;230m") >= 0 &&

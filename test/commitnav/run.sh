@@ -1,6 +1,6 @@
 #!/bin/sh
 # lite/test/commitnav/run.sh — LITE-021: the commit view's hashes are LINKS.
-# Three legs over the landed lite tree (index/commit.js, index/tree.js, main.js):
+# Three legs over the landed lite tree (view/commit.js, view/tree.js, door.js):
 #   bytes — this script: `--plain` and the piped dump stay byte-identical to
 #           `commit <sha40>` + `git cat-file commit <sha>` (the LITE-009
 #           contract), because the `U` targets are pager-only paint; plus

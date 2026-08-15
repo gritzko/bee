@@ -1,4 +1,4 @@
-//  view/theme.js — the STATIC, PLUGGABLE colour theme (gritzko's ruling:
+//  render/theme.js — the STATIC, PLUGGABLE colour theme (gritzko's ruling:
 //  "palette and theme as a static JS object, pluggable").  ONE place an SGR is
 //  spelled — the renderer paints with what this module hands back.
 //
@@ -44,7 +44,7 @@ const SLOTS_LIGHT = {
 //  space-fills to the terminal width.
 const BANNER_SGR = "38;5;0;48;5;230";
 
-//  --- diff wash (view/bro.js WASH_IN / WASH_RM, LITE-010) -----------------
+//  --- diff wash (render/ansi.js WASH_IN / WASH_RM, LITE-010) -----------------
 //  The changed-token BACKGROUNDS, as SGR parameters: salad green on the
 //  to-side, salmon on the from-side.  LITE-034's HTML painter spells its
 //  stylesheet out of THIS module alone, so the wash is named here too.

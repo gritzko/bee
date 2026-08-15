@@ -1,6 +1,6 @@
 #!/bin/sh
 # lite/test/pager/run.sh — LITE-004: the beagle-lite file-pager test suite.
-# Three legs over the LANDED lite tree (view/bro.js, view/pager.js, main.js):
+# Three legs over the LANDED lite tree (render/*, pager.js, door.js):
 #   plain  — this script: `<rt> --plain <path>` byte checks + the exit discipline
 #            (banner + verbatim bytes, trailing NL iff missing, dir listing,
 #            miss → stderr + non-zero, no args → usage, mixed batch → exit 0).
@@ -139,7 +139,7 @@ else bad "plain miss = stderr line + empty stdout + non-zero (rc $RC)" "$WORK/go
 
 # P8: NO args — the usage line on stderr, non-zero exit.
 rt_plain --plain > "$WORK/got" 2>"$WORK/err"; RC=$?
-if [ "$RC" != 0 ] && grep -q '^Usage: lite \[--plain\] <path>\.\.\.$' "$WORK/err"
+if [ "$RC" != 0 ] && grep -q '^Usage: lite \[--plain|--color|--html\] <path>\.\.\.$' "$WORK/err"
 then ok "plain no args = usage on stderr + non-zero"
 else bad "plain no args = usage on stderr + non-zero (rc $RC)" "$WORK/got" "$WORK/err"; fi
 

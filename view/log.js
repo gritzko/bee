@@ -1,4 +1,4 @@
-//  index/log.js — LITE-007: `quickjab log [<hex>|<path>]`, the commit and file
+//  view/log.js — LITE-007: `quickjab log [<hex>|<path>]`, the commit and file
 //  logs read OFF the LITE-006 lane.
 //
 //  Three forms, one arg, the ruled classification: 6..40 hex = a commit, any
@@ -42,7 +42,7 @@
 //  The DISPLAYED date is the AUTHOR date, as git and be log both show.
 "use strict";
 
-const idx = require("./index.js");
+const idx = require("index/index.js");
 
 //  6..40 hex = a commit; anything else is a path (the ruled classification).
 const HEXARG = /^[0-9a-fA-F]{6,40}$/;
@@ -74,17 +74,21 @@ function rowParts(name, m) {
            summary: m ? m.subject : "",
            authTail: " (" + authorName(m ? m.author : "") + ")" };
 }
-function row(name, m) {
-  const p = rowParts(name, m);
+function row(name, m) { return rowLine(rowParts(name, m)); }
+
+//  The VISIBLE bytes of one row — what a pipe writes and what the pager paints
+//  minus the hidden `commit <hex>` nav.  ONE speller: `row`, the row list and
+//  the hunk's own `plain` all come through here.
+function rowLine(p) {
   return p.sha8 + " " + p.date7 + " " + p.summary + p.authTail;
 }
 
 //  --- the tty rendering: a log IS a hunk ------------------------------------
 //  LITE-007 ruling 2026-08-13: at a terminal the log renders the be way — one
 //  content hunk carrying per-column tok32 spans, handed to the SAME
-//  view/pager.js + view/bro.js theme machinery that paints a file.  There is no
+//  pager.js + render/ansi.js theme machinery that paints a file.  There is no
 //  second renderer: the tags below are be/views/log/log.js `appendRow`'s own
-//  palette, and lite's view/bro.js THEME already maps them (L cyan, G green,
+//  palette, and lite's render/ansi.js THEME already maps them (L cyan, G green,
 //  S default, D grey).  A final S span covers the row's "\n" so the next row's
 //  L does not bleed onto this line's terminator — be's own note.
 //
@@ -129,8 +133,14 @@ function hunk(uriStr, parts) {
   }
   const toks = new Uint32Array(spans.length);
   for (let i = 0; i < spans.length; i++) toks[i] = tok32(spans[i][0], spans[i][1]);
+  //  LITE-045: a log IS the answer — on a pipe the bare rows, no `hunk` band
+  //  and no hidden nav, which is what a `| grep` and a `diff` against
+  //  `git log` want.
+  const lines = [];
+  for (const p of parts) lines.push(rowLine(p));
   return { uri: uriStr, verb: "hunk", text: b.data(), toks: toks,
-           kind: "log" };
+           kind: "log", bare: true,
+           plain: utf8.Encode(lines.length ? lines.join("\n") + "\n" : "") };
 }
 
 //  --- the CPAR DAG ----------------------------------------------------------
@@ -344,7 +354,7 @@ function log(arg, opts) {
         //  the arg may be PARTIAL, so let the FSEG rows name it against the tip.
         w = fileLog(ix, r, relOf(ctx.root, arg), max);
         if (w.hls.length === 0) {
-          const hit = require("./resolve.js").pick("log", ix, ctx, arg);
+          const hit = require("index/resolve.js").pick("log", ix, ctx, arg);
           if (hit !== null) w = fileLog(ix, r, hit, max);
         }
       }
@@ -357,7 +367,7 @@ function log(arg, opts) {
         const p = rowParts(hex, idx.readCommit(r, hex));
         p.nonspine = spine !== null && !spine.has(hl);
         parts.push(p);
-        rows.push(p.sha8 + " " + p.date7 + " " + p.summary + p.authTail);
+        rows.push(rowLine(p));
       }
       return { rows: rows, parts: parts, rec: rec, form: form, capped: w.more,
                uri: "log" + (arg ? " " + arg : "") };
@@ -400,7 +410,39 @@ function frameSha(content) {
   return sha1(b.data());
 }
 
-module.exports = { log: log, row: row, rowParts: rowParts, hunk: hunk,
+//  --- the VIEW (LITE-045) ---------------------------------------------------
+//  `log [<n>] [<hex>|<path>]` -> { hunks }.  The arg grammar is the verb's own,
+//  and so is the row budget: `opts.full` says the sink is a STREAM with no
+//  viewport (a pipe wants every row, the `git log` diff parity), absent says a
+//  viewport, which defaults to 256 rows so any-size history paints instantly.
+//  An explicit count in the arg wins over both.
+function view(arg, opts) {
+  const q = logQuery(arg);
+  const max = q.max !== null ? q.max : (opts && opts.full ? 0 : 256);
+  const o = log(q.target, { max: max, from: opts && opts.from });
+  if (!o.rows.length) return [];
+  //  The uri is the TYPED target, verbatim — an explicit count stays, the
+  //  default cap does not rename the view.
+  const uri = q.max === null ? o.uri
+            : "log " + q.max + (q.target ? " " + q.target : "");
+  return [hunk(uri, o.parts)];
+}
+
+//  `log [<n>] [<hex>|<path>]` — a 1..5-digit decimal token is the COUNT, no
+//  clash with hexlets (6..40 chars): `log 10` = 10 rows, `log 0` = all.
+function logQuery(arg) {
+  let max = null;
+  const t = [];
+  for (const w of (arg || "").split(" ")) {
+    if (w === "") continue;
+    if (max === null && /^\d{1,5}$/.test(w)) max = Number(w);
+    else t.push(w);
+  }
+  return { max: max, target: t.length ? t.join(" ") : undefined };
+}
+
+module.exports = { log: log, view: view, logQuery: logQuery,
+                   row: row, rowLine: rowLine, rowParts: rowParts, hunk: hunk,
                    authorName: authorName, date7Of: date7Of,
                    fileLog: fileLog, ancestry: ancestry, parentsOf: parentsOf,
                    spineOf: spineOf, TAG_Q: TAG_Q,

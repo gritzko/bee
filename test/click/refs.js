@@ -6,14 +6,14 @@
 //
 //  DOG-033 (the tokenizer rule that fuses `dir/base.ext` into one `F` token) is
 //  being built in parallel, so the `F` tokens here are BAKED BY HAND (the
-//  view/bro.js buildDirHunk / index/log.js precedent) — the click, the door and
+//  view/fs.js buildDirHunk / view/log.js precedent) — the click, the door and
 //  the FSEG descent are the whole of what this leg exercises.
 //
 //  Stepped, not run(): a self-pty has no concurrent reader, so a render is
 //  followed by a blocking drain.
 "use strict";
-const pagerlib = require("view/pager.js");
-const entry = require("main.js");
+const pagerlib = require("pager.js");
+const entry = require("door.js");        // LITE-045: the door, not the CLI
 
 const ESC = "\x1b";
 let n = 0, bad = 0;

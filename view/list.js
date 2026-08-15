@@ -1,4 +1,4 @@
-//  index/list.js — LITE-017: `lite list [<path>][?<rev>]`, the github-style
+//  view/list.js — LITE-017: `lite list [<path>][?<rev>]`, the github-style
 //  directory browser, ported from be/views/list/list.js (LIST-001).
 //
 //  ONE row per entry, files AND dirs:
@@ -25,7 +25,7 @@
 //  reads as a worktree one — `lite diff`'s own model.
 //
 //  THE FUSE is lite's own machinery, not be's lastcommit.js: ONE prefix scan of
-//  the entry's `path_hl` on the LITE-006 lane (index/log.js fileLog, capped at
+//  the entry's `path_hl` on the LITE-006 lane (view/log.js fileLog, capped at
 //  one row) — exact, at any depth, with no history walk at all.
 //
 //  LITE-044: that used to be the FILE half only.  A dir cannot be enumerated
@@ -40,13 +40,13 @@
 //  clicked row all open the same board on a repo nobody ever indexed.
 "use strict";
 
-const idx = require("./index.js");
+const idx = require("index/index.js");
 const lg = require("./log.js");
 const df = require("./diff.js");
-const rd = require("./read.js");
+const rd = require("index/read.js");
 
 //  be view/theme.js VERB_SLOT, for the buckets lite can tell apart: eq grey,
-//  mod yellow, del brown, dir grey.  view/bro.js carries the slots themselves.
+//  mod yellow, del brown, dir grey.  render/ansi.js carries the slots themselves.
 const VERB_SLOT = { eq: "D", mod: "E", del: "X", dir: "Q" };
 
 //  tok32 (dog/tok/TOK.h): [31..27] tag, [23..0] end byte offset.
@@ -77,7 +77,7 @@ function markerOf(abs, sha) {
 //  --- the fuse --------------------------------------------------------------
 //  Every entry's last commit, read off the entry's OWN rows on the lane — no
 //  history walk for either half, so depth costs nothing and nothing starves.
-//   -  a FILE folds its chain (index/log.js fileLog, capped at one row): the
+//   -  a FILE folds its chain (view/log.js fileLog, capped at one row): the
 //      chain is short, and PARS is what orders a rewritten file history;
 //   -  a DIR takes its LAST rev straight (LITE-044): its revs are its subtree's
 //      and are minted oldest-first, so the highest IS the newest commit under
@@ -166,11 +166,14 @@ function hunkOf(uriStr, rows) {
   }
   const toks = new Uint32Array(spans.length);
   for (let i = 0; i < spans.length; i++) toks[i] = tok32(spans[i][0], spans[i][1]);
-  return { uri: uriStr, verb: "hunk", text: b.data(), toks: toks, kind: "list" };
+  //  LITE-045: a listing IS the answer, so its plain bytes wear no `hunk` band,
+  //  and they are the VISIBLE row bytes — the hidden nav never reaches a pipe.
+  return { uri: uriStr, verb: "hunk", text: b.data(), toks: toks, kind: "list",
+           plain: plainOf(rows), bare: true };
 }
 
 //  --- the verb --------------------------------------------------------------
-//  list(arg, opts) -> { uri, rows, plain, hunks }.  LITE-018's `opts.track`
+//  list(arg, opts) -> { uri, rows, hunks }.  LITE-018's `opts.track`
 //  adds the repo to the tracks list, which is the bare `lite` run's `index`
 //  half.  There is no walk ceiling to override any more (LITE-044).
 function list(arg, opts) {
@@ -209,8 +212,7 @@ function list(arg, opts) {
 
     const rows = rowsOf(ctx, rel, entries, commits, Math.floor(Date.now() / 1000));
     const uriStr = "list" + (arg ? " " + arg : "");
-    return { uri: uriStr, rows: rows, plain: plainOf(rows),
-             hunks: [hunkOf(uriStr, rows)] };
+    return { uri: uriStr, rows: rows, hunks: [hunkOf(uriStr, rows)] };
   } finally { idx.closeRepo(ctx); }
 }
 

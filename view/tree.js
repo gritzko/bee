@@ -1,4 +1,4 @@
-//  index/tree.js — LITE-017: `lite tree [<hex>|<path>][?<rev>]`, the raw git
+//  view/tree.js — LITE-017: `lite tree [<hex>|<path>][?<rev>]`, the raw git
 //  tree listing, ported from be/views/tree/tree.js (JAB-008).
 //
 //  ONE row per entry, in RAW GIT-TREE ORDER (the cursor's, never re-sorted):
@@ -22,9 +22,9 @@
 //  answers in a repo whose `.git/be` was never built.
 "use strict";
 
-const idx = require("./index.js");
+const idx = require("index/index.js");
 const lg = require("./log.js");
-const rd = require("./read.js");
+const rd = require("index/read.js");
 
 //  mode class -> the row's `<mode6> <type-padded-to-6> ` prefix (be tree.js's
 //  MODE_PREFIX, which folds in the single space before the sha).
@@ -134,11 +134,14 @@ function hunkOf(uriStr, rows) {
   }
   const toks = new Uint32Array(spans.length);
   for (let i = 0; i < spans.length; i++) toks[i] = tok32(spans[i][0], spans[i][1]);
-  return { uri: uriStr, verb: "hunk", text: b.data(), toks: toks, kind: "tree" };
+  //  LITE-045: the raw git rows ARE the answer — no `hunk` band on a pipe, and
+  //  the visible bytes only (the hidden nav takes no column and no byte).
+  return { uri: uriStr, verb: "hunk", text: b.data(), toks: toks, kind: "tree",
+           plain: plainOf(rows), bare: true };
 }
 
 //  --- the verb --------------------------------------------------------------
-//  tree(arg, opts) -> { uri, rows, plain, hunks }.  `opts.from` is the dir to
+//  tree(arg, opts) -> { uri, rows, hunks }.  `opts.from` is the dir to
 //  find the repo above (the cwd by default).
 function tree(arg, opts) {
   opts = opts || {};
@@ -147,8 +150,7 @@ function tree(arg, opts) {
     const at = resolve(ctx, arg, opts.from);
     const rows = rowsOf(ctx, at);
     const uriStr = "tree" + (arg ? " " + arg : "");
-    return { uri: uriStr, rows: rows, plain: plainOf(rows),
-             hunks: [hunkOf(uriStr, rows)] };
+    return { uri: uriStr, rows: rows, hunks: [hunkOf(uriStr, rows)] };
   } finally { idx.closeRepo(ctx); }
 }
 

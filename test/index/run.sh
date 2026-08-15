@@ -98,9 +98,8 @@ if [ "$RC" = 0 ] && grep -q '^indexed 5 commits, 7 revs, [0-9]* rows .* refs/hea
 then ok "first run indexes 5 commits / 7 revs (5 file, 2 dir)"
 else bad "first run indexes 5 commits / 7 revs (rc $RC)" "$WORK/o1" "$WORK/e1"; fi
 
-# V2: the run family landed in the repo's OWN .git/be/ (LITE-044: the lane
-# FORMAT is its extension, so a pre-dir-rev `.lite.idx` is swept, not read).
-if [ -d "$REPO/.git/be" ] && ls "$REPO/.git/be" | grep -q '\.lite2\.idx$'
+# V2: the run family landed in the repo's OWN .git/be/.
+if [ -d "$REPO/.git/be" ] && ls "$REPO/.git/be" | grep -q '\.lite\.idx$'
 then ok "the run family lives in <repo>/.git/be/"
 else bad "the run family lives in <repo>/.git/be/" "$WORK/o1"; fi
 

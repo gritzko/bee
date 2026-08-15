@@ -1,4 +1,4 @@
-//  index/serve.js — LITE-034: `lite serve [--port <n>]`, the repo browser over
+//  serve.js — LITE-034: `lite serve [--port <n>]`, the repo browser over
 //  HTTP.  Three parts and no fourth: quickjab's `net.createServer` on the one
 //  implicit `pol` loop for the transport, QJAB-004's `http._drain`/`http._feed`
 //  for the message heads, and a ROUTER TABLE mapping URL forms onto the SAME
@@ -17,8 +17,8 @@
 const idx = require("index/index.js");
 const rd = require("index/read.js");
 const wv = require("index/weave.js");
-const bro = require("view/bro.js");
-const html = require("view/html.js");
+const wrap = require("render/wrap.js");
+const html = require("render/html.js");
 const mark = require("mark/html.js");
 const rst = require("mark/rst.js");
 const hk = require("index/hook.js");
@@ -196,16 +196,16 @@ function imgResolve(pg, target) {
 
 //  The byte the landed TOKEN starts at, in the bytes `/cat/<rel>` will serve —
 //  the resolver's own token when it walked one (a permalink), else the token
-//  view/bro.js's landAt puts the `file:line(:col)` on (with no column, the
+//  render/wrap.js's landAt puts the `file:line(:col)` on (with no column, the
 //  LINE's first token).  -1 = nothing to anchor: the link stays bare.
 function anchorByte(pg, seat) {
   if (seat.hi > seat.lo) return seat.lo;
   if (!seat.line) return -1;
   const h = openOnce(pg, seat.full);
   if (h === null) return -1;
-  const la = bro.landAt(h.text, seat.line, seat.col);
+  const la = wrap.landAt(h.text, seat.line, seat.col);
   if (la === null) return -1;
-  const sp = bro.tokSpanAt(h, la.at);
+  const sp = wrap.tokSpanAt(h, la.at);
   return sp === null ? -1 : sp.lo;
 }
 

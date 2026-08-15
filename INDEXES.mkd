@@ -1,6 +1,6 @@
 #   Beagle-lite index records
 
-The record catalogue of the `.git/be/` index a lite verb reads and writes ([LITE-006]). One `abc.index("wh128", …)` family — a dog Pup stack of `(key:u64, val:u64)` rows, sorted by key, unkeyed (a key may carry many rows) — lives in the repo's OWN gitdir as `<gitdir>/be/*.lite2.idx`. Everything there is DERIVED: `rm -rf` it and the next run rebuilds it from the ODB. The EXTENSION is the lane's format version ([LITE-044]): a bump makes the older files unreadable by definition, so they are unlinked and the history is re-derived — presence is the walk boundary, and a lane that predates a record kind could never grow one otherwise. Tracked repos are listed in `$HOME/.config/be/tracks`, one absolute path per line. The kind nibble is the LOW 4 bits of every key, so one lane holds every record family and one scan sees them all.
+The record catalogue of the `.git/be/` index a lite verb reads and writes ([LITE-006]). One `abc.index("wh128", …)` family — a dog Pup stack of `(key:u64, val:u64)` rows, sorted by key, unkeyed (a key may carry many rows) — lives in the repo's OWN gitdir as `<gitdir>/be/*.lite.idx`. Everything there is DERIVED: `rm -rf` it and the next run rebuilds it from the ODB. Tracked repos are listed in `$HOME/.config/be/tracks`, one absolute path per line. The kind nibble is the LOW 4 bits of every key, so one lane holds every record family and one scan sees them all.
 
 ##  Field vocabulary
 

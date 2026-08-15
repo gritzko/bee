@@ -1,4 +1,4 @@
-//  index/chat.js — LITE-016: render Claude Code session logs as
+//  chat.js — LITE-016: render Claude Code session logs as
 //  [/wiki/StrictMark] pages.  A relocation of //CHAT-001's `jab chat`, format
 //  v2 verbatim; only the be-isms (shared/util/path.js, be.ctxDir, io.log's
 //  trailing newline) are bridged to lite/quickjab.
@@ -72,7 +72,7 @@ function readBytes(p) {
 
 function tryText(p) { try { return utf8.Decode(readBytes(p)); } catch (e) { return null; } }
 
-//  as index/merge.js: create the parent dirs, then write the bytes.
+//  as merge.js: create the parent dirs, then write the bytes.
 function writeFile(p, text) {
   const dir = dirname(p);
   if (dir) io.mkdir(dir);                        // FILEMakeDirP: parents, idempotent
@@ -83,7 +83,7 @@ function writeFile(p, text) {
 }
 
 //  LITE-016: be's shared/util/path.js is not in lite — the two helpers chat used
-//  (dirname, resolveInTree) inline here, `normalize` as index/log.js writes it.
+//  (dirname, resolveInTree) inline here, `normalize` as view/log.js writes it.
 function dirname(p) {
   if (p === "/" || p === "") return p;
   const i = p.lastIndexOf("/");
@@ -104,7 +104,7 @@ function normalize(p) {
 
 //  A dir ARG -> its absolute path.  Relative args count from the cwd (lite has
 //  no context dir); `~` is the home shorthand.  `.`/`..` segments fold through
-//  normalize, exactly as index/log.js resolves a path arg.
+//  normalize, exactly as view/log.js resolves a path arg.
 function absDir(arg) {
   let s = String(arg == null ? "." : arg);
   if (s === "") s = ".";

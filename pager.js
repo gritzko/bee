@@ -1,13 +1,18 @@
-//  view/pager.js — beagle-lite's raw-mode FILE pager: a scrollable viewport over
-//  view/bro.js (soft-wrap index + cellAnsi paint), a status line, SGR mouse and a
-//  minimal `:` PATH bar.  Navigation is fs-only, ALWAYS through `opts.open`.
+//  pager.js — beagle-lite's raw-mode FILE pager: a scrollable viewport over
+//  render/wrap.js (soft-wrap index) + render/ansi.js (the cell paint), a status
+//  line, SGR mouse and a minimal `:` PATH bar.  An APP pinned to the ansi
+//  renderer: navigation is fs-only, ALWAYS through `opts.open`.
 //  tty.raw sets VMIN=0 VTIME=1 (a 100ms poll), so the key loop re-polls io.read
 //  until a byte arrives; cook-on-exit rides try/finally.
 "use strict";
 
-const bro = require("view/bro.js");
+const ansi = require("render/ansi.js");
+//  LITE-045: the pager is PINNED to the ansi renderer, it does not own it —
+//  the per-row cell walk lives in render/ansi.js and is used verbatim here.
+const emitBody = ansi.emitBody, paintRow = ansi.paintRow;
+const wrap = require("render/wrap.js");
 //  The hunk-header band SGR (pale-yellow bg), single-sourced from the theme.
-const theme = require("view/theme.js");
+const theme = require("render/theme.js");
 
 //  BRO-007: the ONE source of the scroll-mode key bindings — `h` builds its
 //  inline help hunk straight from here.  KEEP IN SYNC with _keyScroll.
@@ -45,8 +50,9 @@ const PASTE_ON = ESC + "[?2004h", PASTE_OFF = ESC + "[?2004l";
 const PASTE_BEG = [0x1b, 0x5b, 0x32, 0x30, 0x30, 0x7e];   // ESC [ 2 0 0 ~
 const PASTE_END = [0x1b, 0x5b, 0x32, 0x30, 0x31, 0x7e];   // ESC [ 2 0 1 ~
 
-//  UTF8_LEN[b>>4]: bytes in the codepoint a lead byte starts (view/bro.js twin).
-const UTF8_LEN = [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 2, 2, 3, 4];
+//  UTF8_LEN[b>>4]: bytes in the codepoint a lead byte starts — render/wrap.js's,
+//  so the painted row and the indexed row step by the same codepoints.
+const UTF8_LEN = wrap.UTF8_LEN;
 
 //  Match `seq` against `data` at i: >0 = matched length, 0 = a definite mismatch,
 //  -1 = a prefix that ran off the end (the caller carries the tail to the next read).
@@ -91,63 +97,14 @@ function resolvePath(base, rel) {
 //  ---- hunk stream -> a flat row index spanning EVERY hunk -------------------
 //  Each entry {hunk, off, end} is one display row plus its owning hunk (so
 //  cellAnsi/statusURI have it per row); a banner row heads each hunk's body.
-function indexAll(hunks, cols, wrap) {
+function indexAll(hunks, cols, soft) {
   const rows = [];
   for (const h of hunks) {
     rows.push({ hunk: h, banner: true });      // the hunk header line
-    const sub = bro.indexRows(h, cols, wrap);  // BRO-014: wrap boolean (soft|no-wrap)
+    const sub = wrap.indexRows(h, cols, soft);  // BRO-014: `soft` boolean (soft|no-wrap)
     for (const r of sub) rows.push({ hunk: h, off: r.off, end: r.end, pass: r.pass });
   }
   return rows;
-}
-
-//  BRO-011: emit one row to a BYTE sink — `enc` appends SGR/ASCII, `raw(lo,hi)` the
-//  VERBATIM text bytes.  BRO-010: colour = the SHARED THEME, runs batched, U/O hidden.
-//  LITE-023: `wash` (or null) is the CURSOR wash for THIS row — {lo,hi} the
-//  active token's byte span (lo<0: none); the line wash rides every cell.
-function emitBody(hunk, off, end, color, pass, enc, raw, wash) {
-  const text = hunk.text, toks = hunk.toks;
-  //  bisect to the tok covering `off` (toks sorted by byte end) — the linear
-  //  scan from 0 cost O(toks) per painted row, sluggish on a 100k-tok hunk.
-  let lo = 0, hi = toks.length;
-  while (lo < hi) { const m = (lo + hi) >> 1;
-    if ((toks[m] & 0xffffff) <= off) lo = m + 1; else hi = m; }
-  let ti = lo;
-  let cur = bro.A0, pos = off, runLo = -1;
-  while (pos < end) {
-    while (ti < toks.length && (toks[ti] & 0xffffff) <= pos) ti++;
-    const tag = ti < toks.length ? String.fromCharCode(65 + ((toks[ti] >>> 27) & 0x1f)) : "S";
-    let clen = UTF8_LEN[text[pos] >> 4];
-    if (clen === 0 || pos + clen > end) clen = 1;
-    if (tag === "U" || tag === "O") { if (runLo >= 0) { raw(runLo, pos); runLo = -1; } pos += clen; continue; }
-    if (color) {
-      //  LITE-010: the token's diff SIDE (tok32 [25..24]) rides along — EQ for
-      //  every file/dir/log hunk, IN/RM inside a diff hunk's weave.
-      const side = ti < toks.length ? ((toks[ti] >>> 24) & 3) : bro.SIDE_EQ;
-      let want = bro.cellAnsi(tag, pass, side);    // PASS_NORMAL
-      if (wash) want = bro.aWash(want, pos >= wash.lo && pos < wash.hi
-                                      ? bro.WASH_CUR_TOK : bro.WASH_CUR_LINE);
-      if (!bro.aEq(want, cur)) {
-        if (runLo >= 0) { raw(runLo, pos); runLo = -1; }
-        enc(bro.deltaSGR(want, cur)); cur = want;
-      }
-    }
-    if (runLo < 0) runLo = pos;
-    pos += clen;
-  }
-  if (runLo >= 0) raw(runLo, pos);
-  if (color) enc(bro.resetSGR(cur));
-}
-
-//  STRING form of a painted row (pty tests + any string consumer): the SAME cell
-//  walk, text DECODED to real codepoints so a re-encoding caller sees no mojibake.
-function paintRow(hunk, off, end, color, pass, wash) {
-  let out = "";
-  emitBody(hunk, off, end, color, pass,
-           function (s) { out += s; },
-           function (lo, hi) { if (hi > lo) out += utf8.Decode(hunk.text.subarray(lo, hi)); },
-           wash);
-  return out;
 }
 
 //  ---- the pager state machine ----------------------------------------------
@@ -409,13 +366,13 @@ Pager.prototype._statusLine = function (rows, scroll, viewRows, cols, cur) {
   if (this.mode === "command")
     return open + this._fit(": " + this.cmd, cols) + close;
   const r = rows[scroll];
-  let left = r ? bro.statusURI(r.hunk, r.banner ? 1 : this._srcLine(r.hunk, r.off)) : "";
+  let left = r ? wrap.statusURI(r.hunk, r.banner ? 1 : this._srcLine(r.hunk, r.off)) : "";
   //  LITE-023: an ACTIVE TOKEN names what Enter would open, in place of the #L.
   const tgt = cur ? this._curTarget(rows[cur.row], cur) : "";
   if (tgt) left = tgt;
   if (this.message) left = this.message + "  " + left;
   //  BRO-007: `<pos>  ?: help` RIGHT-aligned, the URI left, the gap padded.
-  const right = bro.statusPos(scroll, rows.length, viewRows) + "  ?: help";
+  const right = wrap.statusPos(scroll, rows.length, viewRows) + "  ?: help";
   const space = cols - right.length;
   let line;
   if (space < 1) line = right.slice(0, cols);
@@ -451,10 +408,12 @@ Pager.prototype._openPush = function (path) {
   catch (e) { this.message = "cannot open " + path + ": " + String(e); return; }
   if (!hunks || hunks.length === 0) { this.message = "cannot open " + path; return; }
   this.pushView(hunks, path);
-  if (hunks.land) this._land(hunks.land);
+  //  LITE-045: the landing is a field of the FIRST hunk the door opened.
+  const land = hunks[0].land;
+  if (land) this._land(land);
   //  LITE-025: a permalink whose line is GONE lands where it stood and the door
   //  says so in plain words — the pager only shows it.
-  if (hunks.land && hunks.land.note) this.message = hunks.land.note;
+  if (land && land.note) this.message = land.note;
 };
 
 //  LITE-024: land the pushed view on the ref's line — the door did the path math
@@ -469,8 +428,8 @@ Pager.prototype._land = function (land) {
   for (const r of rows) if (!r.banner) { hunk = r.hunk; break; }
   if (!hunk) return;
   //  LITE-034: the byte the line starts at and the byte the column points at —
-  //  view/bro.js's landAt, shared with the HTML painter's anchor.
-  const la = bro.landAt(hunk.text, land.line, land.col);
+  //  render/wrap.js's landAt, shared with the HTML painter's anchor.
+  const la = wrap.landAt(hunk.text, land.line, land.col);
   if (la === null) return;                       // past the last line — stay put
   const off = la.off, at = la.at;
   const span = la.oncol ? this._landTok(hunk, land, at) : null;
@@ -494,7 +453,7 @@ Pager.prototype._landTok = function (hunk, land, at) {
   if (c === 0x20 || c === 0x09 || c === 0x0d || c === 0x0a) return null;
   if (land.hi > land.lo && land.lo >= 0 && land.hi <= text.length)
     return { hunk: hunk, lo: land.lo, hi: land.hi, at: at };
-  const sp = bro.tokSpanAt(hunk, at);              // LITE-034: the shared bisect
+  const sp = wrap.tokSpanAt(hunk, at);              // LITE-034: the shared bisect
   if (sp === null || sp.tag === "U" || sp.tag === "O" || sp.tag === "W") return null;
   return { hunk: hunk, lo: sp.lo, hi: sp.hi, at: at };
 };

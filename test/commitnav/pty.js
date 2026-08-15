@@ -7,8 +7,8 @@
 //  hidden target bytes must never reach the screen (test/click/click.js's
 //  precedent, stepped not run()).
 "use strict";
-const pagerlib = require("view/pager.js");
-const entry = require("main.js");
+const pagerlib = require("pager.js");
+const entry = require("door.js");        // LITE-045: the door, not the CLI
 
 const ESC = "\x1b";
 let n = 0, bad = 0;

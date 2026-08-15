@@ -7,9 +7,9 @@
 //  Stepped, not run(): a self-pty has no concurrent reader, so a render is
 //  followed by a blocking drain.
 "use strict";
-const pagerlib = require("view/pager.js");
-const lg = require("index/log.js");
-const entry = require("main.js");
+const pagerlib = require("pager.js");
+const lg = require("view/log.js");
+const entry = require("door.js");        // LITE-045: the door, not the CLI
 
 const ESC = "\x1b";
 let n = 0, bad = 0;
@@ -41,8 +41,8 @@ check("the-target-is-a-verb-line", targetAt === target, targetAt);
 
 //  The target bytes live INSIDE the row's byte span — they are hidden at PAINT
 //  time (`U` takes no column), so the frame, not the bytes, is what to assert.
-const bro = require("view/bro.js");
-const rows = bro.indexRows(h, 200, false);
+const wrap = require("render/wrap.js");
+const rows = wrap.indexRows(h, 200, false);
 const row0 = utf8.Decode(h.text.slice(rows[0].off, rows[0].end));
 check("row-starts-with-the-sha8", row0.indexOf(out.parts[0].sha8) === 0, row0.slice(0, 20));
 

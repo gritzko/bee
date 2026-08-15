@@ -7,9 +7,10 @@
 //  master read per drain, tty.raw entered ONCE up front (TCSAFLUSH drops
 //  pre-queued keys), pump() reads first and tests its condition after.
 "use strict";
-const pagerlib = require("view/pager.js");
-const bro = require("view/bro.js");
-const entry = require("main.js");
+const pagerlib = require("pager.js");
+const ansi = require("render/ansi.js");
+const fs = require("view/fs.js");
+const entry = require("door.js");        // LITE-045: the door, not the CLI
 
 const ESC = "\x1b";
 let n = 0, bad = 0;
@@ -55,8 +56,8 @@ function pump(p, done, tries) {
 
 //  The two washes, as the SGR they spell: a cell with no bg of its own washes
 //  down the grey ramp from white — line 255-2*1, token 255-2*3.
-const LINE_BG = "48;5;" + (255 - 2 * bro.WASH_CUR_LINE);
-const TOK_BG = "48;5;" + (255 - 2 * bro.WASH_CUR_TOK);
+const LINE_BG = "48;5;" + (255 - 2 * ansi.WASH_CUR_LINE);
+const TOK_BG = "48;5;" + (255 - 2 * ansi.WASH_CUR_TOK);
 
 const saved = tty.raw(pty.slave);
 try {
@@ -100,14 +101,14 @@ try {
   check("...painted with the STRONGER wash", ft[1].indexOf(TOK_BG) >= 0, ft[1]);
   //  The two washes COMPOSE over the LITE-010 diff washes instead of drowning
   //  them: an in/rm cell under the cursor is still its own colour, only darker.
-  const inL = bro.aWash(bro.WASH_IN, bro.WASH_CUR_LINE);
-  const rmL = bro.aWash(bro.WASH_RM, bro.WASH_CUR_LINE);
+  const inL = ansi.aWash(ansi.WASH_IN, ansi.WASH_CUR_LINE);
+  const rmL = ansi.aWash(ansi.WASH_RM, ansi.WASH_CUR_LINE);
   check("the wash darkens the diff washes, never merges them",
-        inL.bg !== rmL.bg && inL.bg !== bro.WASH_IN.bg && rmL.bg !== bro.WASH_RM.bg,
+        inL.bg !== rmL.bg && inL.bg !== ansi.WASH_IN.bg && rmL.bg !== ansi.WASH_RM.bg,
         inL.bg + " / " + rmL.bg);
   check("...and the token wash is darker still",
-        bro.aWash(bro.WASH_IN, bro.WASH_CUR_TOK).bg < inL.bg,
-        bro.aWash(bro.WASH_IN, bro.WASH_CUR_TOK).bg + " < " + inL.bg);
+        ansi.aWash(ansi.WASH_IN, ansi.WASH_CUR_TOK).bg < inL.bg,
+        ansi.aWash(ansi.WASH_IN, ansi.WASH_CUR_TOK).bg + " < " + inL.bg);
   //  the status bar names what Enter would open, in place of the `#L`.
   const name = p._curTarget(p.rows(40)[1], p.view.cur);
   check("the bar names the active target", name.length > 0 && ft[9].indexOf(name) >= 0,
@@ -185,7 +186,7 @@ try {
         "scroll " + p.view.scroll);
 
   //  ---- a U-BACKED token: the hidden follower is what Enter opens ---------
-  const ch = bro.buildChooserHunk("chooser", [{ rel: "one.txt", full: "f01.txt" },
+  const ch = fs.buildChooserHunk("chooser", [{ rel: "one.txt", full: "f01.txt" },
                                               { rel: "two.txt", full: "f02.txt" }]);
   const pc = new pagerlib.Pager(pty.slave, { color: true, open: entry.openPath });
   pc.setHunks([ch], "chooser");

@@ -15,7 +15,7 @@
 //      path's history order, then its staged/working blob — a link minted on
 //      content no commit carries yet;
 //   3. the anchored blob is folded, then the CURRENT worktree bytes are folded
-//      ON TOP — one CFOLD pair, exactly what index/diff.js does;
+//      ON TOP — one CFOLD pair, exactly what view/diff.js does;
 //   4. walking the weave AT THE ANCHOR names the token covering the byte (its
 //      body offset IS its identity), walking AT THE HEAD says where that same
 //      token sits today: the anchored line, wherever later commits pushed it;
@@ -28,11 +28,11 @@
 "use strict";
 
 const idx = require("./index.js");
-const lg = require("./log.js");
+const lg = require("view/log.js");
 const rd = require("./read.js");
 const wv = require("./weave.js");
 
-//  Two distinct 16-hex layer ids, index/diff.js's own; only != matters.
+//  Two distinct 16-hex layer ids, view/diff.js's own; only != matters.
 const ID_WAS = "0000000000000001", ID_NOW = "0000000000000002";
 //  A deleting commit is looked for over the path's own history, oldest first;
 //  a long-dead line in a long history stops being worth a fold at some point.
@@ -202,7 +202,7 @@ function blobsFor(ctx, ix, rel, hexpfx) {
 }
 
 //  The WORKING copy's own blob id — a link minted on content no commit carries.  (lite never reads `.git/index`, so a
-//  staged-only change reads as a worktree one — index/diff.js's own stance.)
+//  staged-only change reads as a worktree one — view/diff.js's own stance.)
 function blobIdOf(bytes) {
   const head = utf8.Encode("blob " + bytes.length);   // then the NUL git puts
   const all = new Uint8Array(head.length + 1 + bytes.length);
@@ -279,7 +279,7 @@ function tokenNow(w, id, delta) {
   return null;
 }
 
-//  --- the fold scratch (index/diff.js's own reason: no per-call 16 MB maps) --
+//  --- the fold scratch (view/diff.js's own reason: no per-call 16 MB maps) --
 let _wWas = null, _wNow = null;
 function scratch() {
   if (_wWas === null) {
@@ -288,7 +288,7 @@ function scratch() {
   }
 }
 //  was -> now as ONE fold pair; a lexer that cannot take the source falls back
-//  to the plain tokenizer, as index/diff.js's fold2 does.
+//  to the plain tokenizer, as view/diff.js's fold2 does.
 function foldPair(was, now, ext) {
   scratch();
   const go = function (e) {

@@ -5,9 +5,11 @@
 //  the from-side (be/view/theme.js `inWash`/`rmWash`, which is what the C HUNK
 //  colour render paints too).  `LITE_FIX` names the fixture repo.
 "use strict";
-const df = require("index/diff.js");
-const bro = require("view/bro.js");
-const pager = require("view/pager.js");
+const df = require("view/diff.js");
+const ansi = require("render/ansi.js");
+const plain = require("render/plain.js");
+const wrap = require("render/wrap.js");
+const pager = require("pager.js");
 
 const ESC = "\x1b";
 let n = 0, bad = 0;
@@ -42,7 +44,7 @@ check("toks-carry-both-diff-sides", (sides & 2) !== 0 && (sides & 4) !== 0,
       "side mask " + sides);
 
 //  The painted rows carry the two washes and nothing else new.
-const rows = bro.indexRows(h, 100, true);
+const rows = wrap.indexRows(h, 100, true);
 let painted = "";
 for (const r of rows) painted += pager.paintRow(h, r.off, r.end, true, r.pass) + "\n";
 check("painted-rows-carry-the-in-wash", painted.indexOf(ESC + "[48;5;157m") >= 0
@@ -50,14 +52,14 @@ check("painted-rows-carry-the-in-wash", painted.indexOf(ESC + "[48;5;157m") >= 0
 check("painted-rows-carry-the-rm-wash", painted.indexOf("48;5;217m") >= 0,
       painted.slice(0, 200));
 //  A file hunk is side EQ everywhere, so it gets NO wash — the wash is a diff
-//  concern only (this is the regression guard for view/bro.js's cellAnsi).
+//  concern only (this is the regression guard for render/ansi.js's cellAnsi).
 check("a-side-EQ-token-takes-no-wash",
-      bro.aEq(bro.cellAnsi("S", 0, bro.SIDE_EQ), bro.themeAt("S")) &&
-      !bro.aEq(bro.cellAnsi("S", 0, bro.SIDE_IN), bro.themeAt("S")), "");
+      ansi.aEq(ansi.cellAnsi("S", 0, ansi.SIDE_EQ), ansi.themeAt("S")) &&
+      !ansi.aEq(ansi.cellAnsi("S", 0, ansi.SIDE_IN), ansi.themeAt("S")), "");
 
-//  The C plain render rides along as `plain`, and bro.plainHunk writes THAT
+//  The C plain render rides along as `plain`, and plain.plainHunk writes THAT
 //  under the usual banner — the weave bytes would be unreadable.
-const pl = utf8.Decode(bro.plainHunk(h));
+const pl = utf8.Decode(plain.plainHunk(h));
 check("plainHunk-writes-the-unified-render",
       pl.indexOf("hunk " + h.uri + "\n") === 0 && pl.indexOf("\n--- a/") > 0 &&
       pl.indexOf("\n+++ b/") > 0 && pl.indexOf("\n@@ ") > 0, pl.slice(0, 120));

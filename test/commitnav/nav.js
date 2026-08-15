@@ -1,6 +1,6 @@
 //  lite/test/commitnav/nav.js — LITE-021, the headless leg: the commit view's
 //  hash rows carry the hidden `U` click-targets, the PLAIN body carries none,
-//  and the door (main.js openTarget) opens every one of them.
+//  and the door (door.js openTarget) opens every one of them.
 //
 //  The targets are read the way the pager reads them — `_targetAt` on the row's
 //  own byte offset (Enter) and on the sha token (a click) — so what is pinned
@@ -10,11 +10,11 @@
 //  parentless root one, LITE_TREE the merge's tree sha, LITE_P1/LITE_P2 its two
 //  parents.
 "use strict";
-const cm = require("index/commit.js");
-const tr = require("index/tree.js");
-const pagerlib = require("view/pager.js");
-const bro = require("view/bro.js");
-const entry = require("main.js");
+const cm = require("view/commit.js");
+const tr = require("view/tree.js");
+const pagerlib = require("pager.js");
+const wrap = require("render/wrap.js");
+const entry = require("door.js");        // LITE-045: the door, not the CLI
 
 let n = 0, bad = 0;
 function w1(s) { const b = utf8.Encode(s); const x = io.buf(b.length + 8); x.feed(b); io.writeAll(1, x); }
@@ -33,21 +33,21 @@ const TREE = io.getenv("LITE_TREE");
 const P1 = io.getenv("LITE_P1"), P2 = io.getenv("LITE_P2");
 
 const out = cm.commit(SHA, { from: repo });
-const h = cm.hunk(out);
-const rows = bro.indexRows(h, 200, false);
+const h = out.hunks[0];          // LITE-045: the metadata hunk leads the view
+const rows = wrap.indexRows(h, 200, false);
 //  the pager's own reader, with no pager instance behind it
 const targetAt = (off) => pagerlib.Pager.prototype._targetAt.call({}, h, off);
 //  the visible text of a row (`U`/`O` bytes are hidden at paint time, so strip
 //  them the way paintRow does): row i of the PLAIN body.
-const plines = utf8.Decode(out.text).split("\n");
+const plines = utf8.Decode(h.plain).split("\n");
 
 //  ---- the plain body stays U-free ----------------------------------------
 check("plain-body-is-shorter-than-the-pager-body",
-      out.text.length < h.text.length, out.text.length + " vs " + h.text.length);
+      h.plain.length < h.text.length, h.plain.length + " vs " + h.text.length);
 check("plain-body-carries-no-target-bytes",
-      utf8.Decode(out.text).indexOf("tree " + TREE + "\ntree ") < 0 &&
-      utf8.Decode(out.text).indexOf("commit " + P1 + "\nparent") < 0,
-      utf8.Decode(out.text).slice(0, 200));
+      utf8.Decode(h.plain).indexOf("tree " + TREE + "\ntree ") < 0 &&
+      utf8.Decode(h.plain).indexOf("commit " + P1 + "\nparent") < 0,
+      utf8.Decode(h.plain).slice(0, 200));
 check("plain-rows-are-the-object's-own",
       plines[1] === "tree " + TREE && plines[2] === "parent " + P1 &&
       plines[3] === "parent " + P2, plines.slice(1, 4).join(" | "));
@@ -93,13 +93,13 @@ check("author/committer/message-rows-carry-no-target", dead === "", dead);
 
 //  ---- the ROOT commit: a tree target and no parent row --------------------
 const ro = cm.commit(ROOT, { from: repo });
-const rh = cm.hunk(ro);
-const rrows = bro.indexRows(rh, 200, false);
+const rh = ro.hunks[0];
+const rrows = wrap.indexRows(rh, 200, false);
 const rtarget = pagerlib.Pager.prototype._targetAt.call({}, rh, rrows[1].off);
 check("the-root-commit's-tree-row-still-opens", rtarget.indexOf("tree ") === 0 &&
       rtarget.length === 45, rtarget);
 check("the-root-commit-has-no-parent-row",
-      utf8.Decode(ro.text).indexOf("\nparent ") < 0, utf8.Decode(ro.text).slice(0, 120));
+      utf8.Decode(rh.plain).indexOf("\nparent ") < 0, utf8.Decode(rh.plain).slice(0, 120));
 
 //  ---- the DOOR opens every target -----------------------------------------
 const toTree = entry.openTarget("tree " + TREE);
@@ -113,9 +113,9 @@ check("the-door-opens-a-parent-target", toParent !== null && toParent.length >= 
 //  ---- `tree <raw tree sha>` — a TREE object, not a commit rev -------------
 const t = tr.tree(TREE, { from: repo });
 check("tree-accepts-a-raw-TREE-object-sha", t.rows.length >= 1 &&
-      utf8.Decode(t.plain).indexOf("\t") > 0, "rows " + t.rows.length);
+      utf8.Decode(t.hunks[0].plain).indexOf("\t") > 0, "rows " + t.rows.length);
 check("that-listing-is-the-commit's-own-tree",
-      utf8.Decode(t.plain) === utf8.Decode(tr.tree(SHA, { from: repo }).plain),
-      utf8.Decode(t.plain).slice(0, 120));
+      utf8.Decode(t.hunks[0].plain) === utf8.Decode(tr.tree(SHA, { from: repo }).hunks[0].plain),
+      utf8.Decode(t.hunks[0].plain).slice(0, 120));
 
 w1((bad ? "FAILED " : "DONE ") + n + " checks\n");

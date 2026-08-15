@@ -1,16 +1,17 @@
 //  lite/test/first/first.js — LITE-018, the two things the shell legs cannot
 //  reach: the repo PROBE bare `lite` dispatches on (main.js `inRepo`, the climb
 //  included), and the FIRST RUN itself — a repo that has no `.git/be` at all,
-//  where `index/list.js` must derive the whole index before it can fuse a
+//  where `view/list.js` must derive the whole index before it can fuse a
 //  single row, then paint that board on a real `tty.openpty()` slave.
 //
 //  run.sh hands the repos in as $LITE_FIX (indexed by the earlier legs) and
 //  $LITE_FRESH (never indexed, this leg's own).  Stepped, not run(): a self-pty
 //  has no concurrent reader (test/pager/pty.js's note).
 "use strict";
-const entry = require("main.js");
-const ls = require("index/list.js");
-const pagerlib = require("view/pager.js");
+const entry = require("main.js");        // the bare-run repo probe
+const dr = require("door.js");           // LITE-045: the door, not the CLI
+const ls = require("view/list.js");
+const pagerlib = require("pager.js");
 
 const ESC = "\x1b";
 let n = 0, bad = 0;
@@ -54,7 +55,8 @@ for (const r of out.rows) if (r.summary !== "" && r.age !== "") attributed++;
 check("...every row is FUSED on the very first run, none starved",
       attributed === out.rows.length, attributed + "/" + out.rows.length);
 check("...with the fixture's own commits on them",
-      utf8.Decode(out.plain).indexOf("F0 fresh seed") >= 0, utf8.Decode(out.plain));
+      utf8.Decode(out.hunks[0].plain).indexOf("F0 fresh seed") >= 0,
+      utf8.Decode(out.hunks[0].plain));
 
 //  A SECOND call on the same handle is the watermark no-op: same rows, and no
 //  new run file in the family (bringUp returns before it writes anything).
@@ -63,7 +65,7 @@ const out2 = ls.list(undefined, { from: fresh, track: false });
 check("the second run is the watermark no-op — the family did not grow",
       io.readdir(fresh + "/.git/be").length === before);
 check("...and the rows are the same bytes",
-      utf8.Decode(out2.plain) === utf8.Decode(out.plain));
+      utf8.Decode(out2.hunks[0].plain) === utf8.Decode(out.hunks[0].plain));
 
 //  ---- the glass -----------------------------------------------------------
 //  What bare `lite` puts on a terminal is these hunks through the shipped door.
@@ -74,7 +76,7 @@ if (typeof tty === "undefined" || !tty.openpty) {
   tty.setSize(pty.slave, 12, 100);
   const saved = tty.raw(pty.slave);
   try {
-    const p = new pagerlib.Pager(pty.slave, { color: true, open: entry.openTarget });
+    const p = new pagerlib.Pager(pty.slave, { color: true, open: dr.openTarget });
     p.setHunks(out.hunks, "list");
     p.render();
     const rb = io.buf(1 << 16);

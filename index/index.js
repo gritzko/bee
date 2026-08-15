@@ -874,7 +874,7 @@ module.exports = {
   //  mark..tip, each with its NEW blob) and the batching writer, rather than
   //  growing a second walk of its own.
   descend: descend, idxWriter: idxWriter, 
-  //  LITE-044: the dir fuse (index/list.js) reads a dir's newest rev with these.
+  //  LITE-044: the dir fuse (view/list.js) reads a dir's newest rev with these.
   lastRev: lastRev, revValAt: revValAt,
   //  LITE-010: `diff` reads blob/commit objects straight off the ODB.
   object: object,

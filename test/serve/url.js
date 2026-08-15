@@ -1,19 +1,19 @@
 //  lite/test/serve/url.js — LITE-034, the HEADLESS leg: the two pure halves of
 //  `lite serve` that need no socket at all —
 //
-//    index/serve.js  routeOf(url) -> (verb, arg)   the URL table, one way
+//    serve.js  routeOf(url) -> (verb, arg)   the URL table, one way
 //                    urlOf(root, pagerTarget)      the same table, the other way
-//    view/html.js    sgrCss / color256             view/theme.js -> CSS
+//    render/html.js    sgrCss / color256             render/theme.js -> CSS
 //                    hunkHtml(hunk, link)          tok tag -> <span>, `U` -> <a>
 //
 //  The two directions are asserted TOGETHER: a pager target that becomes a URL
 //  must route back to the same (verb, arg), which is what keeps a click in the
 //  browser and a click in the pager the same click.  No repository is needed.
 "use strict";
-const srv = require("index/serve.js");
-const html = require("view/html.js");
-const theme = require("view/theme.js");
-const bro = require("view/bro.js");
+const srv = require("serve.js");
+const html = require("render/html.js");
+const theme = require("render/theme.js");
+const wrap = require("render/wrap.js");
 
 let n = 0, bad = 0;
 function w1(s) { const b = utf8.Encode(s); const x = io.buf(b.length + 8); x.feed(b); io.writeAll(1, x); }
@@ -204,27 +204,27 @@ check("the landed token has a :target rule",
 const dark = html.stylesheet(theme.THEMEDARK);
 check("a theme swap changes the sheet", dark !== css && dark.indexOf(".tok-D{color:#585858}") >= 0);
 
-//  --- the landing math (view/bro.js, shared with view/pager.js) ------------
+//  --- the landing math (render/wrap.js, shared with pager.js) ------------
 //  `int a;\nint b;\nint c;\n`: line 2 starts at byte 7, its line ends at 13.
 {
   const t = TGT.text;
-  check("line 2 starts at byte 7", bro.landAt(t, 2, 0).off === 7, JSON.stringify(bro.landAt(t, 2, 0)));
+  check("line 2 starts at byte 7", wrap.landAt(t, 2, 0).off === 7, JSON.stringify(wrap.landAt(t, 2, 0)));
   check("no column lands on the line start",
-        bro.landAt(t, 2, 0).at === 7 && bro.landAt(t, 2, 0).oncol === false);
+        wrap.landAt(t, 2, 0).at === 7 && wrap.landAt(t, 2, 0).oncol === false);
   check("a column lands on its own byte",
-        bro.landAt(t, 2, 5).at === 11 && bro.landAt(t, 2, 5).oncol === true);
+        wrap.landAt(t, 2, 5).at === 11 && wrap.landAt(t, 2, 5).oncol === true);
   check("a column past the line end falls back to the line",
-        bro.landAt(t, 2, 99).at === 7 && bro.landAt(t, 2, 99).oncol === false);
-  check("a line past the last one lands nowhere", bro.landAt(t, 9, 0) === null);
+        wrap.landAt(t, 2, 99).at === 7 && wrap.landAt(t, 2, 99).oncol === false);
+  check("a line past the last one lands nowhere", wrap.landAt(t, 9, 0) === null);
   check("the token covering a byte is bisected",
-        bro.tokSpanAt(TGT, 11).lo === 11 && bro.tokSpanAt(TGT, 11).hi === 12);
+        wrap.tokSpanAt(TGT, 11).lo === 11 && wrap.tokSpanAt(TGT, 11).hi === 12);
   check("a byte mid-token names that token's whole span",
-        bro.tokSpanAt(TGT, 8).lo === 7 && bro.tokSpanAt(TGT, 8).hi === 10);
-  check("past the last token there is none", bro.tokSpanAt(TGT, 999) === null);
+        wrap.tokSpanAt(TGT, 8).lo === 7 && wrap.tokSpanAt(TGT, 8).hi === 10);
+  check("past the last token there is none", wrap.tokSpanAt(TGT, 999) === null);
 }
 
 //  --- the painter ----------------------------------------------------------
-//  A hand-built hunk in the shape index/list.js emits: a visible span, a hidden
+//  A hand-built hunk in the shape view/list.js emits: a visible span, a hidden
 //  `U` target behind it, a newline.
 const link = function (t) { return srv.urlOf(mkpg(), t); };
 

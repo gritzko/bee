@@ -3,7 +3,7 @@
 //  against `git log --first-parent`, so the ord-0 chain is pinned by GIT and
 //  not only by our own expectation of the fixture.
 "use strict";
-const lg = require("index/log.js");
+const lg = require("view/log.js");
 const out = lg.log(undefined, { from: io.getenv("LITE_FIX") });
 let s = "";
 for (const p of out.parts) if (!p.nonspine) s += p.sha8 + "\n";

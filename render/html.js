@@ -1,9 +1,14 @@
-//  view/html.js — LITE-034: the HTML twin of the ANSI painter.  The very same
+//  render/html.js — LITE-034: the HTML twin of the ANSI painter.  The very same
 //  hunks the pager paints (dog tok32 tags over the hunk's own bytes) become
-//  `<span class="tok-X">`, and view/theme.js's palette becomes ONE generated
+//  `<span class="tok-X">`, and render/theme.js's palette becomes ONE generated
 //  stylesheet.  Nothing here re-reads or re-recognises a byte: the tags are the
-//  tokenizer's, the targets are the hidden `U` spans view/pager.js follows, and
-//  every colour NUMBER comes out of view/theme.js.
+//  tokenizer's, read through render/wrap.js's accessors (LITE-045: this file
+//  used to mirror the tok32 layout itself), the targets are the hidden `U`
+//  spans pager.js follows, and every colour NUMBER comes out of
+//  render/theme.js.
+//
+//  VERB-BLIND, like every renderer: it knows tags, sides and hunks, never which
+//  view made them.  `lite serve` is the app pinned to it.
 //
 //  The column layout is the terminal's, unchanged — a hunk body is a `<pre>`,
 //  so a list/log row's padding and a diff hunk's weave line up as they do at a
@@ -11,13 +16,12 @@
 //  syntax-painted source like any other.
 "use strict";
 
-const theme = require("view/theme.js");
-
-//  tok32 (dog/tok/TOK.h, mirrored by view/bro.js): [31..27] tag, [25..24] diff
-//  side, [23..0] end byte offset; token i starts where token i-1 ended.
-const TOK_TAG = (w) => String.fromCharCode(65 + ((w >>> 27) & 0x1f));
-const TOK_SIDE = (w) => (w >>> 24) & 3;
-const TOK_END = (w) => w & 0xffffff;
+const theme = require("render/theme.js");
+//  tok32 (dog/tok/TOK.h): [31..27] tag, [25..24] diff side, [23..0] end byte
+//  offset; token i starts where token i-1 ended.  THE accessors, shared with
+//  the row index and the ansi painter — never a second copy of the layout.
+const wrap = require("render/wrap.js");
+const TOK_TAG = wrap.TOK_TAG, TOK_SIDE = wrap.TOK_SIDE, TOK_END = wrap.TOK_END;
 
 //  --- SGR parameter -> sRGB --------------------------------------------------
 //  A browser has no SGR, so a slot's PARAMETER string goes through xterm's own
@@ -131,7 +135,7 @@ function hunkHtml(hunk, link, ord) {
     const side = TOK_SIDE(toks[i]);
     if (side === 1) cls += " side-in";
     else if (side === 2) cls += " side-rm";
-    //  The target, exactly as view/pager.js reads it: a hidden `U` span right
+    //  The target, exactly as pager.js reads it: a hidden `U` span right
     //  behind this one, else an `F` token's own bytes — a reference (LITE-015).
     let target = "";
     if (i + 1 < toks.length && TOK_TAG(toks[i + 1]) === "U")
@@ -191,7 +195,26 @@ function errorPage(title, message) {
                      '</div><pre class="body">' + esc(message) + "\n</pre></div>");
 }
 
+//  ---- the RENDERER (LITE-045) -----------------------------------------------
+//  render(hunks, opts) -> bytes: ONE SELF-CONTAINED page — the very hunks
+//  `lite serve` paints, with the stylesheet INLINE, because a `lite --html x >
+//  x.html` dump has no server to fetch /style.css from.  `opts.link` is the
+//  same `(target) -> url` resolver serve passes; with none, a reference is
+//  plain painted text (ruling 2026-08-15) and the page stands alone.
+//  Nothing to show renders NOTHING, so the three renderers agree on silence.
+function render(hunks, opts) {
+  if (!hunks || !hunks.length) return new Uint8Array(0);
+  const title = (opts && opts.title) || hunks[0].uri || "lite";
+  return utf8.Encode(
+    '<!DOCTYPE html>\n<html><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+    "<title>" + esc(title) + "</title><style>\n" +
+    stylesheet(opts && opts.theme) + "</style></head><body>" +
+    hunksHtml(hunks, opts && opts.link) + "</body></html>\n");
+}
+
 module.exports = {
+  render: render,
   stylesheet: stylesheet,
   hunkHtml: hunkHtml,
   hunksHtml: hunksHtml,

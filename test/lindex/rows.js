@@ -1,5 +1,5 @@
 //  lite/test/lindex/rows.js — LITE-033 leg 5: the LINK rows `lite lindex` left
-//  in the ONE `<repo>/.git/be/*.lite2.idx` family.  Opens the same wh128 stack
+//  in the ONE `<repo>/.git/be/*.lite.idx` family.  Opens the same wh128 stack
 //  the verb wrote and asserts the RULED bit layout — key `dst_hl:40|0:20|7`,
 //  val `src path_hl:40|0:20|vnib:4` — the two dst flavours (a repo-relative
 //  path text and a bare ticket code), the refs that mint NOTHING (ambiguous,

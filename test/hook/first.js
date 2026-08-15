@@ -5,7 +5,7 @@
 //  Run AFTER a real `git commit` on a repo whose only commit is this one, so
 //  the assertions are over the ROOT commit's own blobs.
 "use strict";
-const entry = require("main.js");
+const entry = require("door.js");        // LITE-045: the door, not the CLI
 const idx = require("index/index.js");
 const rd = require("index/read.js");
 
@@ -65,8 +65,8 @@ check("the minted link follows back through the resolver",
       at !== null && at.length === 1 && ends(at[0].uri, "/src/A.c"),
       at === null ? "null" : at[0].uri);
 check("...landing on line 5, column 1",
-      at !== null && at.land && at.land.line === 5 && at.land.col === 1,
-      at === null ? "null" : JSON.stringify(at.land || null));
+      at !== null && at[0].land && at[0].land.line === 5 && at[0].land.col === 1,
+      at === null ? "null" : JSON.stringify(at[0].land || null));
 
 w1((bad ? "FAIL " : "PASS ") + "[lite/hook first] " + n + " checks, " + bad + " bad\n");
 if (bad) throw "HOOKFIRST";

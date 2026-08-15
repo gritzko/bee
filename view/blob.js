@@ -1,4 +1,4 @@
-//  index/blob.js — LITE-017: `lite blob <hexlet>`, ported from
+//  view/blob.js — LITE-017: `lite blob <hexlet>`, ported from
 //  be/views/blob/blob.js (JAB-007).
 //
 //  THE RULING (gritzko, JAB-007): blob emits a HUNK, the way cat does — never a
@@ -17,12 +17,12 @@
 //  was never built.  An EMPTY blob emits nothing at all (cat's own case).
 "use strict";
 
-const idx = require("./index.js");
+const idx = require("index/index.js");
 const df = require("./diff.js");
 const lg = require("./log.js");
-const rd = require("./read.js");
+const rd = require("index/read.js");
 
-//  blob(arg, opts) -> { uri, sha, bytes, hunks }.
+//  blob(arg, opts) -> { uri, sha, hunks }.
 function blob(arg, opts) {
   opts = opts || {};
   const hexlet = String(arg === undefined || arg === null ? "" : arg);
@@ -38,7 +38,7 @@ function blob(arg, opts) {
     const uriStr = "blob " + sha;
     const hunks = o.bytes.length === 0 ? []
                 : [rd.textHunk(uriStr, o.bytes, "", "blob")];
-    return { uri: uriStr, sha: sha, bytes: o.bytes, hunks: hunks };
+    return { uri: uriStr, sha: sha, hunks: hunks };
   } finally { idx.closeRepo(ctx); }
 }
 

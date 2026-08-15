@@ -11,7 +11,9 @@
 //
 //  `LITE_FIX` names the fixture repo, `LITE_REV` the historic commit.
 "use strict";
-const ct = require("index/cat.js");
+const ct = require("view/cat.js");
+//  LITE-045: the plain SINK itself, so this pins what a pipe really gets.
+const plain = require("render/plain.js");
 
 let n = 0, bad = 0;
 function w1(s) { const b = utf8.Encode(s); const x = io.buf(b.length + 8); x.feed(b); io.writeAll(1, x); }
@@ -53,7 +55,8 @@ check("hunk-banners-the-verb-and-the-path", h.uri === "cat add.c", h.uri);
 //  bytes into its body; lite inserts nothing at all, in any mode.
 check("the hunk body is the VERBATIM source", bytesEq(h.text, utf8.Encode(SRC)),
       utf8.Decode(h.text));
-check("--plain writes those same bytes", bytesEq(out.bytes, utf8.Encode(SRC)));
+check("--plain writes those same bytes and NO banner",
+      bytesEq(plain.plainHunk(h), utf8.Encode(SRC)), utf8.Decode(plain.plainHunk(h)));
 
 //  The spans lie over them: a known extension is tokenized, the ends ascend,
 //  and the last one closes at the last byte.
@@ -83,23 +86,24 @@ check("an extension-less file has no toks and all its bytes",
 const rev = ct.cat("gone.c?" + REV, { from: repo });
 check("the ?<rev> form is one hunk too", rev.hunks.length === 1, rev.hunks.length);
 check("...banner'd with the rev", rev.hunks[0].uri === "cat gone.c?" + REV, rev.hunks[0].uri);
-check("...over the blob's verbatim bytes", bytesEq(rev.hunks[0].text, rev.bytes));
+check("...over the blob's verbatim bytes", bytesEq(rev.hunks[0].text,
+              utf8.Encode("int main(){return 0;} /* GONE-MARKER */\n")));
 check("...and tokenized by the PATH's extension, not the rev",
       rev.hunks[0].toks.length > 0, rev.hunks[0].toks.length);
 
 //  An EMPTY file emits no hunk at all — be's own no-banner-for-nothing case.
 (function touch(p) { const fd = io.open(p, "c"); io.close(fd); })(repo + "/empty.c");
 const empty = ct.cat("empty.c", { from: repo });
-check("an empty file emits no hunk", empty.hunks.length === 0 && empty.bytes.length === 0,
+check("an empty file emits no hunk", empty.hunks.length === 0,
       empty.hunks.length);
 
 //  A SYMLINK reads as its target STRING (the git blob body), never followed —
-//  index/diff.js's own reader, reused rather than re-derived.
+//  view/diff.js's own reader, reused rather than re-derived.
 try { io.unlink(repo + "/link.c"); } catch (e) {}
 io.symlink("add.c", repo + "/link.c");
 const lnk = ct.cat("link.c", { from: repo });
 check("a symlink reads as its target string, not the target's bytes",
-      utf8.Decode(lnk.bytes) === "add.c", utf8.Decode(lnk.bytes));
+      utf8.Decode(lnk.hunks[0].text) === "add.c", utf8.Decode(lnk.hunks[0].text));
 
 for (const f of ["add.c", "plain", "empty.c", "link.c"]) {
   try { io.unlink(repo + "/" + f); } catch (e) {}

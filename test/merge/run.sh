@@ -1,6 +1,6 @@
 #!/bin/sh
 # lite/test/merge/run.sh — LITE-014: the `lite merge` driver + `lite install`.
-# Three legs over the landed lite tree (main.js, index/weave.js, index/merge.js):
+# Three legs over the landed lite tree (main.js, index/weave.js, merge.js):
 #   weave — weave.js: the port itself, headless (trivial shortcuts, conflict
 #           spans, re-absorbed equal bytes, over-cap and binary null).
 #   verb  — this script, part 1: the driver contract over plain files — the six

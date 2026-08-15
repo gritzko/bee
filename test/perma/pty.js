@@ -12,8 +12,8 @@
 //  MINTING IS NOT UNDER TEST (another ticket): the anchors here are built from
 //  the fixture's own arithmetic — 16-byte lines, `git rev-parse` blob ids.
 "use strict";
-const pagerlib = require("view/pager.js");
-const entry = require("main.js");
+const pagerlib = require("pager.js");
+const entry = require("door.js");        // LITE-045: the door, not the CLI
 const pm = require("index/perma.js");
 
 const ESC = "\x1b";
@@ -103,21 +103,21 @@ check("...the one the FSEG descent named, anchor SHED",
 //  r1 prepended 5 lines and r2 deleted one above it: the line anchored at r0 as
 //  line 20 is line 24 today.
 check("...LANDED on the line the later commits MOVED",
-      at !== null && at.land && at.land.line === 24 && at.land.col === 5,
-      at === null ? "null" : JSON.stringify(at.land || null));
-check("...with no note — the line is alive", at !== null && at.land && !at.land.note,
-      at === null ? "null" : String(at.land && at.land.note));
+      at !== null && at[0].land && at[0].land.line === 24 && at[0].land.col === 5,
+      at === null ? "null" : JSON.stringify(at[0].land || null));
+check("...with no note — the line is alive", at !== null && at[0].land && !at[0].land.note,
+      at === null ? "null" : String(at[0].land && at[0].land.note));
 
 //  the tombed leg: r2 deleted the anchored line; the follow lands where it
 //  stood (now line 12) and the bar says which commit took it.
 const tomb = entry.openTarget(PERMA7);
 check("a permalink to a DELETED line still opens the file", tomb !== null && tomb.length === 1,
       tomb === null ? "null" : "hunks " + tomb.length);
-check("...landing on the nearest surviving neighbour", tomb !== null && tomb.land &&
-      tomb.land.line === 12, tomb === null ? "null" : JSON.stringify(tomb.land || null));
+check("...landing on the nearest surviving neighbour", tomb !== null && tomb[0].land &&
+      tomb[0].land.line === 12, tomb === null ? "null" : JSON.stringify(tomb[0].land || null));
 check("...and saying, in plain words, which commit deleted it",
-      tomb !== null && tomb.land && tomb.land.note === "deleted in " + R2.slice(0, 8),
-      tomb === null ? "null" : String(tomb.land && tomb.land.note));
+      tomb !== null && tomb[0].land && tomb[0].land.note === "deleted in " + R2.slice(0, 8),
+      tomb === null ? "null" : String(tomb[0].land && tomb[0].land.note));
 
 //  a hashlet no commit carries, and an offset past the blob: quiet misses.
 check("a hashlet no version of the file carries is a quiet miss",
@@ -130,8 +130,8 @@ check("a permalink on a path nothing names is a quiet miss",
 //  a bare `:line` on the SAME file is untouched by any of this.
 const plain = entry.openTarget("src/abc/FSW.c:24");
 check("a plain `:line` ref still lands as LITE-024 left it",
-      plain !== null && plain.land && plain.land.line === 24 && plain.land.col === 0,
-      plain === null ? "null" : JSON.stringify(plain.land || null));
+      plain !== null && plain[0].land && plain[0].land.line === 24 && plain[0].land.col === 0,
+      plain === null ? "null" : JSON.stringify(plain[0].land || null));
 
 //  ---- the SCOPE: this file's blobs, then its working blob ------------------
 //  The working copy's own blob: net/TCP.c is edited and NOT committed, so its
@@ -143,8 +143,8 @@ const work = entry.openTarget(WORK20);
 check("a WORKTREE-only blob anchor opens the file", work !== null && work.length === 1,
       work === null ? "null" : "hunks " + work.length);
 check("...landing on the working version directly",
-      work !== null && work.land && work.land.line === 20 && work.land.col === 5,
-      work === null ? "null" : JSON.stringify(work.land || null));
+      work !== null && work[0].land && work[0].land.line === 20 && work[0].land.col === 5,
+      work === null ? "null" : JSON.stringify(work[0].land || null));
 
 //  EARLIEST-MATCH, for real: src/abc/TCP.c left its r0 blob at r3 and came back
 //  to it at r4, so ONE blob id answers at two points of the path's history.

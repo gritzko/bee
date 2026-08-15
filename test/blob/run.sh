@@ -122,7 +122,7 @@ else bad "bare blob (rc $RC)" "$WORK/r0.out" "$WORK/r0.err"; fi
 # --- the tty side: ONE hunk, banner = the RESOLVED full sha ----------------
 ln -sf "$LITE" "$WORK/jsrc"
 ( cd "$LITE" && HOME="$FAKEHOME" "$RT" --eval \
-  "const o = require('index/blob.js').blob('$SHORT', { from: '$REPO' });
+  "const o = require('view/blob.js').blob('$SHORT', { from: '$REPO' });
    const w = (s) => { const b = utf8.Encode(s); const x = io.buf(b.length + 8); x.feed(b); io.writeAll(1, x); };
    w('uri=' + o.uri + '\n');
    w('hunks=' + o.hunks.length + ' kind=' + (o.hunks[0] || {}).kind + '\n');" ) \

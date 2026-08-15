@@ -6,7 +6,7 @@
 //  `LITE_FIX` names the fixture repo, `LITE_TIP` its tip, `LITE_SUBTREE` the
 //  `sub` tree sha.
 "use strict";
-const tr = require("index/tree.js");
+const tr = require("view/tree.js");
 
 let n = 0, bad = 0;
 function w1(s) { const b = utf8.Encode(s); const x = io.buf(b.length + 8); x.feed(b); io.writeAll(1, x); }
@@ -25,7 +25,7 @@ function tag(w) { return String.fromCharCode(65 + ((w >>> 27) & 0x1f)); }
 function end(w) { return w & 0xffffff; }
 
 //  The bytes a pager RENDERS: every byte not covered by a `U` token (the
-//  view/pager.js rowEnd rule — a U cell takes no column).
+//  pager.js rowEnd rule — a U cell takes no column).
 function visible(h) {
   const out = [];
   let ti = 0, pos = 0;
@@ -63,7 +63,7 @@ check("hunk-shape", h.verb === "hunk" && h.kind === "tree" &&
       h.text instanceof Uint8Array && h.toks instanceof Uint32Array, h.verb + " " + h.kind);
 check("hunk-banners-the-verb", h.uri === "tree", h.uri);
 check("the visible bytes ARE the plain block",
-      bytesEq(visible(h), root.plain), utf8.Decode(visible(h)));
+      bytesEq(visible(h), root.hunks[0].plain), utf8.Decode(visible(h)));
 
 //  tok ends ascend and cover the text exactly — the pager's bisect needs both.
 let asc = true, prev = 0;
@@ -104,7 +104,7 @@ const sub = tr.tree("sub", { from: repo });
 const sh = sub.hunks[0];
 check("descended: the banner names the arg", sh.uri === "tree sub", sh.uri);
 check("descended: the visible bytes ARE the plain block",
-      bytesEq(visible(sh), sub.plain));
+      bytesEq(visible(sh), sub.hunks[0].plain));
 check("descended: the first row is the bare '..'",
       sub.rows[0].name === ".." && sub.rows[0].meta === "", sub.rows[0].name);
 const st = targets(sh);
@@ -113,7 +113,7 @@ check("the '..' row opens the parent tree", /^tree .*\/$/.test(st[0].uri) &&
 
 //  ---- a hexlet names the same listing -------------------------------------
 const byHex = tr.tree(TIP, { from: repo });
-check("a commit hexlet yields the same rows", bytesEq(byHex.plain, root.plain));
+check("a commit hexlet yields the same rows", bytesEq(byHex.hunks[0].plain, root.hunks[0].plain));
 check("...and banners the arg", byHex.uri === "tree " + TIP, byHex.uri);
 
 w1((bad ? "FAILED " : "DONE ") + n + " checks\n");
