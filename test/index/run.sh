@@ -91,13 +91,16 @@ echo "index: runtime $RT, repo $REPO"
 # leg 1 — the CLI contract
 # ==========================================================================
 # V1: the first run indexes the whole history, ancestors before descendants.
+# LITE-044: 7 revs, not 5 — the 5 file revs plus `dir/`'s own two (c0 seeds it,
+# c2 changes b.txt under it), the rows the dir fuse reads.
 rt index "$REPO" > "$WORK/o1" 2>"$WORK/e1"; RC=$?
-if [ "$RC" = 0 ] && grep -q '^indexed 5 commits, 5 revs, [0-9]* rows .* refs/heads/master ' "$WORK/o1"
-then ok "first run indexes 5 commits / 5 revs"
-else bad "first run indexes 5 commits / 5 revs (rc $RC)" "$WORK/o1" "$WORK/e1"; fi
+if [ "$RC" = 0 ] && grep -q '^indexed 5 commits, 7 revs, [0-9]* rows .* refs/heads/master ' "$WORK/o1"
+then ok "first run indexes 5 commits / 7 revs (5 file, 2 dir)"
+else bad "first run indexes 5 commits / 7 revs (rc $RC)" "$WORK/o1" "$WORK/e1"; fi
 
-# V2: the run family landed in the repo's OWN .git/be/.
-if [ -d "$REPO/.git/be" ] && ls "$REPO/.git/be" | grep -q '\.lite\.idx$'
+# V2: the run family landed in the repo's OWN .git/be/ (LITE-044: the lane
+# FORMAT is its extension, so a pre-dir-rev `.lite.idx` is swept, not read).
+if [ -d "$REPO/.git/be" ] && ls "$REPO/.git/be" | grep -q '\.lite2\.idx$'
 then ok "the run family lives in <repo>/.git/be/"
 else bad "the run family lives in <repo>/.git/be/" "$WORK/o1"; fi
 
@@ -381,7 +384,7 @@ fi
 # V7: `.git/be` is DERIVED — rm -rf it and the next run rebuilds it whole.
 rm -rf "$REPO/.git/be"
 rt index "$REPO" > "$WORK/o5" 2>"$WORK/e5"; RC=$?
-if [ "$RC" = 0 ] && grep -q '^indexed 5 commits, 5 revs, ' "$WORK/o5"
+if [ "$RC" = 0 ] && grep -q '^indexed 5 commits, 7 revs, ' "$WORK/o5"
 then ok "rm -rf .git/be rebuilds from the ODB"
 else bad "rm -rf .git/be rebuilds from the ODB (rc $RC)" "$WORK/o5" "$WORK/e5"; fi
 

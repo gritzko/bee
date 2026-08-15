@@ -23,6 +23,16 @@
 //  it is a separate, equally lazy round over the TIP blobs, and it rides the
 //  same lane so `rm -rf .git/be` still rebuilds everything.
 //
+//  LITE-044: a changed DIR gets a rev too — ONE REV-CMMT row on the DIR PATH's
+//  own `path_hl`, so `lite list` reads a dir's last commit off the lane exactly
+//  the way it reads a file's, at any depth and with no ancestry walk.  A dir
+//  mints nothing else: REV-BLOB/REV-PARS/B2P/FSEG all describe a FILE's content
+//  or a FILE's name, and a subtree sha is neither.
+//  A hot dir changes in most commits, so its rev chain is as long as the
+//  HISTORY — reading it whole would undo LITE-028.  Both the indexer and the
+//  fuse therefore take its LAST rev alone, by galloping exact-key probes over
+//  the dense chain (`lastRev`): O(log) seeks, never O(history) rows.
+//
 //  `vnib` is RESERVED (0) everywhere the ruled table does not name a field;
 //  CPAR's low nibble is the parent ordinal (first parent = 0), and a ROOT
 //  commit's CPAR row carries an EMPTY parent slot (all-ones, the same "empty
@@ -376,7 +386,8 @@ function markSet(ix, refHl) {
 
 function state(ix) {
   const st = { ix: ix, next: new Map(), byPB: new Map(), top: new Map(),
-               have: new Set(), yes: new Set(), no: new Set(), all: false };
+               have: new Set(), dirs: new Set(),          // LITE-044: loadDir's
+               yes: new Set(), no: new Set(), all: false };
   //  An EMPTY lane is fully known after ONE row read — the from-scratch derive
   //  then seeks for nothing, because every row it will ever read is its own.
   if (!ix.seek(0n).next()) st.all = true;
@@ -414,6 +425,45 @@ function loadPath(st, phl) {
   }
 }
 
+//  --- LITE-044: the last rev, without the chain -----------------------------
+//  A rev chain is DENSE (0..k, minted in order and sealed in order), so "is
+//  there a rev r" is an EXACT-key probe and the highest rev is found by
+//  galloping and then bisecting: O(log k) seeks, no row of the chain read.
+//  An exact key carries its own kind nibble, so nothing else can answer it.
+function revValAt(ix, phl, rev, kind) {
+  const k = revKey(phl, rev, kind);
+  const c = ix.seek(k);
+  return (c.next() && c.key === k) ? c.val : null;
+}
+//  The highest rev of `kind` this path holds, or -1 when it holds none.
+function lastRev(ix, phl, kind) {
+  if (revValAt(ix, phl, 0n, kind) === null) return -1n;
+  let lo = 0n, hi = 1n;
+  while (hi <= REV_MAX && revValAt(ix, phl, hi, kind) !== null) { lo = hi; hi *= 2n; }
+  if (hi > REV_MAX) hi = REV_MAX;
+  while (lo + 1n < hi) {
+    const mid = (lo + hi) >> 1n;
+    if (revValAt(ix, phl, mid, kind) !== null) lo = mid; else hi = mid;
+  }
+  return lo;
+}
+
+//  A DIR path's state: its LAST rev alone.  A hot dir changes in most commits,
+//  so folding its whole chain the way loadPath folds a file's would be the very
+//  O(history) read LITE-028 removed — and a dir needs neither byPB nor a blob.
+function loadDir(st, phl) {
+  if (st.all || st.dirs.has(phl)) return;
+  st.dirs.add(phl);
+  const last = lastRev(st.ix, phl, K_CMMT);
+  if (last < 0n) return;
+  const nx = st.next.get(phl);
+  if (nx === undefined || nx <= last) st.next.set(phl, last + 1n);
+  const t = st.top.get(phl);
+  if (t === undefined || t.rev < last)
+    st.top.set(phl, { rev: last, blob: null,
+                      commit: valHl60(revValAt(st.ix, phl, last, K_CMMT)) });
+}
+
 //  One lane row into the state, the fold the old full pass did per row.
 function row(st, k, v) {
   const kind = keyKind(k);
@@ -432,6 +482,10 @@ function row(st, k, v) {
       st.top.set(phl, { rev: rev, blob: blob, commit: null });
     return;
   }
+  //  LITE-044: a DIR rev is a CMMT row with no BLOB one, so the arrival counter
+  //  is bumped here too — a path that was a dir and is a file now shares it.
+  const nx = st.next.get(phl);
+  if (nx === undefined || nx <= rev) st.next.set(phl, rev + 1n);
   const t = st.top.get(phl);                   // BLOB sorts before CMMT per rev
   if (t !== undefined && t.rev === rev) t.commit = valHl60(v);
 }
@@ -596,12 +650,15 @@ function descend(r, treeSha, pTrees, prefix, out) {
     }
     if (same) continue;
     if (e.dir) {
-      descend(r, e.sha,
-              olds.map((s) => (s.old !== null && s.oldDir) ? s.old : null),
-              path + "/", out);
+      const pd = olds.map((s) => (s.old !== null && s.oldDir) ? s.old : null);
+      //  LITE-044: a changed DIR is a node of its own, listed BEFORE its
+      //  children; `emit` mints it one rev row, `lindex` skips it.
+      out.push({ path: path, phl: pathHl(path), blob: e.sha, pblobs: pd,
+                 dir: true });
+      descend(r, e.sha, pd, path + "/", out);
       continue;
     }
-    out.push({ path: path, phl: pathHl(path), blob: e.sha,
+    out.push({ path: path, phl: pathHl(path), blob: e.sha, dir: false,
                pblobs: olds.map((s) => (s.old !== null && !s.oldDir)
                                        ? s.old : null) });
   }
@@ -738,6 +795,7 @@ function bringUp(ctx, ix, opts) {
 //  is already indexed: a re-walk (a dropped mark, a rebase) re-derives the same
 //  (path, blob, commit) triple and must NOT mint a second rev for it.
 function emit(wr, st, c, chl) {
+  if (c.dir) return emitDir(wr, st, c, chl);            // LITE-044
   loadPath(st, c.phl);              // LITE-028: this path's rows, on first use
   const bhl = hlOfSha(c.blob);
   const pb = (c.phl << 60n) | bhl;
@@ -776,6 +834,25 @@ function emit(wr, st, c, chl) {
   return true;
 }
 
+//  LITE-044: ONE changed DIR at ONE commit -> its ONE row.  The dir fuse wants
+//  the newest commit under the dir and nothing else, so the rev carries the
+//  COMMIT alone: no blob (a subtree sha is no blob), no PARS (a dir has no
+//  content to fold), no B2P, no FSEG (resolve.js only ever names files).
+function emitDir(wr, st, c, chl) {
+  loadDir(st, c.phl);
+  //  The re-put guard, the file half's `top` read at O(log): a re-walked commit
+  //  finds its own row as the path's newest and mints no second rev.
+  const t = st.top.get(c.phl);
+  if (t !== undefined && t.commit === chl) return false;
+  let rev = st.next.get(c.phl);
+  if (rev === undefined) rev = 0n;
+  if (rev >= REV_MAX) return false;             // 2^20-1 is the empty PARS slot
+  st.next.set(c.phl, rev + 1n);
+  wr.put(revKey(c.phl, rev, K_CMMT), hlVal(chl, 0n));
+  st.top.set(c.phl, { rev: rev, blob: null, commit: chl });
+  return true;
+}
+
 //  The one-line summary the verb prints.
 function summary(rec) {
   const tip = rec.tip.slice(0, 8);
@@ -796,7 +873,9 @@ module.exports = {
   //  LITE-033: `lindex` reuses the pruning tree diff (the changed paths of
   //  mark..tip, each with its NEW blob) and the batching writer, rather than
   //  growing a second walk of its own.
-  descend: descend, idxWriter: idxWriter,
+  descend: descend, idxWriter: idxWriter, 
+  //  LITE-044: the dir fuse (index/list.js) reads a dir's newest rev with these.
+  lastRev: lastRev, revValAt: revValAt,
   //  LITE-010: `diff` reads blob/commit objects straight off the ODB.
   object: object,
   firstLine: firstLine, identTs: identTs, heap: heap, hexOfHl: hexOfHl,

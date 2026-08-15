@@ -1,6 +1,6 @@
 #   Beagle-lite index records
 
-The record catalogue of the `.git/be/` index a lite verb reads and writes ([LITE-006]). One `abc.index("wh128", …)` family — a dog Pup stack of `(key:u64, val:u64)` rows, sorted by key, unkeyed (a key may carry many rows) — lives in the repo's OWN gitdir as `<gitdir>/be/*.lite.idx`. Everything there is DERIVED: `rm -rf` it and the next run rebuilds it from the ODB. Tracked repos are listed in `$HOME/.config/be/tracks`, one absolute path per line. The kind nibble is the LOW 4 bits of every key, so one lane holds every record family and one scan sees them all.
+The record catalogue of the `.git/be/` index a lite verb reads and writes ([LITE-006]). One `abc.index("wh128", …)` family — a dog Pup stack of `(key:u64, val:u64)` rows, sorted by key, unkeyed (a key may carry many rows) — lives in the repo's OWN gitdir as `<gitdir>/be/*.lite2.idx`. Everything there is DERIVED: `rm -rf` it and the next run rebuilds it from the ODB. The EXTENSION is the lane's format version ([LITE-044]): a bump makes the older files unreadable by definition, so they are unlinked and the history is re-derived — presence is the walk boundary, and a lane that predates a record kind could never grow one otherwise. Tracked repos are listed in `$HOME/.config/be/tracks`, one absolute path per line. The kind nibble is the LOW 4 bits of every key, so one lane holds every record family and one scan sees them all.
 
 ##  Field vocabulary
 
@@ -25,7 +25,9 @@ Eight kinds, the nibble in `key & 0xf`. Rows are never deleted and re-puts are i
  -  `REV-BLOB` (1) — key `path_hl:40|rev:20|1`, val `blob_hl:60|vnib:4`: which
     blob this path carries at this rev.
  -  `REV-CMMT` (2) — key `path_hl:40|rev:20|2`, val `commit_hl:60|vnib:4`: the
-    commit that introduced this rev of the path.
+    commit that introduced this rev of the path. A DIRECTORY path gets these and
+    ONLY these ([LITE-044]): one row per commit that changed anything under it,
+    which is what `lite list` attributes a dir row from.
  -  `REV-PARS` (3) — key `path_hl:40|rev:20|3`, val `par1:20|par2:20|par3:20|4`:
     this rev's parent REVS; a 4th+ parent rides a second row.
  -  `CPAR` (4) — key `commit_hl:60|4`, val `parent_hl:60|ord:4`: one row per
@@ -58,10 +60,12 @@ Each query is a scan of ONE key prefix; no ODB ancestry walk happens at query ti
     lane, which is why a root commit still gets an empty-parent row.
  -  A commit hashlet IS an object name — `git.getHex` takes any 6..40 hexlet —
     so a row's 15-hex `hashlet60` reads date, author and subject off the ODB.
- -  `lite list`'s last-commit fuse ([LITE-017]) splits along the same line: a
-    FILE is one `path_hl` prefix scan capped at its newest rev, exact and
-    walk-free; a DIR cannot be (see "What is NOT indexed"), so it rides the
-    CPAR ancestry and compares subtree shas, capped LITE-013-style.
+ -  `lite list`'s last-commit fuse ([LITE-017]) reads both halves off the
+    entry's OWN rows, exact at any depth and walk-free: a FILE folds its
+    `path_hl` chain, a DIR takes the NEWEST of its REV-CMMT rows ([LITE-044]).
+    A hot dir changes in most commits, so its chain is as long as the history
+    and is never read whole: revs are dense, so the newest is found by galloping
+    exact-key probes, O(log) seeks for the indexer and for the fuse alike.
  -  A PARTIAL path (`abc/TCP.c`, bare `TCP.c`) resolves via one FSEG scan plus
     a pruned descent of a commit's tree (`index/resolve.js`): the tree entries
     carry the real names, so the answer is TEXT and ambiguity is a list.
@@ -114,8 +118,9 @@ The gaps, stated so a reader does not go looking for them.
  -  NO suffix lookup in the LANE ALONE: `dog/git/ZINF.h`, `git/ZINF.h` and
     `ZINF.h` hash to three unrelated keys; a partial path finds files only
     through the FSEG descent, which reads real tree objects for the names.
- -  NO tree or dir records: a directory listing comes from the ODB or the fs,
-    never from the lane.
+ -  NO directory LISTING: a dir carries REV-CMMT rows saying WHEN it changed
+    ([LITE-044]) and nothing else — no subtree sha, no entries, no name — so
+    what is IN a directory still comes from the ODB or the fs, never the lane.
  -  HEAD only: one branch is indexed, so a commit off it has no CPAR rows and
     `lite log` says so in plain words rather than answering wrong.
 

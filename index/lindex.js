@@ -1,5 +1,5 @@
 //  index/lindex.js — LITE-033: `lite lindex`, the BACKLINK round of the one
-//  `<gitdir>/be/*.lite.idx` lane.  The [LITE-006] records say what a path IS
+//  `<gitdir>/be/*.lite2.idx` lane.  The [LITE-006] records say what a path IS
 //  (REV/B2P); nothing said who POINTS at it, and "who links to this page" is
 //  the one wiki query the lane could not answer.
 //
@@ -156,6 +156,9 @@ function scan(ctx, ix) {
   const cache = new Map(), memo = new Map();
   const splitRef = require("main.js").splitRef;   // the ONE ref split point
   for (const c of changed) {
+    //  LITE-044: `descend` now yields changed DIRS as well; a subtree carries
+    //  no prose, so it is skipped here rather than read back off the ODB.
+    if (c.dir) continue;
     const bytes = blobBytes(ctx, c.blob);
     if (bytes === null) continue;
     //  Only PROSE-bearing blobs are scanned: a binary blob and one over the

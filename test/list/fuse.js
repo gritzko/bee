@@ -11,10 +11,10 @@
 //                    summary.
 //
 //  be attributes both halves from ONE bounded first-touch walk (its
-//  shared/lastcommit.js).  lite uses its OWN machinery instead: a FILE is one
-//  LITE-006 lane prefix scan (exact, no walk at all), a DIR is the index/log.js
-//  CPAR ancestry — which IS O(history), so it is capped LITE-013-style, and the
-//  last check here is that cap doing its job, exactly as be's `cap=1` leg did.
+//  shared/lastcommit.js).  lite reads BOTH halves off the entry's OWN rows on
+//  the LITE-006 lane instead — a file folds its chain, and since LITE-044 a dir
+//  takes the newest of the rev rows the indexer now mints for it.  No history
+//  walk either way, so no ceiling and no depth can leave a row blank.
 //
 //  `LITE_FIX` names the fixture repo, `LITE_TIP` its tip.
 "use strict";
@@ -44,7 +44,8 @@ const out = ls.list(undefined, { from: repo });
 const by = {};
 for (const r of out.rows) by[r.label] = r;
 
-check("every entry is a row", by["a.txt"] && by["b.txt"] && by["sub/"] && by["old/"],
+check("every entry is a row",
+      by["a.txt"] && by["b.txt"] && by["sub/"] && by["old/"] && by["deep/"],
       Object.keys(by).join(" "));
 check("a.txt is attributed its seed commit C0",
       by["a.txt"].summary === "C0 seed a and sub", by["a.txt"].summary);
@@ -68,34 +69,51 @@ check("a dir reads a flat `dir`", by["sub/"].marker === "dir", by["sub/"].marker
 //  ts ordering: a.txt(C0) < b.txt(C1) < sub(C2) — the raw attribution, read
 //  through the two halves of the fuse directly.
 const ctx = idx.openRepo(repo, true);
-let files, dirs, capped;
+let files, dirs, deep, dirRevs;
 try {
   const ix = idx.openIndex(ctx.gitdir);
   try {
     idx.bringUp(ctx, ix, { track: false });
-    files = ls.fileCommits(ix, ctx.r, "", ["a.txt", "b.txt", "gone.txt"]);
-    dirs = ls.dirCommits(ix, ctx.r, idx.hlOfSha(TIP), "", ["sub", "old"], 512);
-    //  be's ceiling leg: a cap of ONE walks only the tip commit (C2), so the
-    //  dir it touched is attributed and the untouched one stays blank.
-    capped = ls.dirCommits(ix, ctx.r, idx.hlOfSha(TIP), "", ["sub", "old"], 1);
+    const F = (n) => ({ name: n, dir: false }), D = (n) => ({ name: n, dir: true });
+    files = ls.lastCommits(ix, ctx.r, "", [F("a.txt"), F("b.txt"), F("gone.txt")]);
+    dirs = ls.lastCommits(ix, ctx.r, "", [D("sub"), D("old"), D("deep")]);
+    deep = ls.lastCommits(ix, ctx.r, "deep/", [D("er")]);
+    //  LITE-044: the DIR REV rows themselves — the dir path's own `path_hl`
+    //  span on the lane, the very rows the fuse now scans.
+    dirRevs = [];
+    ix.prefix(idx.pathHl("old") << 24n, 24, function (e) {
+      if (idx.keyKind(e[0]) === idx.K_CMMT)
+        dirRevs.push(idx.hexOfHl(idx.valHl60(e[1])));
+    });
   } finally { try { ix.close(); } catch (e) {} }
 } finally { idx.closeRepo(ctx); }
 
-check("the file half attributes off ONE lane prefix scan",
+check("a FILE attributes off ONE lane prefix scan of its own chain",
       files["a.txt"].ts === E && files["b.txt"].ts === E + DAY,
       files["a.txt"].ts + " " + files["b.txt"].ts);
-check("the dir half attributes off the CPAR ancestry",
+check("a DIR attributes off its OWN rows, taking the newest rev",
       dirs["sub"].ts === E + 2 * DAY && dirs["old"].ts === E,
       dirs["sub"].ts + " " + dirs["old"].ts);
 check("attributed ts increase C0 < C1 < C2",
       files["a.txt"].ts < files["b.txt"].ts && files["b.txt"].ts < dirs["sub"].ts);
-check("LITE-013: the cap attributes the dir the tip touched",
-      capped["sub"] !== undefined && capped["sub"].summary === "C2 edit sub",
-      capped["sub"]);
-check("LITE-013: and leaves an entry beyond the ceiling blank",
-      capped["old"] === undefined, capped["old"]);
+//  THE LITE-044 REPRO.  The dir fuse used to walk the CPAR ancestry from the
+//  tip, capped at 512 commits, so a dir whose newest commit lay deeper came out
+//  BLANK — on linux that was every dir below the first level.  The indexer now
+//  emits a REV row per CHANGED DIR, so the answer is a lane scan with no walk,
+//  no ceiling and no tip: `old/` and `deep/er/` were touched at C0 only.
+check("LITE-044: the lane holds the dir's own REV rows",
+      dirRevs.length === 1, dirRevs.join(" "));
+check("LITE-044: and they name C0, the one commit that touched old/",
+      dirRevs.length === 1 && TIP.indexOf(dirRevs[0]) !== 0 &&
+      dirs["old"].summary === "C0 seed a and sub", dirs["old"].summary);
+check("LITE-044: a dir whose newest commit is behind the tip still fuses",
+      dirs["deep"] !== undefined && dirs["deep"].summary === "C0 seed a and sub",
+      dirs["deep"]);
+check("LITE-044: and so does one NESTED under it, at any depth",
+      deep["er"] !== undefined && deep["er"].summary === "C0 seed a and sub",
+      deep["er"]);
 check("a blank attribution costs the row neither summary nor age",
-      ls.rowsOf({ root: repo }, "", [{ name: "old", dir: true, marker: "dir" }], capped, E)[0].age === "");
+      ls.rowsOf({ root: repo }, "", [{ name: "old", dir: true, marker: "dir" }], {}, E)[0].age === "");
 
 //  --- relAge, be view/render.js's own boundaries ---------------------------
 function ageOf(delta) { return rd.relAge(E, E + delta); }

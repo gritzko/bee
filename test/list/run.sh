@@ -56,13 +56,14 @@ echo "list: runtime $RT, fixtures $WORK"
 # the fixture — be/test/list/e2e's own, plus an `old/` dir seeded at C0 and
 # never touched again (what the fuse's walk CEILING is pinned against).
 # ==========================================================================
-REPO="$WORK/repo"; mkdir -p "$REPO/sub" "$REPO/old"
+REPO="$WORK/repo"; mkdir -p "$REPO/sub" "$REPO/old" "$REPO/deep/er"
 (
   cd "$REPO" || exit 1
   git init -q -b master . && git config user.email t@t && git config user.name T || exit 1
   printf 'A0\n' > a.txt
   printf 'X0\n' > sub/x.txt
   printf 'OLD\n' > old/o.txt
+  printf 'DEEP\n' > deep/er/f.txt      # LITE-044: a dir UNDER a dir, C0 only
   printf 'GONE\n' > gone.txt
   git add -A
   GIT_AUTHOR_DATE='@1700000000 +0000' GIT_COMMITTER_DATE='@1700000000 +0000' \
@@ -92,7 +93,7 @@ then ok "the browser emits rows"
 else bad "list (rc $RC)" "$WORK/out" "$WORK/err"; fi
 
 # The wt marker column, be's own three buckets that lite can tell apart.
-for _row in 'mod a.txt' 'eq  b.txt' 'dir old/' 'dir sub/' 'del gone.txt'; do
+for _row in 'mod a.txt' 'eq  b.txt' 'dir old/' 'dir sub/' 'dir deep/' 'del gone.txt'; do
     if grep -q "^$_row " "$WORK/out"
     then ok "row: $_row"
     else bad "missing entry row: $_row" "$WORK/out"; fi
@@ -120,6 +121,12 @@ else bad "sub/ not fused with C2" "$WORK/out"; fi
 if grep -q '^dir old/ .*C0 seed a and sub' "$WORK/out"
 then ok "old/ is fused with C0 — the newest commit under it IS its seed"
 else bad "old/ not fused with C0" "$WORK/out"; fi
+# LITE-044: a dir NESTED under a dir fuses too — one lane scan per entry, so
+# depth costs nothing and no walk ceiling can starve the row.
+rtin "$REPO" list --plain deep > "$WORK/deep.out" 2>"$WORK/deep.err"; RC=$?
+if [ "$RC" = 0 ] && grep -q '^dir er/ .*C0 seed a and sub' "$WORK/deep.out"
+then ok "a dir one level down fuses as exactly as a file does"
+else bad "nested dir not fused (rc $RC)" "$WORK/deep.out" "$WORK/deep.err"; fi
 # Every row carries a rel-age token at its tail.
 if [ "$(grep -cE '[0-9]+[smhdy]$' "$WORK/out")" = "$(wc -l < "$WORK/out")" ]
 then ok "every row carries a rel-age column"
@@ -153,6 +160,27 @@ refuse "a file is not a directory, and it says so" "is a file, not a directory" 
 refuse "an absent path is refused in plain words" "there is no" nosuch
 refuse "a climb out of the repository is refused" "is outside" ../elsewhere
 refuse "an unknown rev is refused in plain words" "no commit" "?deadbeefdead"
+
+# ==========================================================================
+# leg 1b — LITE-044: an index in the PRE-DIR-REV format is REBUILT, not topped
+# up.  Presence is the walk boundary, so an old lane's commits would never
+# re-derive and its dirs would stay blank forever; the lane FORMAT is its file
+# extension, so the old `.lite.idx` files are unlinked and the next run derives
+# from scratch.  Planted here as a file the new format could never read.
+# ==========================================================================
+BE="$REPO/.git/be"
+rm -rf "$BE"; mkdir -p "$BE"
+printf 'PRE-LITE-044 LANE\n' > "$BE/0000000000.lite.idx"
+rtin "$REPO" list --plain > "$WORK/old.out" 2>"$WORK/old.err"; RC=$?
+if [ "$RC" = 0 ] && grep -q '^dir old/ .*C0 seed a and sub' "$WORK/old.out"
+then ok "an old-format index still yields fused dir rows"
+else bad "old-format index not rebuilt (rc $RC)" "$WORK/old.out" "$WORK/old.err"; fi
+if [ ! -f "$BE/0000000000.lite.idx" ]
+then ok "and the pre-LITE-044 lane file is gone, not read"
+else bad "the old lane file survived" "$WORK/old.err"; fi
+if ls "$BE"/*.lite2.idx >/dev/null 2>&1
+then ok "the rebuilt lane carries the new format extension"
+else bad "no new-format lane file" "$WORK/old.err"; fi
 
 # ==========================================================================
 # leg 2 — the FUSE itself (be/test/list/fuse.js ported), headless

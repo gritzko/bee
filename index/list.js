@@ -24,16 +24,16 @@
 //  worth a column.  Nothing here reads `.git/index`, so a staged-only edit
 //  reads as a worktree one — `lite diff`'s own model.
 //
-//  THE FUSE is lite's own machinery, not be's lastcommit.js:
-//   -  a FILE is ONE prefix scan of its `path_hl` on the LITE-006 lane
-//      (index/log.js fileLog, capped at one row) — exact, and no history walk;
-//   -  a DIR cannot be: the lane hashes a path one way, so it can never
-//      enumerate what lies under one.  Those go down index/log.js's CPAR
-//      ancestry newest-first, taking the first commit whose subtree sha differs
-//      from its first parent's.  That walk IS O(history), so it is CAPPED the
-//      way LITE-013 capped log (DIR_WALK_CAP): past the cap an entry keeps its
-//      row and simply carries no summary and no age, which is be's own
-//      ceiling behaviour.
+//  THE FUSE is lite's own machinery, not be's lastcommit.js: ONE prefix scan of
+//  the entry's `path_hl` on the LITE-006 lane (index/log.js fileLog, capped at
+//  one row) — exact, at any depth, with no history walk at all.
+//
+//  LITE-044: that used to be the FILE half only.  A dir cannot be enumerated
+//  from the lane (the path hash is one-way), so a dir's newest commit came off
+//  a CPAR ancestry walk capped at 512 — and on linux every dir below the first
+//  level starved, up to 152k commits past the ceiling.  The indexer now emits a
+//  REV row per changed DIR (index/index.js descend), so both halves are the one
+//  scan and the walk, the cap and the blank rows are all gone.
 //
 //  LITE-018: the view OWNS its freshness whole — a repo with no `.git/be` at
 //  all is derived here, not merely topped up, so bare `lite`, `lite list` and a
@@ -44,10 +44,6 @@ const idx = require("./index.js");
 const lg = require("./log.js");
 const df = require("./diff.js");
 const rd = require("./read.js");
-
-//  LITE-013's cap, applied to the dir fuse: the newest DIR_WALK_CAP commits are
-//  walked, and an entry untouched within them stays unattributed.
-const DIR_WALK_CAP = 512;
 
 //  be view/theme.js VERB_SLOT, for the buckets lite can tell apart: eq grey,
 //  mod yellow, del brown, dir grey.  view/bro.js carries the slots themselves.
@@ -79,39 +75,36 @@ function markerOf(abs, sha) {
 }
 
 //  --- the fuse --------------------------------------------------------------
-//  Every FILE's last commit: one lane prefix scan each, newest row only.
-function fileCommits(ix, r, pfx, names) {
-  const out = {};
-  for (const name of names) {
-    const w = lg.fileLog(ix, r, pfx + name, 1);
-    if (!w.hls.length) continue;
-    const m = idx.readCommit(r, idx.hexOfHl(w.hls[0]));
-    if (m) out[name] = { summary: m.subject, ts: m.ats };
+//  Every entry's last commit, read off the entry's OWN rows on the lane — no
+//  history walk for either half, so depth costs nothing and nothing starves.
+//   -  a FILE folds its chain (index/log.js fileLog, capped at one row): the
+//      chain is short, and PARS is what orders a rewritten file history;
+//   -  a DIR takes its LAST rev straight (LITE-044): its revs are its subtree's
+//      and are minted oldest-first, so the highest IS the newest commit under
+//      it — and a hot dir's chain is as long as the history, which is exactly
+//      what may not be read (see index/index.js lastRev).
+function lastCommitOf(ix, r, path, dir) {
+  let hl = null;
+  if (dir) {
+    const phl = idx.pathHl(path);
+    const rev = idx.lastRev(ix, phl, idx.K_CMMT);
+    if (rev < 0n) return null;
+    hl = idx.valHl60(idx.revValAt(ix, phl, rev, idx.K_CMMT));
+  } else {
+    const w = lg.fileLog(ix, r, path, 1);
+    if (!w.hls.length) return null;
+    hl = w.hls[0];
   }
-  return out;
+  const m = idx.readCommit(r, idx.hexOfHl(hl));
+  return m ? { summary: m.subject, ts: m.ats } : null;
 }
 
-//  Every DIR's newest commit UNDER it: the CPAR ancestry newest-first, taking
-//  the first commit whose subtree sha differs from the first parent's.  Capped
-//  — an entry the cap does not reach keeps no summary and no age.
-function dirCommits(ix, r, tipHl, pfx, names, cap) {
+//  entries -> { name: { summary, ts } }, the whole listing's attribution.
+function lastCommits(ix, r, pfx, entries) {
   const out = {};
-  if (!names.length) return out;
-  const want = new Set(names);
-  const w = lg.ancestry(ix, r, tipHl, cap);
-  for (const hl of w.hls) {
-    if (want.size === 0) break;
-    const m = idx.readCommit(r, idx.hexOfHl(hl));
-    if (!m) continue;
-    const pm = m.parents.length ? idx.readCommit(r, m.parents[0]) : null;
-    for (const name of Array.from(want)) {
-      const a = rd.entryAt(r, m.tree, pfx + name);
-      if (a === null) continue;                     // not there at this commit
-      const b = pm === null ? null : rd.entryAt(r, pm.tree, pfx + name);
-      if (b !== null && b.sha === a.sha) continue;  // untouched here
-      out[name] = { summary: m.subject, ts: m.ats };
-      want.delete(name);
-    }
+  for (const e of entries) {
+    const c = lastCommitOf(ix, r, pfx + e.name, e.dir === true);
+    if (c !== null) out[e.name] = c;
   }
   return out;
 }
@@ -177,12 +170,11 @@ function hunkOf(uriStr, rows) {
 }
 
 //  --- the verb --------------------------------------------------------------
-//  list(arg, opts) -> { uri, rows, plain, hunks }.  `opts.cap` overrides the
-//  dir-fuse walk ceiling (the tests pin it); LITE-018's `opts.track` adds the
-//  repo to the tracks list, which is the bare `lite` run's `index` half.
+//  list(arg, opts) -> { uri, rows, plain, hunks }.  LITE-018's `opts.track`
+//  adds the repo to the tracks list, which is the bare `lite` run's `index`
+//  half.  There is no walk ceiling to override any more (LITE-044).
 function list(arg, opts) {
   opts = opts || {};
-  const cap = opts.cap === undefined ? DIR_WALK_CAP : opts.cap;
   const ctx = idx.openRepo(opts.from || io.cwd(), true);
   try {
     const a = rd.argSplit(arg);
@@ -212,11 +204,7 @@ function list(arg, opts) {
     let commits = {};
     try {
       idx.bringUp(ctx, ix, { track: opts.track === true });
-      const files = [], dirs = [];
-      for (const en of entries) (en.dir ? dirs : files).push(en.name);
-      commits = fileCommits(ix, ctx.r, pfx, files);
-      const dc = dirCommits(ix, ctx.r, idx.hlOfSha(c.sha), pfx, dirs, cap);
-      for (const k in dc) commits[k] = dc[k];
+      commits = lastCommits(ix, ctx.r, pfx, entries);
     } finally { try { ix.close(); } catch (err) {} }
 
     const rows = rowsOf(ctx, rel, entries, commits, Math.floor(Date.now() / 1000));
@@ -228,6 +216,5 @@ function list(arg, opts) {
 
 module.exports = { list: list, rowsOf: rowsOf, rowText: rowText,
                    plainOf: plainOf, hunkOf: hunkOf, markerOf: markerOf,
-                   fileCommits: fileCommits, dirCommits: dirCommits,
-                   padName: padName, VERB_SLOT: VERB_SLOT,
-                   DIR_WALK_CAP: DIR_WALK_CAP };
+                   lastCommits: lastCommits, lastCommitOf: lastCommitOf,
+                   padName: padName, VERB_SLOT: VERB_SLOT };
