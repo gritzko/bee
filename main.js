@@ -1,4 +1,4 @@
-//  main.js — the Beagle-lite ENTRY (LITE-003): DISPATCH and ONE mode pick.
+//  main.js — the Beagle-bee ENTRY (LITE-003): DISPATCH and ONE mode pick.
 //
 //  A word that names a verb goes to door.js's view for it; every other arg is a
 //  file or dir path.  Then the mode: at a terminal with no flag the hunks go to
@@ -6,7 +6,7 @@
 //  the whole file — no view builds a hunk here and no renderer spells a byte.
 //
 //  LITE-018: with ZERO args INSIDE a git repo there is no fs story to tell —
-//  `lite` indexes the repo and opens the `list` browser on its root.  Outside
+//  `bee` indexes the repo and opens the `list` browser on its root.  Outside
 //  one it is the old no-arg behaviour, untouched.
 //
 //  Exit is by THROW, never process.exit: the runtime maps an uncaught throw to
@@ -41,7 +41,7 @@ function pathView(paths) {
   return hunks;
 }
 
-//  LITE-006: `lite index [<repo>]` brings `<repo>/.git/be/` up to date and
+//  LITE-006: `bee index [<repo>]` brings `<repo>/.git/be/` up to date and
 //  prints one summary line.  The verbs stand BEFORE the flag scan because
 //  every other arg is a path, verbatim.
 function runIndex(args) {
@@ -50,7 +50,7 @@ function runIndex(args) {
   writeFd(1, utf8.Encode(idx.summary(rec) + "\n"));
 }
 
-//  LITE-033: `lite lindex [<target>]` — the BACKLINK SUSPECTS of the index lane.
+//  LITE-033: `bee lindex [<target>]` — the BACKLINK SUSPECTS of the index lane.
 //  Bare, it brings the LINK rows up to the tip (only the blobs the tip moved are
 //  tokenised) and prints one summary line.  With a target — a path, a partial
 //  one, or a ticket code — it prints the paths that MAY link to it, one per
@@ -68,9 +68,9 @@ function runLindex(args) {
   if (out.paths.length) writeFd(1, utf8.Encode(out.paths.join("\n") + "\n"));
 }
 
-//  LITE-014: `lite merge <base> <ours> <theirs> [-o <out>] [-p <path>]` — the
+//  LITE-014: `bee merge <base> <ours> <theirs> [-o <out>] [-p <path>]` — the
 //  git merge-driver contract (result over <ours>, exit code = clean/conflict),
-//  and `lite install [<repo>]` which points a repo's git at it.  Both are silent
+//  and `bee install [<repo>]` which points a repo's git at it.  Both are silent
 //  on success bar install's one report line; a conflict THROWS (exit 1).
 function runMerge(args) { require("merge.js").merge(args); }
 
@@ -79,7 +79,7 @@ function runInstall(args) {
   writeFd(1, utf8.Encode(mg.install(args.length ? args[0] : undefined) + "\n"));
 }
 
-//  LITE-026: `lite hook [<repo>]` — the PRE-COMMIT pass the planted
+//  LITE-026: `bee hook [<repo>]` — the PRE-COMMIT pass the planted
 //  `.git/hooks/pre-commit` runs: fresh `file:line(:col)` refs in the staged text
 //  become [LITE-025] permalinks, and the rewritten files are re-staged.  It
 //  reports on the message stream only, so a commit's own output stays clean.
@@ -88,7 +88,7 @@ function runHook(args) {
   if (note) writeStderr(note + "\n");
 }
 
-//  LITE-034: `lite http [--port <n>]` — the repo browser over HTTP, the same
+//  LITE-034: `bee http [--port <n>]` — the repo browser over HTTP, the same
 //  views the pager shows.  A LONG-RUNNING verb: this returns once the listener
 //  is up and the pol loop takes over, until SIGINT.
 //  The whole DOOR is handed over — the verb table AND the reference resolution
@@ -99,12 +99,12 @@ function runHttp(args) {
                                           openPath: door.openPath });
 }
 
-//  LITE-016: `lite chat [dir] [outdir]` renders the Claude Code session logs of
+//  LITE-016: `bee chat [dir] [outdir]` renders the Claude Code session logs of
 //  a project dir as StrictMark pages, 1:1 by basename, append-only on a rerun.
 //  It reports on the message stream only, so stdout stays free.
 function runChat(args) { require("chat.js").chat(args); }
 
-//  LITE-019: `lite now` — the ron60 clock.  Bare, the CURRENT stamp as RON64
+//  LITE-019: `bee now` — the ron60 clock.  Bare, the CURRENT stamp as RON64
 //  text; with a word, that stamp's calendar date.  CLI-only, not in the door.
 function runNow(args) {
   //  LITE-019: a mode flag is a no-op here — one line, plain either way.
@@ -140,9 +140,9 @@ function ron60ISO(word) {
 }
 
 //  LITE-018: is the cwd inside a git repository?  The probe is `openRepo`'s own
-//  — the climb every lite view does — and it is a probe ONLY: it closes what it
+//  — the climb every bee view does — and it is a probe ONLY: it closes what it
 //  opened and lets `list` open the repo for real, so no error of the view's is
-//  swallowed here.  No repo (or no HEAD yet) -> false, and bare `lite` stays
+//  swallowed here.  No repo (or no HEAD yet) -> false, and bare `bee` stays
 //  today's filesystem story to the byte.
 function inRepo() {
   const idx = require("index/index.js");
@@ -201,10 +201,10 @@ function main(argv) {
   const opts = {};
   let arg = rest.join(" ");
   if (view === null) {
-    //  LITE-018: ZERO args inside a git repo == `lite index && lite list`, one
+    //  LITE-018: ZERO args inside a git repo == `bee index && bee list`, one
     //  process.  `list` owns the bring-up, so the index is built (visibly, on
     //  stderr) strictly before the pager takes the tty, and `track` makes this
-    //  run the `index` half proper — the repo joins the tracks list.
+    //  run the `index` half proper — the repo joins the repo list.
     if (rest.length === 0 && inRepo()) { view = door.VERBS.list; opts.track = true; }
     else { view = pathView; arg = rest; }         // the fs leg: the path LIST
   }
@@ -215,7 +215,7 @@ function main(argv) {
     return;
   }
   if (view === pathView && rest.length === 0) {
-    writeStderr("Usage: lite [--plain|--color|--html] <path>...\n");
+    writeStderr("Usage: bee [--plain|--color|--html] <path>...\n");
     throw "BROUSAGE";
   }
   opts.full = true;                                // a pipe has no viewport
@@ -245,7 +245,7 @@ function renderOf(flags) {
 
 //  ---- THE non-interactive leg (LITE-045) ----------------------------------
 //  A view `(arg, opts) -> hunks` and a renderer `(hunks, opts) -> bytes`: every
-//  piped or flagged run in lite is this ONE call.  The five bespoke plain legs
+//  piped or flagged run in bee is this ONE call.  The five bespoke plain legs
 //  it replaced (a path, a log, a commit, a diff, a read view) differed only in
 //  the hunks they made, never in how those hunks reached stdout.
 function runVerb(view, arg, render, opts) {

@@ -1,6 +1,6 @@
 #   Beagle-lite index records
 
-The record catalogue of the `.git/be/` index a lite verb reads and writes ([LITE-006]). One `abc.index("wh128", …)` family — a dog Pup stack of `(key:u64, val:u64)` rows, sorted by key, unkeyed (a key may carry many rows) — lives in the repo's OWN gitdir as `<gitdir>/be/*.lite.idx`. Everything there is DERIVED: `rm -rf` it and the next run rebuilds it from the ODB. Tracked repos are listed in `$HOME/.config/be/tracks`, one absolute path per line. The kind nibble is the LOW 4 bits of every key, so one lane holds every record family and one scan sees them all.
+The record catalogue of the `.git/be/` index a lite verb reads and writes ([LITE-006]). One `abc.index("wh128", …)` family — a dog Pup stack of `(key:u64, val:u64)` rows, sorted by key, unkeyed (a key may carry many rows) — lives in the repo's OWN gitdir as `<gitdir>/be/*.lite.idx`. Everything there is DERIVED: `rm -rf` it and the next run rebuilds it from the ODB. Registered repos are listed in `$HOME/.config/bee/repos` ([BEE-001]), one absolute worktree path per line, written by `bee install`. The kind nibble is the LOW 4 bits of every key, so one lane holds every record family and one scan sees them all.
 
 ##  Field vocabulary
 
@@ -124,6 +124,7 @@ The gaps, stated so a reader does not go looking for them.
  -  HEAD only: one branch is indexed, so a commit off it has no CPAR rows and
     `lite log` says so in plain words rather than answering wrong.
 
+[BEE-001]: /todo/BEE/BEE-001.mkd
 [LITE-006]: /todo/LITE/LITE-006.mkd
 [LITE-007]: /todo/LITE/LITE-007.mkd
 [LITE-011]: /todo/LITE/LITE-011.mkd

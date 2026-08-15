@@ -160,9 +160,9 @@ then ok "commit --plain = the piped bytes, byte for byte"
 else bad "commit --plain = the piped bytes (rc $RC)" "$WORK/g.plain" "$WORK/e.plain"; fi
 
 # B8: PURE ODB — the folded commit is dangling and no index was ever built, so
-# the whole run must leave `.git/be` absent and the tracks list unwritten.
-if [ ! -e "$REPO/.git/be" ] && [ ! -e "$FAKEHOME/.config/be/tracks" ]
-then ok "a commit view reads the ODB only: no .git/be, no tracks line"
+# the whole run must leave `.git/be` absent and the repo list unwritten.
+if [ ! -e "$REPO/.git/be" ] && [ ! -e "$FAKEHOME/.config/bee/repos" ]
+then ok "a commit view reads the ODB only: no .git/be, no repo-list line"
 else bad "a commit view reads the ODB only" ; fi
 
 # B9: the refusals, in plain words, with nothing on stdout.

@@ -1,4 +1,4 @@
-//  pager.js — beagle-lite's raw-mode FILE pager: a scrollable viewport over
+//  pager.js — beagle-bee's raw-mode FILE pager: a scrollable viewport over
 //  render/wrap.js (soft-wrap index) + render/ansi.js (the cell paint), a status
 //  line, SGR mouse and a minimal `:` PATH bar.  An APP pinned to the ansi
 //  renderer: navigation is fs-only, ALWAYS through `opts.open`.
@@ -72,7 +72,7 @@ function ttyWrite(fd, str) {
   io.writeAll(fd, b);
 }
 
-//  ---- path math (lite has no shared/util) ---------------------------------
+//  ---- path math (bee has no shared/util) ---------------------------------
 //  The directory part of a path: "" for a bare name, "/" for a root child.
 function dirOf(p) {
   const i = (p || "").lastIndexOf("/");

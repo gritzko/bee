@@ -2,8 +2,8 @@
 //  blob<->path index a git repo keeps in its OWN `<repo>/.git/be/`.
 //
 //  Everything in `.git/be/` is DERIVED: `rm -rf` it and the next run rebuilds
-//  it from the ODB.  Tracked repos are listed in `$HOME/.config/be/tracks`, a
-//  plain list of absolute paths.
+//  it from the ODB.  Registered repos are listed in `$HOME/.config/bee/repos`
+//  (BEE-001), a plain list of absolute worktree paths — `bee install` writes it.
 //
 //  ONE unified wh128 run family (`abc.index("wh128", …)` = a dog Pup stack).
 //  Six record kinds, the kind nibble in the LOW 4 bits of the key; `path_hl` is
@@ -167,7 +167,7 @@ function hlOfText(s) { return hashlet60FromBytes(sha1(utf8.Encode(s))); }
 //  low 20) — the repo-relative path, no leading slash.
 function pathHl(path) { return (hlOfText(path) >> 20n) & PHL_MASK; }
 
-//  --- the tracks list -------------------------------------------------------
+//  --- the repo list ---------------------------------------------------------
 function readText(path) {
   try {
     const m = io.mmap(path, "r");
@@ -176,15 +176,20 @@ function readText(path) {
   } catch (e) { return null; }
 }
 
-//  Append `repo` to `$HOME/.config/be/tracks`, deduped ON READ.  The list is a
-//  handful of lines, so the append is a read-modify-write of the whole file.
+//  BEE-001: append `repo` to `$HOME/.config/bee/repos`, deduped ON READ — one
+//  absolute worktree path per line, no other column.  The list is a handful of
+//  lines, so the append is a read-modify-write of the whole file.
+//  The retired `$HOME/.config/be/tracks` SEEDS the new file once, when the new
+//  one is absent; writing it is what retires the old one for good.
 //  Returns { file, added }.
 function track(repo, home) {
   home = home || io.getenv("HOME");
-  if (!home) throw "index: there is no HOME, so there is no tracks list";
-  const dir = home + "/.config/be";
-  const file = dir + "/tracks";
-  const old = readText(file);
+  if (!home) throw "index: there is no HOME, so there is no repo list";
+  const dir = home + "/.config/bee";
+  const file = dir + "/repos";
+  let old = readText(file);
+  const seed = old === null;
+  if (seed) old = readText(home + "/.config/be/tracks");
   const lines = [];
   let have = false;
   for (const raw of (old === null ? "" : old).split("\n")) {
@@ -193,13 +198,13 @@ function track(repo, home) {
     lines.push(t);
     if (t === repo) have = true;
   }
-  if (have) return { file: file, added: false };
-  lines.push(repo);
+  if (have && !seed) return { file: file, added: false };
+  if (!have) lines.push(repo);
   io.mkdir(dir);
   const fd = io.open(file, "c");
   try { io.writeAll(fd, utf8.Encode(lines.join("\n") + "\n")); }
   finally { io.close(fd); }
-  return { file: file, added: true };
+  return { file: file, added: !have };
 }
 
 //  --- the ODB reader --------------------------------------------------------
@@ -706,7 +711,7 @@ function closeRepo(ctx) { try { git.close(ctx.h); } catch (e) {} }
 
 //  --- the run ---------------------------------------------------------------
 //  index(repoArg, opts) -> the summary record.  `opts.home` overrides the
-//  tracks root, `opts.track === false` skips the tracks list (LITE-007's `log`
+//  registry root, `opts.track === false` skips the repo list (LITE-007's `log`
 //  brings the index up to date but must write nothing else), `opts.climb`
 //  looks for the repo above the arg.
 function index(repoArg, opts) {

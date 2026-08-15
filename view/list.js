@@ -174,7 +174,7 @@ function hunkOf(uriStr, rows) {
 
 //  --- the verb --------------------------------------------------------------
 //  list(arg, opts) -> { uri, rows, hunks }.  LITE-018's `opts.track`
-//  adds the repo to the tracks list, which is the bare `lite` run's `index`
+//  adds the repo to the repo list, which is the bare `lite` run's `index`
 //  half.  There is no walk ceiling to override any more (LITE-044).
 function list(arg, opts) {
   opts = opts || {};
@@ -202,7 +202,7 @@ function list(arg, opts) {
     //  `lite log`'s lazy contract.  LITE-018: it owns the FULL bring-up, so a
     //  repo that was never indexed is derived right here, at the bulk handle
     //  `lite index` uses (a small memtable would seal per commit); `opts.track`
-    //  is the tracks-list half, which only the bare `lite` run asks for.
+    //  is the repo-list half, which only the bare `lite` run asks for.
     const ix = idx.openIndex(ctx.gitdir, idx.fresh(ctx.gitdir));
     let commits = {};
     try {

@@ -26,9 +26,9 @@ const TOK_TAG = wrap.TOK_TAG, TOK_SIDE = wrap.TOK_SIDE, TOK_END = wrap.TOK_END;
 //  --- SGR parameter -> sRGB --------------------------------------------------
 //  A browser has no SGR, so a slot's PARAMETER string goes through xterm's own
 //  table — the terminal's rendering of a code; every NUMBER is still theme.js's.
-const XTERM16 = ["#000000", "#cd0000", "#00cd00", "#cdcd00", "#0000ee", "#cd00cd",
+const XTERM16 = ["#000000", "#cd0000", "#43bc6c", "#cdcd00", "#0000ee", "#a9568f",
                  "#00cdcd", "#e5e5e5", "#7f7f7f", "#ff0000", "#00ff00", "#ffff00",
-                 "#5c5cff", "#ff00ff", "#00ffff", "#ffffff"];
+                 "#5c5cff", "#ff00ff", "#3684c9", "#ffffff"];
 const CUBE = [0, 95, 135, 175, 215, 255];
 
 function hex2(n) { return (n < 16 ? "0" : "") + n.toString(16); }

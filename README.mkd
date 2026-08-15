@@ -1,9 +1,10 @@
-#   Beagle-lite
+#   Be (Beagle-lite)
 
-This project implements beagle-lite functionality for git repos.
+This project implements beagle-bee functionality for git repos.
 
-Build: quickjab is standalone — it carries dog/ (libdog) and test/ (the
-jab-shared API suite) as submodules, no jab tree involved:
+Build: bundle with the quickjab runtime for a standalone binary.
+That carries dog/ (libdog), dog/abc/ (libabc) and test/ (the
+jab-shared API suite) as submodules:
 
     cmake -S <quickjab> -B build -GNinja \
         -DJAB_JSRC=<this tree> -DQUICKJAB_JSRC_PACK=ON
@@ -17,37 +18,39 @@ over `wrap` + `theme`), `door.js` turns a target into a view, and `main.js`
 Usage — a terminal with no flag pages coloured hunks; otherwise one mode flag
 picks the sink, `--plain` (also what a pipe defaults to), `--color`, `--html`:
 
- -  `lite` — in a git repo: index it, open the `list` browser; elsewhere as `lite <path>`
- -  `lite <path>...` — page files/dirs off the filesystem
- -  `lite index [<repo>]` — build/refresh `<repo>/.git/be/`; lazy, fully derived
- -  `lite lindex [<target>]` — backlink suspects; lazy, tip blobs only
+ -  `bee` — in a git repo: index it, open the `list` browser; elsewhere as `bee <path>`
+ -  `bee <path>...` — page files/dirs off the filesystem
+ -  `bee index [<repo>]` — build/refresh `<repo>/.git/be/`; lazy, fully derived
+ 
+ -  `bee lindex [<target>]` — backlink suspects; lazy, tip blobs only
      1. bare: bring the LINK rows up to the tip
      2. `<target>`: the paths that may link to a file or a ticket code
- -  `lite log [<hex>|<path>]` — commit log, newest first; off-mainline rows grey
+ -  `bee log [<hex>|<path>]` — commit log, newest first; off-mainline rows grey
      1. bare: the checked-out tip's ancestry
      2. `<hex>`: that commit's ancestry
      3. `<path>`: the file's revisions
- -  `lite commit [<hex>]` — one commit, header + message; tree/parent hashes are links
- -  `lite diff [<hex>|<path>]` — the token-level diff
+ -  `bee commit [<hex>]` — one commit, header + message; tree/parent hashes are links
+ -  `bee diff [<hex>|<path>]` — the token-level diff
      1. bare: worktree vs HEAD
      2. `<hex>`: that commit vs its first parent
      3. `<path>`: that file/dir only
- -  `lite list [<path>][?<rev>]` — dir browser: marker, name, last commit, age
- -  `lite cat <path>[?<rev>]` — the file's own bytes, syntax-painted
- -  `lite tree [<hex>|<path>][?<rev>]` — raw git-tree rows, `..` row when descended
- -  `lite blob <hexlet>` — a blob by object name
- -  `lite http [--port <n>]` — the same views over HTTP on localhost:8034, read-only
+ -  `bee list [<path>][?<rev>]` — dir browser: marker, name, last commit, age
+ -  `bee cat <path>[?<rev>]` — the file's own bytes, syntax-painted
+ -  `bee tree [<hex>|<path>][?<rev>]` — raw git-tree rows, `..` row when descended
+ -  `bee blob <hexlet>` — a blob by object name
+ -  `bee http [--port <n>]` — the same views over HTTP on localhost:8034, read-only
      1. a `.md` URL renders as a page, links resolved; `.mkd` stays painted
     1. an `.rst` URL renders the reST subset; directives and tables show literal
      2. `/raw/<path>` is the painted source, and each view links to the other
      3. `/bytes/<path>[?<rev>]` ships the file's raw bytes; a rendered image points there
- -  `lite install [<repo>]` — register lite as the repo's git merge driver and pre-commit hook
- -  `lite hook [<repo>]` — the pre-commit pass: fresh `file:line(:col)` refs in the staged text become `file:OFF:HASHLET` permalinks, re-staged
- -  `lite merge <base> <ours> <theirs> [-o <out>] [-p <path>]` — CRDT 3-way file merge
+ -  `bee install [<repo>]` — wire bee as the repo's git merge driver and pre-commit hook, list it in `~/.config/bee/repos`, index it
+     1. a LINKED WORKTREE is refused: a repo is known by its path
+ -  `bee hook [<repo>]` — the pre-commit pass: fresh `file:line(:col)` refs in the staged text become `file:OFF:HASHLET` permalinks, re-staged
+ -  `bee merge <base> <ours> <theirs> [-o <out>] [-p <path>]` — CRDT 3-way file merge
      1. clean: merged bytes over `<ours>` (or `<out>`), exit 0
      2. conflict: markerless weave, exit 1
      3. binary/oversize: falls back to `git merge-file`
- -  `lite chat [dir] [outdir]` — Claude session logs to StrictMark pages, append-only reruns
+ -  `bee chat [dir] [outdir]` — Claude session logs to StrictMark pages, append-only reruns
 
 [q]: https://github.com/gritzko/quickjab
 [d]: https://github.com/gritzko/libdog

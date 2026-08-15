@@ -1,4 +1,4 @@
-//  http.js — LITE-034: `lite http [--port <n>]`, the repo browser over
+//  http.js — LITE-034: `bee http [--port <n>]`, the repo browser over
 //  HTTP.  Three parts and no fourth: quickjab's `net.createServer` on the one
 //  implicit `pol` loop for the transport, QJAB-004's `http._drain`/`http._feed`
 //  for the message heads, and a ROUTER TABLE mapping URL forms onto the SAME
@@ -326,7 +326,7 @@ function sendBytes(sock, hunks, path, headOnly) {
   const bytes = hunks.length ? hunks[0].text : new Uint8Array(0);
   if (bytes.length > MAXBYTES) {
     respond(sock, 413, "Payload Too Large", TEXT,
-            utf8.Encode("lite http: " + path + " is too big to serve (over " +
+            utf8.Encode("bee http: " + path + " is too big to serve (over " +
                         (MAXBYTES >> 20) + " MB)\n"), headOnly);
     return "413";
   }
@@ -347,7 +347,7 @@ function handle(req, sock, st) {
   //  No write endpoints of any kind: reads answer, everything else is refused.
   if (m !== "GET" && !only) {
     respond(sock, 405, "Method Not Allowed", TEXT,
-            utf8.Encode("lite http only reads; " + m + " is not allowed\n"), false);
+            utf8.Encode("bee http only reads; " + m + " is not allowed\n"), false);
     return "405";
   }
   const r = routeOf(req.uri);
@@ -356,8 +356,8 @@ function handle(req, sock, st) {
     return "200";
   }
   if (r.verb === undefined) {
-    sendPage(sock, 404, "Not Found", "lite http",
-             html.errorPage("lite http", "there is no /" + r.head + " page here"), only);
+    sendPage(sock, 404, "Not Found", "bee http",
+             html.errorPage("bee http", "there is no /" + r.head + " page here"), only);
     return "404";
   }
   let hunks;
@@ -397,7 +397,7 @@ function listen(args, door) {
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--plain") continue;                 // no bytes to page: a no-op
     if (args[i] === "--port") { port = Number(args[++i]); continue; }
-    throw "http: " + args[i] + " is not an option — try: lite http [--port <n>]";
+    throw "http: " + args[i] + " is not an option — try: bee http [--port <n>]";
   }
   if (!(port > 0 && port < 65536 && port === Math.floor(port)))
     throw "http: --port wants a whole number from 1 to 65535";
@@ -425,14 +425,14 @@ function listen(args, door) {
       catch (e) {
         done = true;
         respond(sock, 400, "Bad Request", TEXT,
-                utf8.Encode("lite http: that is not an HTTP request\n"), false);
+                utf8.Encode("bee http: that is not an HTTP request\n"), false);
         return;
       }
       if (req === null) {                                 // need more bytes
         if (buf.length > MAXHEAD) {
           done = true;
           respond(sock, 431, "Request Header Fields Too Large", TEXT,
-                  utf8.Encode("lite http: that request head is too long\n"), false);
+                  utf8.Encode("bee http: that request head is too long\n"), false);
         }
         return;
       }
@@ -445,14 +445,14 @@ function listen(args, door) {
         code = "500";
         try {
           respond(sock, 500, "Internal Server Error", TEXT,
-                  utf8.Encode("lite http: " + why(e) + "\n"), false);
+                  utf8.Encode("bee http: " + why(e) + "\n"), false);
         } catch (e2) { sock.destroy(); }
       }
       io.log(req.method + " " + req.uri + " " + code + "\n");
     });
   });
   srv.listen(port, HOST, function () {
-    io.log("lite http: http://" + HOST + ":" + port + "/ browsing " + root + "\n");
+    io.log("bee http: http://" + HOST + ":" + port + "/ browsing " + root + "\n");
   });
   return srv;
 }

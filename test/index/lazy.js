@@ -4,7 +4,7 @@
 //  in a linux-sized repo stalled the next verb for ~10 s.
 //
 //  The leg is driven by run.sh, which owns the git steps; one MODE per call:
-//    index — bring the lane up to date, quietly (no tracks line);
+//    index — bring the lane up to date, quietly (no repo-list line);
 //    meas  — bring it up through a COUNTING shim: `reads` is every row pulled
 //            off the lane, `lane` is how many rows are in it;
 //    check — the lane's own integrity: each path's revs are exactly 0..k, and

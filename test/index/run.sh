@@ -3,7 +3,7 @@
 # Two legs over the LANDED lite tree (main.js, index/index.js, index/refs.js):
 #   verb  — this script: the CLI contract over a fixture git repo (a few commits
 #           incl. a merge and a rename-free blob move) — the first run's summary,
-#           the tracks list (append + dedup), the no-op second run, the gap run
+#           the repo list (append + dedup), the no-op second run, the gap run
 #           after a new commit, a rewritten history (non-ancestor mark -> rewalk,
 #           re-puts idempotent) and the `rm -rf .git/be` rebuild.
 #   rows  — rows.js: the seven ruled record kinds, one file's rev chain as ONE
@@ -42,7 +42,7 @@ bad() {
     for f in "$@"; do [ -f "$f" ] || continue; echo "--- $f ---"; cat "$f"; done
 }
 
-# The tracks list is $HOME/.config/be/tracks, so the runtime runs under a
+# The repo list is $HOME/.config/bee/repos, so the runtime runs under a
 # PLANTED home; the jsrc pack cache stays on the real one (XDG_CACHE_HOME).
 FAKEHOME="$WORK/home"; mkdir -p "$FAKEHOME"
 ln -sf "$LITE" "$WORK/jsrc"                      # unpacked-runtime require climb
@@ -103,18 +103,18 @@ if [ -d "$REPO/.git/be" ] && ls "$REPO/.git/be" | grep -q '\.lite\.idx$'
 then ok "the run family lives in <repo>/.git/be/"
 else bad "the run family lives in <repo>/.git/be/" "$WORK/o1"; fi
 
-# V3: the tracks list got the repo's absolute path.
-TRK="$FAKEHOME/.config/be/tracks"
+# V3: BEE-001 — the repo list got the repo's absolute path.
+TRK="$FAKEHOME/.config/bee/repos"
 if [ -f "$TRK" ] && [ "$(cat "$TRK")" = "$REPO" ]
-then ok "tracks lists the repo's absolute path"
-else bad "tracks lists the repo's absolute path" "$TRK"; fi
+then ok "the repo list holds the repo's absolute path"
+else bad "the repo list holds the repo's absolute path" "$TRK"; fi
 
 # V4: the second run is a NO-OP (watermark hit) and does not re-append.
 rt index "$REPO" > "$WORK/o2" 2>"$WORK/e2"; RC=$?
 if [ "$RC" = 0 ] && grep -q "^up to date: refs/heads/master " "$WORK/o2" &&
    [ "$(wc -l < "$TRK")" = "1" ]
-then ok "second run is a no-op, tracks dedups"
-else bad "second run is a no-op, tracks dedups (rc $RC)" "$WORK/o2" "$WORK/e2" "$TRK"; fi
+then ok "second run is a no-op, the repo list dedups"
+else bad "second run is a no-op, the repo list dedups (rc $RC)" "$WORK/o2" "$WORK/e2" "$TRK"; fi
 
 # ==========================================================================
 # leg 1b — LITE-007: the `log` verb over the SAME index (still c0..c4).
@@ -250,7 +250,7 @@ TRKLINES=$(wc -l < "$TRK")
 rtin "$CLONE" log > "$WORK/l9" 2>"$WORK/l9e"; RC=$?
 if [ "$RC" = 0 ] && [ "$(wc -l < "$WORK/l9")" = "5" ] && [ -d "$CLONE/.git/be" ] &&
    [ "$(wc -l < "$TRK")" = "$TRKLINES" ]
-then ok "log on a fresh clone indexes implicitly and adds no tracks line"
+then ok "log on a fresh clone indexes implicitly and adds no registry line"
 else bad "log on a fresh clone indexes implicitly (rc $RC)" "$WORK/l9" "$WORK/l9e"; fi
 
 # ==========================================================================
@@ -477,6 +477,79 @@ else
     bad "lazy-state leg (rc $RC)" "$WORK/z3"
 fi
 fi
+
+# ==========================================================================
+# leg 4 — BEE-001: `install` IS the bring-up (wire + register + index + lindex)
+# ==========================================================================
+# A home of its own, so the registry it writes is the only thing in it.
+REPO4="$WORK/repo4"; FH4="$WORK/home4"; mkdir -p "$REPO4" "$FH4"
+(
+  cd "$REPO4" || exit 1
+  git init -q -b master . && git config user.email t@t && git config user.name T || exit 1
+  printf 'see README.mkd\n' > a.mkd; printf 'readme\n' > README.mkd
+  git add -A && GIT_AUTHOR_NAME=T GIT_AUTHOR_EMAIL=t@t \
+      GIT_COMMITTER_NAME=T GIT_COMMITTER_EMAIL=t@t \
+      GIT_AUTHOR_DATE="2022-01-01T00:00:00Z" GIT_COMMITTER_DATE="2022-01-01T00:00:00Z" \
+      git commit -q -m i0 || exit 1
+) || { echo "index: cannot build the BEE-001 fixture repo" >&2; exit 2; }
+rt4() { ( cd "$REPO4" && HOME="$FH4" "$RT" "$@" ); }
+REG="$FH4/.config/bee/repos"
+
+# B1: install registers the path AND leaves a lane behind.
+rt4 install > "$WORK/b1" 2>"$WORK/b1e"; RC=$?
+if [ "$RC" = 0 ] && grep -q '^installed' "$WORK/b1" &&
+   [ -f "$REG" ] && [ "$(cat "$REG")" = "$REPO4" ] &&
+   ls "$REPO4/.git/be" 2>/dev/null | grep -q '\.lite\.idx$'
+then ok "install registers the path in .config/bee/repos and leaves a lane"
+else bad "install registers + indexes (rc $RC)" "$WORK/b1" "$WORK/b1e" "$REG"; fi
+
+# B2: a second install says so and adds NO second line.
+rt4 install > "$WORK/b2" 2>"$WORK/b2e"; RC=$?
+if [ "$RC" = 0 ] && grep -q '^already installed' "$WORK/b2" &&
+   [ "$(wc -l < "$REG")" = "1" ]
+then ok "a second install adds no second line"
+else bad "a second install adds no second line (rc $RC)" "$WORK/b2" "$WORK/b2e" "$REG"; fi
+
+# B3: a LINKED WORKTREE is refused — identity is the path, and a worktree is a
+# second path over one history.  The registry is left as it was.
+WT4="$WORK/wt4"
+if git -C "$REPO4" worktree add -q "$WT4" -b wt4 >/dev/null 2>&1; then
+    ( cd "$WT4" && HOME="$FH4" "$RT" install ) > "$WORK/b3" 2>"$WORK/b3e"; RC=$?
+    if [ "$RC" != 0 ] && [ ! -s "$WORK/b3" ] && grep -q 'worktree' "$WORK/b3e" &&
+       [ "$(wc -l < "$REG")" = "1" ]
+    then ok "install refuses a linked worktree in plain words"
+    else bad "install refuses a linked worktree (rc $RC)" "$WORK/b3" "$WORK/b3e" "$REG"; fi
+else
+    echo "index: SKIP the linked-worktree leg — git worktree add failed" >&2
+fi
+
+# B4: LITE-026 — a repo with NO COMMITS still installs; there is just nothing
+# to index yet, and its path is registered all the same.
+NEW4="$WORK/new4"; mkdir -p "$NEW4"
+( cd "$NEW4" && git init -q -b master . ) || exit 2
+( cd "$NEW4" && HOME="$FH4" "$RT" install ) > "$WORK/b4" 2>"$WORK/b4e"; RC=$?
+if [ "$RC" = 0 ] && grep -q '^installed' "$WORK/b4" && grep -q "^$NEW4\$" "$REG"
+then ok "a repo with no commits installs; nothing to index yet"
+else bad "install on a commitless repo (rc $RC)" "$WORK/b4" "$WORK/b4e" "$REG"; fi
+
+# B5: the ONE-TIME seed — a pre-existing `.config/be/tracks` carries over into
+# the new file, deduped, and the old file is never read again.
+FH5="$WORK/home5"; mkdir -p "$FH5/.config/be"
+printf '%s\n%s\n%s\n' "/old/one" "/old/two" "/old/one" > "$FH5/.config/be/tracks"
+( cd "$REPO4" && HOME="$FH5" "$RT" install ) > "$WORK/b5" 2>"$WORK/b5e"; RC=$?
+REG5="$FH5/.config/bee/repos"
+printf '%s\n%s\n%s\n' "/old/one" "/old/two" "$REPO4" > "$WORK/b5w"
+if [ "$RC" = 0 ] && cmp -s "$WORK/b5w" "$REG5"
+then ok "a pre-existing .config/be/tracks seeds .config/bee/repos once"
+else bad "the one-time seed from .config/be/tracks (rc $RC)" "$WORK/b5" "$WORK/b5e" "$REG5"; fi
+
+# ...and once seeded, the old file is out of the picture: a line added to it
+# after the seed never shows up in the new one.
+printf '/old/three\n' >> "$FH5/.config/be/tracks"
+( cd "$REPO2" && HOME="$FH5" "$RT" install ) > "$WORK/b6" 2>"$WORK/b6e"; RC=$?
+if [ "$RC" = 0 ] && ! grep -q '^/old/three$' "$REG5" && grep -q "^$REPO2\$" "$REG5"
+then ok "the retired tracks file is never read again"
+else bad "the retired tracks file is never read again (rc $RC)" "$WORK/b6" "$WORK/b6e" "$REG5"; fi
 
 # ==========================================================================
 if [ "$FAILED" != 0 ]; then

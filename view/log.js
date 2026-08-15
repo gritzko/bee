@@ -11,7 +11,7 @@
 //  LAZY BY CONSTRUCTION: the verb opens the repo, brings the index up to date
 //  itself (LITE-006's mark check -> gap walk -> mark), and only then queries.
 //  A user never runs `index` first, and `log` writes NOTHING but that index
-//  update — not even a tracks line.
+//  update — not even a repo-list line.
 //
 //  WHERE THE DATA COMES FROM
 //   -  the commit DAG is the index's CPAR rows (`commit_hl -> parent_hl|ord`);

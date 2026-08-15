@@ -1,9 +1,9 @@
 //  chat.js — LITE-016: render Claude Code session logs as
 //  [/wiki/StrictMark] pages.  A relocation of //CHAT-001's `jab chat`, format
 //  v2 verbatim; only the be-isms (shared/util/path.js, be.ctxDir, io.log's
-//  trailing newline) are bridged to lite/quickjab.
+//  trailing newline) are bridged to bee/quickjab.
 //
-//    lite chat [dir] [outdir]    both args optional, both default `.`
+//    bee chat [dir] [outdir]    both args optional, both default `.`
 //
 //  Claude Code appends one JSONL row per event to
 //  `<claude home>/projects/<mangled-cwd>/<session>.jsonl`, where the log dir is
@@ -61,7 +61,7 @@ const ARG_KEYS = ["command", "file_path", "path", "pattern", "url", "query",
                   "summary", "description", "skill", "prompt", "message"];
 const ARG_CAP = 200;
 
-//  LITE-016: quickjab's `io.log` appends the newline itself, so lite's messages
+//  LITE-016: quickjab's `io.log` appends the newline itself, so bee's messages
 //  carry none — the one deliberate departure from CHAT-001's call sites.
 function say(msg) { io.log(msg); }
 
@@ -82,7 +82,7 @@ function writeFile(p, text) {
   finally { io.close(fd); }
 }
 
-//  LITE-016: be's shared/util/path.js is not in lite — the two helpers chat used
+//  LITE-016: be's shared/util/path.js is not in bee — the two helpers chat used
 //  (dirname, resolveInTree) inline here, `normalize` as view/log.js writes it.
 function dirname(p) {
   if (p === "/" || p === "") return p;
@@ -102,7 +102,7 @@ function normalize(p) {
   return (abs ? "/" : "") + out.join("/");
 }
 
-//  A dir ARG -> its absolute path.  Relative args count from the cwd (lite has
+//  A dir ARG -> its absolute path.  Relative args count from the cwd (bee has
 //  no context dir); `~` is the home shorthand.  `.`/`..` segments fold through
 //  normalize, exactly as view/log.js resolves a path arg.
 function absDir(arg) {

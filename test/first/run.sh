@@ -6,12 +6,12 @@
 #
 #   * a FRESH repo: one bare run builds `.git/be/` from nothing AND prints the
 #     fused board — the same rows `lite list` prints, byte for byte;
-#   * the run is the `index` half too: the repo joins the tracks list, and a
+#   * the run is the `index` half too: the repo joins the repo list, and a
 #     following `lite index` says "up to date" (the LITE-006 watermark marker);
 #   * a SECOND bare run is that watermark no-op — the run family does not grow
 #     and the rows are unchanged;
 #   * a new commit is picked up by the next bare run (the bring-up is live);
-#   * `lite list` alone still writes NO tracks row (the read-verb contract);
+#   * `lite list` alone still writes NO repo-list row (the read-verb contract);
 #   * outside a repo, bare `lite` and bare `lite --plain` are today's usage
 #     throw, and a PATH arg anywhere is still the unconfined filesystem pager.
 #
@@ -99,7 +99,7 @@ FRESH="$WORK/fresh"; mkdir -p "$FRESH/d"
     git commit -q -m 'F0 fresh seed' || exit 1
 ) || { echo "first: cannot build the fresh repo" >&2; exit 2; }
 
-TRK="$FAKEHOME/.config/be/tracks"
+TRK="$FAKEHOME/.config/bee/repos"
 
 # ==========================================================================
 # leg 1 — the FIRST bare run: it indexes, and it shows the board
@@ -136,11 +136,11 @@ if cmp -s "$WORK/o1" "$WORK/l1"
 then ok "bare \`lite\` is \`lite list\` to the byte"
 else bad "bare run != lite list" "$WORK/o1" "$WORK/l1" "$WORK/l1e"; fi
 
-# The `index` half: the repo is on the tracks list, and the index is MARKED —
+# The `index` half: the repo is on the repo list, and the index is MARKED —
 # `lite index` finds nothing to do, which is LITE-006's own up-to-date marker.
 if [ -f "$TRK" ] && [ "$(cat "$TRK")" = "$REPO" ]
 then ok "the bare run tracked the repo (the \`index\` half of it)"
-else bad "tracks after the bare run" "$TRK"; fi
+else bad "the repo list after the bare run" "$TRK"; fi
 rtin "$REPO" index > "$WORK/i1" 2>"$WORK/i1e"; RC=$?
 if [ "$RC" = 0 ] && grep -q '^up to date: refs/heads/master ' "$WORK/i1"
 then ok "...and left the index MARKED: \`lite index\` says up to date"
@@ -160,10 +160,10 @@ cut -c1-40 "$WORK/o1" > "$WORK/h1"; cut -c1-40 "$WORK/o2" > "$WORK/h2"
 if cmp -s "$WORK/h1" "$WORK/h2"
 then ok "...and shows the same board"
 else bad "the second run's board differs" "$WORK/o1" "$WORK/o2"; fi
-# It did not re-append to the tracks list either (LITE-006 dedups on read).
+# It did not re-append to the repo list either (LITE-006 dedups on read).
 if [ "$(wc -l < "$TRK")" = "1" ]
-then ok "...and the tracks list dedups"
-else bad "tracks re-appended" "$TRK"; fi
+then ok "...and the repo list dedups"
+else bad "the repo list re-appended" "$TRK"; fi
 
 # ==========================================================================
 # leg 3 — the bring-up is LIVE: a new commit lands on the next bare run
@@ -178,13 +178,13 @@ then ok "a new commit is indexed and fused by the next bare run"
 else bad "the gap run (rc $RC)" "$WORK/o3" "$WORK/e3"; fi
 
 # ==========================================================================
-# leg 4 — `lite list` is still a READ verb: it writes no tracks row
+# leg 4 — `lite list` is still a READ verb: it writes no repo-list row
 # ==========================================================================
 FH2="$WORK/home2"; mkdir -p "$FH2"
 ( cd "$REPO" && HOME="$FH2" "$RT" list --plain ) > "$WORK/o4" 2>"$WORK/e4"; RC=$?
-if [ "$RC" = 0 ] && [ -s "$WORK/o4" ] && [ ! -f "$FH2/.config/be/tracks" ]
-then ok "\`lite list\` brings the index up but writes NO tracks row"
-else bad "list wrote a tracks row (rc $RC)" "$WORK/o4" "$WORK/e4"; fi
+if [ "$RC" = 0 ] && [ -s "$WORK/o4" ] && [ ! -f "$FH2/.config/bee/repos" ]
+then ok "\`lite list\` brings the index up but writes NO repo-list row"
+else bad "list wrote a repo-list row (rc $RC)" "$WORK/o4" "$WORK/e4"; fi
 
 # ==========================================================================
 # leg 5 — OUTSIDE a repository: today's behaviour, byte for byte

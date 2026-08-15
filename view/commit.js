@@ -2,7 +2,7 @@
 //  ported from be/views/commit/commit.js.
 //
 //  A commit view is PURE ODB: `git.getHex` takes any 6..40 hexlet, so the arg
-//  IS an object name and no lane row, no `bringUp` and no tracks line is ever
+//  IS an object name and no lane row, no `bringUp` and no repo-list line is ever
 //  touched — `commit` answers on a repo whose index was never built.
 //
 //  THE OUTPUT IS THE OBJECT.  be's key finding carries over verbatim: the plain

@@ -1,8 +1,8 @@
 //  merge.js — LITE-014: the git MERGE DRIVER and the wiring that points
 //  git at it.  Two verbs, one feature:
 //
-//    lite merge <base> <ours> <theirs> [-o <out>] [-p <path>]
-//    lite install [<repo>]
+//    bee merge <base> <ours> <theirs> [-o <out>] [-p <path>]
+//    bee install [<repo>]
 //
 //  git calls a custom driver per file that changed on BOTH sides: `%O %A %B`
 //  are temp files (base / ours / theirs), the result goes over `%A`, and the
@@ -14,7 +14,7 @@
 //  git then flags the path unmerged and the user resolves in the worktree; a
 //  `git mergetool` finds no fences, which is the design, not a defect.
 //
-//  Exit is by THROW, as everywhere in lite: the runtime maps an uncaught throw
+//  Exit is by THROW, as everywhere in bee: the runtime maps an uncaught throw
 //  to exit 1, and 1 is exactly what git reads as "conflict".
 "use strict";
 
@@ -130,11 +130,11 @@ function merge(args) {
 function selfPath() {
   try { return io.readlink("/proc/self/exe"); } catch (e) {}
   try { return io.realpath(process.argv[0]); } catch (e) {}
-  throw "install: cannot tell where this lite binary lives";
+  throw "install: cannot tell where this bee binary lives";
 }
 
-const DRIVER_NAME = "Beagle-lite CRDT weave merge";
-const ATTR_LINE = "* merge=lite";
+const DRIVER_NAME = "Beagle-bee CRDT weave merge";
+const ATTR_LINE = "* merge=bee";
 
 //  The `.git/info/attributes` half: the pattern map for a purely LOCAL,
 //  uncommitted install.  Appending is the ceiling — the file is read whole and
@@ -160,11 +160,20 @@ function attrAppend(gitdir, file) {
   writeBytes(file, utf8.Encode(old + ATTR_LINE + "\n"));
 }
 
+//  BEE-001: a LINKED WORKTREE carries `<gitdir>/commondir` and nothing else
+//  does — a plain fs probe, no parsing.
+function linkedWorktree(gitdir) {
+  try { return io.stat(gitdir + "/commondir").kind === "reg"; }
+  catch (e) { return false; }
+}
+
 //  install(repoArg) -> a one-line report.  The repo resolves exactly as
-//  `lite index` resolves it (a root, a `.git` dir or a gitfile; the cwd by
-//  default).  Two writes, both idempotent: the driver definition through
-//  `git config` (git NEVER reads driver commands from a tracked file) and the
-//  pattern line in `.git/info/attributes`.
+//  `bee index` resolves it (a root, a `.git` dir or a gitfile; the cwd by
+//  default).  BEE-001: install OWNS the bring-up — the driver definition
+//  through `git config` (git NEVER reads driver commands from a tracked file),
+//  the pattern line in `.git/info/attributes`, the pre-commit hook, the repo's
+//  path in `$HOME/.config/bee/repos`, then `index` and `lindex`.  Every step is
+//  idempotent, so a reinstall writes nothing and says so.
 function install(repoArg) {
   const idx = require("index/index.js");
   const arg = repoArg === undefined ? io.cwd() : repoArg;
@@ -178,18 +187,25 @@ function install(repoArg) {
     ctx = require("index/hook.js").openUnborn(arg);
     if (ctx === null) throw e;
   }
-  let root, gitdir;
-  try { root = ctx.root; gitdir = ctx.gitdir; } finally { idx.closeRepo(ctx); }
+  let root, gitdir, unborn;
+  try { root = ctx.root; gitdir = ctx.gitdir; unborn = ctx.head === null; }
+  finally { idx.closeRepo(ctx); }
+  //  BEE-001: bee names a repo BY ITS PATH, and a linked worktree is a second
+  //  path over one history — so it is refused, in those words.
+  if (linkedWorktree(gitdir))
+    throw "install: " + root + " is a linked worktree — bee knows a repo by " +
+          "its path, and a worktree is a second path over one history; " +
+          "install the main worktree instead";
 
   const cmd = selfPath() + " merge %O %A %B -o %A -p %P";
   //  `--fixed-value` compares the stored value BYTE for byte, so no pattern of
   //  ours is ever read as a regex; rc 0 = this exact driver is already set.
   const have = run(["git", "-C", root, "config", "--get", "--fixed-value",
-                    "merge.lite.driver", cmd]) === 0;
+                    "merge.bee.driver", cmd]) === 0;
   let wrote = false;
   if (!have) {
-    if (run(["git", "-C", root, "config", "merge.lite.name", DRIVER_NAME]) !== 0 ||
-        run(["git", "-C", root, "config", "merge.lite.driver", cmd]) !== 0)
+    if (run(["git", "-C", root, "config", "merge.bee.name", DRIVER_NAME]) !== 0 ||
+        run(["git", "-C", root, "config", "merge.bee.driver", cmd]) !== 0)
       throw "install: git config refused to record the driver in " + root;
     wrote = true;
   }
@@ -198,8 +214,24 @@ function install(repoArg) {
   //  LITE-026: the same wiring plants the pre-commit hook, composing with one
   //  already there — index/hook.js owns that half.
   if (require("index/hook.js").plant(gitdir, selfPath())) wrote = true;
+  //  BEE-001: the registry is the one cross-repo state bee keeps, and this is
+  //  the one verb that writes it — one absolute worktree path, deduped on read.
+  const t = idx.track(root);
   return (wrote ? "installed" : "already installed") +
-         ": lite is the merge driver and the pre-commit hook for " + root;
+         ": bee is the merge driver and the pre-commit hook for " + root +
+         ", " + (t.added ? "registered in " : "already listed in ") + t.file +
+         " — " + broughtUp(idx, root, unborn);
+}
+
+//  BEE-001: the index half of the bring-up, as a phrase for the report line.
+//  A repo with NO COMMITS has nothing to index and says so (LITE-026).
+function broughtUp(idx, root, unborn) {
+  if (unborn) return "no commits to index yet";
+  const rec = idx.index(root, { track: false });
+  const lr = require("index/lindex.js").lindex(undefined, { repo: root }).rec;
+  if (rec.upToDate && lr.upToDate) return "the index and the links are up to date";
+  return "indexed " + rec.commits + " commits, scanned " + lr.files +
+         " files for links";
 }
 
 module.exports = { merge: merge, install: install, parse: parse,
