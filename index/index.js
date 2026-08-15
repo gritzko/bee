@@ -16,7 +16,12 @@
 //    4. CPAR      key = commit_hl:60|CPAR       val = parent_hl:60|ord:4
 //    5. B2P       key = blob_hl:60|B2P          val = path_hl:40|rev:20|vnib:4
 //    6. FSEG      key = fn_hl:40|prnt_hl:20|FSEG  val = seg0..seg5:10 each|depth:4
-//    7. MARK      key = ref_hl:60|MARK          val = tip commit_hl:60|vnib:4
+//    7. LINK      key = dst_hl:40|0:20|LINK      val = src path_hl:40|0:20|vnib:4
+//    8. MARK      key = ref_hl:60|MARK          val = tip commit_hl:60|vnib:4
+//
+//  LINK (LITE-033, index/lindex.js) is the one kind this file does not write:
+//  it is a separate, equally lazy round over the TIP blobs, and it rides the
+//  same lane so `rm -rf .git/be` still rebuilds everything.
 //
 //  `vnib` is RESERVED (0) everywhere the ruled table does not name a field;
 //  CPAR's low nibble is the parent ordinal (first parent = 0), and a ROOT
@@ -788,6 +793,10 @@ module.exports = {
   index: index, summary: summary, track: track, openIndex: openIndex,
   discover: discover, openRepo: openRepo, closeRepo: closeRepo,
   bringUp: bringUp, reader: reader, readCommit: readCommit, readTree: readTree,
+  //  LITE-033: `lindex` reuses the pruning tree diff (the changed paths of
+  //  mark..tip, each with its NEW blob) and the batching writer, rather than
+  //  growing a second walk of its own.
+  descend: descend, idxWriter: idxWriter,
   //  LITE-010: `diff` reads blob/commit objects straight off the ODB.
   object: object,
   firstLine: firstLine, identTs: identTs, heap: heap, hexOfHl: hexOfHl,

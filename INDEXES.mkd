@@ -20,7 +20,7 @@ The three field types every record is built out of; all are hashes, so the index
 
 ##  Record kinds
 
-Seven kinds, the nibble in `key & 0xf`. Rows are never deleted and re-puts are idempotent.
+Eight kinds, the nibble in `key & 0xf`. Rows are never deleted and re-puts are idempotent.
 
  -  `REV-BLOB` (1) — key `path_hl:40|rev:20|1`, val `blob_hl:60|vnib:4`: which
     blob this path carries at this rev.
@@ -36,8 +36,15 @@ Seven kinds, the nibble in `key & 0xf`. Rows are never deleted and re-puts are i
     depth:4`: the partial-path record ([LITE-011]), the last segment's hash
     plus the ancestor dir segment hashes; a pure function of the path TEXT,
     minted once at the path's rev 0, never invalidated (it names, not states).
+ -  `LINK` (7) — key `dst_hl:40|0:20|7`, val `src path_hl:40|0:20|vnib:4`: the
+    backlink SUSPECT record ([LITE-033]), one row per (dst, src) pair. `dst_hl`
+    is minted from the target TEXT — the repo-relative path text for a file
+    link, the bare ticket code (`LITE-029`) for a ticket link, so a ticket's
+    backlinks survive the thin↔fat layout move. Anchors are dropped: a row names
+    files, not places.
  -  `MARK` (F) — key `ref_hl:60|F`, val `tip commit_hl:60|vnib:4`: the per-ref
-    watermark, the LAST write of a run (DOG-027).
+    watermark, the LAST write of a run (DOG-027). `lindex` keeps its own under
+    the RESERVED ref `hlOfText("lindex")`, which is no ref and so never collides.
 
 ##  What the records buy
 
@@ -58,6 +65,29 @@ Each query is a scan of ONE key prefix; no ODB ancestry walk happens at query ti
  -  A PARTIAL path (`abc/TCP.c`, bare `TCP.c`) resolves via one FSEG scan plus
     a pruned descent of a commit's tree (`index/resolve.js`): the tree entries
     carry the real names, so the answer is TEXT and ambiguity is a list.
+ -  "Who links to this?" is ONE prefix scan of the target's `LINK` key: the vals
+    are the carriers' `path_hl`, named back to text by the same tree descent.
+
+##  The suspects contract
+
+`LINK` rows are SUSPECTS, not proof (ruling 2026-08-15): a row says a file MAY
+link to the target, and precision comes from OPENING the suspect — never from
+deleting a row and never from a tip-filtering hop. A removed link therefore
+leaves a false suspect behind, which is exactly what keeps the never-delete,
+idempotent contract of the lane intact: the index only narrows the grep.
+
+ -  ONLY TIP BLOBS are scanned, and lazily. `lindex`'s own MARK row (the
+    reserved ref `hlOfText("lindex")`) holds the commit the last scan finished
+    at; a run diffs mark..tip through the SAME pruning tree diff the rev
+    derivation rides and tokenises only the blobs that moved. A rerun over an
+    unmoved tip writes nothing at all, and the mark row is the run's LAST write.
+ -  Link RECOGNITION is the tokenizer's and only the tokenizer's: a link is
+    whatever the DOG-034 lexer fuses into one `F` token, read through
+    `index/hook.js fTokens`. There is no second recognizer and no raw-byte scan.
+ -  The indexer never GUESSES: a ref several files answer is skipped, a
+    self-link mints no row, and a binary or over-cap blob is never tokenised.
+ -  A rewritten history needs no special case — the mark row simply jumps, and
+    an unreadable mark commit makes the next run a full tip walk.
 
 ##  The lazy contract
 
@@ -77,7 +107,10 @@ PRESENCE is the boundary and there is no walk ceiling (ruling 2026-08-13), so ru
 The gaps, stated so a reader does not go looking for them.
 
  -  NO path text: `path_hl` is a one-way 40-bit hash, so the index can TEST a
-    known path and can never enumerate or print one.
+    known path and can never enumerate or print one. `lindex` prints its
+    suspects as TEXT the FSEG way — the lane narrows, a real tree object names:
+    one descent of the tip tree hashes the paths it carries and keeps the ones
+    the rows asked for. No sidecar of path text is kept anywhere.
  -  NO suffix lookup in the LANE ALONE: `dog/git/ZINF.h`, `git/ZINF.h` and
     `ZINF.h` hash to three unrelated keys; a partial path finds files only
     through the FSEG descent, which reads real tree objects for the names.
@@ -90,3 +123,4 @@ The gaps, stated so a reader does not go looking for them.
 [LITE-007]: /todo/LITE/LITE-007.mkd
 [LITE-011]: /todo/LITE/LITE-011.mkd
 [LITE-017]: /todo/LITE/LITE-017.mkd
+[LITE-033]: /todo/LITE/LITE-033.mkd

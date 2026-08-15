@@ -14,6 +14,9 @@ Usage (`--plain` or a pipe dumps bare bytes; a terminal pages coloured hunks):
  -  `lite` — in a git repo: index it, open the `list` browser; elsewhere as `lite <path>`
  -  `lite <path>...` — page files/dirs off the filesystem
  -  `lite index [<repo>]` — build/refresh `<repo>/.git/be/`; lazy, fully derived
+ -  `lite lindex [<target>]` — backlink suspects; lazy, tip blobs only
+     1. bare: bring the LINK rows up to the tip
+     2. `<target>`: the paths that may link to a file or a ticket code
  -  `lite log [<hex>|<path>]` — commit log, newest first; off-mainline rows grey
      1. bare: the checked-out tip's ancestry
      2. `<hex>`: that commit's ancestry

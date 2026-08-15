@@ -46,6 +46,26 @@ const wv = require("./weave.js");
 const TAG_F = 0x46;                                //  the lexer's `F` anchor
 const TOK32_F = TAG_F - 65;                        //  the same tag in a tok32
 
+//  --- THE link scanner (LITE-033 factored it out of applySubs) ---------------
+//  Ruling 2026-08-15: link recognition is the TOKENIZER's, and only the
+//  tokenizer's.  The DOG-034 lexer fuses `main.js`, `abc/Makefile:20`,
+//  `LITE-029` and the rest of the [Link] grammar into ONE `F` token, so
+//  everything that wants links asks for those tokens and NOTHING re-scans raw
+//  bytes — no regex, no second recognizer.  `applySubs` below reads them, and
+//  so does index/lindex.js's tip-blob walk.
+//  -> [{ lo, hi, text }, ...] over `bytes`; an untokenisable source is empty.
+function fTokens(bytes, ext) {
+  let toks;
+  try { toks = tok.parse(bytes, ext); } catch (e) { return []; }
+  const out = [];
+  for (let i = 0; i < toks.length; i++) {
+    if (((toks[i] >>> 27) & 0x1f) !== TOK32_F) continue;
+    const lo = i > 0 ? (toks[i - 1] & 0xffffff) : 0, hi = toks[i] & 0xffffff;
+    out.push({ lo: lo, hi: hi, text: utf8.Decode(bytes.slice(lo, hi)) });
+  }
+  return out;
+}
+
 //  --- bytes ------------------------------------------------------------------
 function readFile(path) {
   let st;
@@ -298,19 +318,15 @@ function stageBytes(ctx, rel, mode, bytes) {
 //  A ref that exists ONLY on disk was not part of this commit: it waits its turn.
 function applySubs(bytes, ext, subs) {
   if (!subs || subs.size === 0) return null;
-  let toks;
-  try { toks = tok.parse(bytes, ext); } catch (e) { return null; }
   const parts = [];
   let at = 0, hit = 0;
-  for (let i = 0; i < toks.length; i++) {
-    if (((toks[i] >>> 27) & 0x1f) !== TOK32_F) continue;
-    const lo = i > 0 ? (toks[i - 1] & 0xffffff) : 0, hi = toks[i] & 0xffffff;
-    if (lo < at) continue;
-    const s = subs.get(utf8.Decode(bytes.slice(lo, hi)));
+  for (const t of fTokens(bytes, ext)) {
+    if (t.lo < at) continue;
+    const s = subs.get(t.text);
     if (s === undefined) continue;
-    parts.push(bytes.slice(at, lo));
+    parts.push(bytes.slice(at, t.lo));
     parts.push(utf8.Encode(s));
-    at = hi;
+    at = t.hi;
     hit++;
   }
   if (hit === 0) return null;
@@ -462,4 +478,6 @@ function plant(gitdir, self) {
 }
 
 module.exports = { precommit: precommit, plant: plant, openUnborn: openUnborn,
-                   freshRefs: freshRefs, stagedFiles: stagedFiles };
+                   freshRefs: freshRefs, stagedFiles: stagedFiles,
+                   //  LITE-033: the ONE link scanner, shared with index/lindex.js.
+                   fTokens: fTokens };

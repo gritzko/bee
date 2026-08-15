@@ -86,6 +86,25 @@ function runIndex(args) {
   writeFd(1, utf8.Encode(idx.summary(rec) + "\n"));
 }
 
+//  LITE-033: `lite lindex [<target>]` — the BACKLINK SUSPECTS of the index lane.
+//  Bare, it brings the LINK rows up to the tip (only the blobs the tip moved are
+//  tokenised) and prints one summary line.  With a target — a path, a partial
+//  one, or a ticket code — it prints the paths that MAY link to it, one per
+//  line.  Suspects, not proof: a stale row is legal and the caller kills it by
+//  opening the file, which is what keeps the lane append-only.
+function runLindex(args) {
+  const li = require("index/lindex.js");
+  const rest = [];
+  //  `--plain` is a no-op here — plain lines either way, no hunk to page.
+  for (const a of args) { if (a !== "--plain") rest.push(a); }
+  const out = li.lindex(rest.length ? rest.join(" ") : undefined);
+  if (out.paths === null) {
+    writeFd(1, utf8.Encode(li.summary(out.rec) + "\n"));
+    return;
+  }
+  if (out.paths.length) writeFd(1, utf8.Encode(out.paths.join("\n") + "\n"));
+}
+
 //  LITE-007: `lite log [--plain] [<hex>|<path>]` — the commit / file log off
 //  that index, which it brings up to date ITSELF.  One be-log row per commit,
 //  newest first.
@@ -474,6 +493,7 @@ function pageHunks(hunks) {
 function main(argv) {
   const argl = argv.slice(2);
   if (argl.length && argl[0] === "index") return runIndex(argl.slice(1));
+  if (argl.length && argl[0] === "lindex") return runLindex(argl.slice(1));
   if (argl.length && argl[0] === "log") return runLog(argl.slice(1));
   if (argl.length && argl[0] === "commit") return runCommit(argl.slice(1));
   if (argl.length && argl[0] === "diff") return runDiff(argl.slice(1));
