@@ -35,7 +35,9 @@ var reHtmlBlockClose = [
 
 var reThematicBreak = /^(?:\*[ \t]*){3,}$|^(?:_[ \t]*){3,}$|^(?:-[ \t]*){3,}$/;
 
-var reMaybeSpecial = /^[#`~*+_=<>0-9-]/;
+//  LITE-031: `|` and `:` join the set, so a GFM table delimiter row reaches
+//  the block starts.  Neutral without the extension: no start matches them.
+var reMaybeSpecial = /^[#`~*+_=<>0-9|:-]/;
 
 var reNonSpace = /[^ \t\f\v\r\n]/;
 
@@ -816,8 +818,9 @@ var incorporateLine = function(ln) {
     this.allClosed = container === this.oldtip;
     this.lastMatchedContainer = container;
 
-    var matchedLeaf =
-        container.type !== "paragraph" && blocks[container.type].acceptsLines;
+    var matchedLeaf =                        // LITE-031: this.blocks, so an
+        container.type !== "paragraph" &&    // extension type resolves too
+        this.blocks[container.type].acceptsLines;
     var starts = this.blockStarts;
     var startsLen = starts.length;
     // Unless last matched container is a code block, try new container starts,
@@ -826,8 +829,11 @@ var incorporateLine = function(ln) {
         this.findNextNonspace();
 
         // this is a little performance optimization:
+        //  LITE-031: a block whose every line starts one (a GFM table row need
+        //  not begin with a marker char) opts out of the shortcut.
         if (
             !this.indented &&
+            !this.blocks[container.type].anyLineStarts &&
             !reMaybeSpecial.test(ln.slice(this.nextNonspace))
         ) {
             this.advanceNextNonspace();
@@ -920,7 +926,9 @@ var processInlines = function(block) {
     while ((event = walker.next())) {
         node = event.node;
         t = node.type;
-        if (!event.entering && (t === "paragraph" || t === "heading")) {
+        //  LITE-031: a GFM table cell holds inlines, and only inlines
+        if (!event.entering &&
+            (t === "paragraph" || t === "heading" || t === "table_cell")) {
             this.inlineParser.parse(node);
         }
     }

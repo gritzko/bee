@@ -25,6 +25,7 @@ var C_CLOSE_PAREN = 41;
 var C_COLON = 58;
 var C_SINGLEQUOTE = 39;
 var C_DOUBLEQUOTE = 34;
+var C_TILDE = 126;                              // LITE-031: GFM strikethrough
 
 // Some regexps used in inline parser:
 
@@ -87,6 +88,8 @@ var reSpaceAtEndOfLine = /^ *(?:\n|$)/;
 var reLinkLabel = /^\[(?:[^\\\[\]]|\\.){0,1000}\]/s;
 
 // Matches a string of non-special characters.
+//  LITE-031: kept on the parser (this.reMain) so an extension can shrink the
+//  ordinary-text run — GFM strikethrough needs `~` to be special.
 var reMain = /^[^\n`\[\]\\!<&*_'"]+/m;
 
 var text = function(s) {
@@ -400,7 +403,7 @@ var processEmphasis = function(stack_bottom) {
     var openers_bottom_index;
     var odd_match = false;
 
-    for (var i = 0; i < 14; i++) {
+    for (var i = 0; i < 20; i++) {          // LITE-031: 14 + six `~` slots
         openers_bottom[i] = stack_bottom;
     }
     // find first closer above stack_bottom:
@@ -432,6 +435,11 @@ var processEmphasis = function(stack_bottom) {
                  openers_bottom_index = 8 + (closer.can_open ? 3 : 0)
                                           + (closer.origdelims % 3);
                  break;
+               //  LITE-031: GFM strikethrough, its own six slots
+               case C_TILDE:
+                 openers_bottom_index = 14 + (closer.can_open ? 3 : 0)
+                                           + (closer.origdelims % 3);
+                 break;
             }
             while (
                 opener !== null &&
@@ -450,12 +458,22 @@ var processEmphasis = function(stack_bottom) {
             }
             old_closer = closer;
 
-            if (closercc === C_ASTERISK || closercc === C_UNDERSCORE) {
+            if (closercc === C_ASTERISK || closercc === C_UNDERSCORE ||
+                closercc === C_TILDE) {
                 if (!opener_found) {
                     closer = closer.next;
+                } else if (closercc === C_TILDE &&
+                           opener.numdelims !== closer.numdelims) {
+                    //  LITE-031: GFM pairs equal tilde runs only; an unequal
+                    //  pair burns both delimiters and stays literal.
+                    removeDelimitersBetween(opener, closer);
+                    tempstack = closer.next;
+                    this.removeDelimiter(opener);
+                    this.removeDelimiter(closer);
+                    closer = tempstack;
                 } else {
                     // calculate actual number of delimiters used from closer
-                    use_delims =
+                    use_delims = closercc === C_TILDE ? closer.numdelims :
                         closer.numdelims >= 2 && opener.numdelims >= 2 ? 2 : 1;
 
                     opener_inl = opener.node;
@@ -474,7 +492,9 @@ var processEmphasis = function(stack_bottom) {
                     );
 
                     // build contents for new emph element
-                    var emph = new Node(use_delims === 1 ? "emph" : "strong");
+                    var emph = new Node(                  // LITE-031: `~` -> del
+                        closercc === C_TILDE ? "strikethrough" :
+                            use_delims === 1 ? "emph" : "strong");
 
                     tmp = opener_inl._next;
                     while (tmp && tmp !== closer_inl) {
@@ -802,7 +822,7 @@ var parseEntity = function(block) {
 // a special meaning in markdown, as a plain string.
 var parseString = function(block) {
     var m;
-    if ((m = this.match(reMain))) {
+    if ((m = this.match(this.reMain))) {
         if (this.options.smart) {
             block.appendChild(
                 text(
@@ -986,7 +1006,10 @@ var parseInline = function(block) {
             res = this.parseEntity(block);
             break;
         default:
-            res = this.parseString(block);
+            //  LITE-031: an extension char (GFM `~`) is dispatched first, then
+            //  the ordinary-text run.
+            res = (this.ext[c] !== undefined && this.ext[c].call(this, block)) ||
+                this.parseString(block);
             break;
     }
     if (!res) {
@@ -1042,6 +1065,8 @@ function InlineParser(options) {
         brackets: null,
         pos: 0,
         refmap: {},
+        reMain: reMain,                     // LITE-031: extension hooks
+        ext: {},
         match: match,
         peek: peek,
         spnl: spnl,

@@ -14,6 +14,11 @@ function isContainer(node) {
         case "image":
         case "custom_inline":
         case "custom_block":
+        //  LITE-031: the GFM nodes, so the walker descends into them
+        case "strikethrough":
+        case "table":
+        case "table_row":
+        case "table_cell":
             return true;
         default:
             return false;
