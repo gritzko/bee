@@ -44,6 +44,8 @@ function pathView(paths) {
 //  LITE-006: `bee index [<repo>]` brings `<repo>/.git/be/` up to date and
 //  prints one summary line.  The verbs stand BEFORE the flag scan because
 //  every other arg is a path, verbatim.
+//  BEE-007: it runs BOTH passes — the commit walk and the LITE-033 link round
+//  over the tip blobs — each off its own mark, both on the one summary line.
 function runIndex(args) {
   const idx = require("index/index.js");
   const rec = idx.index(args.length ? args[0] : io.cwd());
@@ -51,6 +53,7 @@ function runIndex(args) {
 }
 
 //  LITE-033: `bee lindex [<target>]` — the BACKLINK SUSPECTS of the index lane.
+//  BEE-007: this is the QUERY form; `bee index` is the bring-up for both halves.
 //  Bare, it brings the LINK rows up to the tip (only the blobs the tip moved are
 //  tokenised) and prints one summary line.  With a target — a path, a partial
 //  one, or a ticket code — it prints the paths that MAY link to it, one per

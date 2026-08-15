@@ -93,17 +93,24 @@ try {
   //  The inverse status bar: ESC[7m … 40 cells … ESC[0m, `<path>#L1` + TOP.
   check("frame0-bar-inverse", f0.indexOf(ESC + "[7m") >= 0, f0);
   check("frame0-bar-uri", f0.indexOf("doc.txt#L1") >= 0, f0);
-  check("frame0-bar-top", f0.indexOf("TOP") >= 0 && f0.indexOf("h: help") >= 0, f0);
+  check("frame0-bar-top", f0.indexOf("TOP") >= 0 && f0.indexOf("?: help") >= 0, f0);
   const bar = p._statusLine(p.rows(40), 0, 9, 40);
   check("bar-fits-40", bar.replace(/\x1b\[[0-9;]*m/g, "").length === 40, bar);
 
-  //  ---- j scrolls (a real key, through the pty) ---------------------------
+  //  ---- j moves the CURSOR; walking it off the foot scrolls (LITE-023) -----
   send("j");
-  check("key-j-scrolled", pump(p, function () { return p.view.scroll === 1; }),
-        "scroll " + p.view.scroll);
+  check("key-j-cursor", pump(p, function () { return p.view.cur.row === 1; }),
+        "cur " + p.view.cur.row);
   const f1 = frame(p);
-  check("frame1-shifted", f1.indexOf("IIII") >= 0 && f1.indexOf("48;5;230") < 0, f1);
-  check("frame1-bar-pct", f1.indexOf("TOP") < 0, f1);
+  check("frame1-unshifted", f1.indexOf("IIII") < 0 && f1.indexOf("48;5;230") >= 0, f1);
+  //  The viewport holds the banner plus 8 body rows, so the cursor reaches the
+  //  foot and the NEXT j takes the viewport with it.
+  for (let i = 0; i < 8; i++) send("j");
+  check("key-j-scrolled", pump(p, function () { return p.view.scroll >= 1; }, 60),
+        "scroll " + p.view.scroll);
+  const f2 = frame(p);
+  check("frame2-shifted", f2.indexOf("IIII") >= 0 && f2.indexOf("48;5;230") < 0, f2);
+  check("frame2-bar-pct", f2.indexOf("TOP") < 0, f2);
 
   //  ---- G / g -------------------------------------------------------------
   send("G");
@@ -127,14 +134,14 @@ try {
   check("nowrap-clamps-tail", fw0.indexOf("TAIL") < 0 && fw0.indexOf("HEAD") >= 0, fw0);
   check("nowrap-keeps-next-line", fw0.indexOf("SHORT") >= 0, fw0);
 
-  send("w");
+  send("W");
   check("key-w-wraps", pump(pw, function () { return pw.view.wrap === true; }),
         "wrap " + pw.view.wrap);
   const nYes = pw.rows(40).length;
   check("wrap-adds-rows", nYes > nNo, nNo + " -> " + nYes);
   const fw1 = frame(pw);
   check("wrap-shows-tail", fw1.indexOf("TAIL") >= 0, fw1);
-  send("w");
+  send("W");
   check("key-w-unwraps", pump(pw, function () { return pw.view.wrap === false; }),
         "wrap " + pw.view.wrap);
   check("unwrap-rows-back", pw.rows(40).length === nNo, String(pw.rows(40).length));
@@ -174,7 +181,7 @@ try {
   const fd2 = frame(pd);
   check("back-frame-lists", fd2.indexOf("doc.txt") >= 0, fd2);
   //  A FILE row follows nothing — the plain-words note, no throw.
-  pd.view.scroll = 0;                               // the banner row
+  pd.view.scroll = 0; pd.view.cur = { row: 0, tok: -1, span: null };   // the banner row
   send("\r");
   check("enter-on-banner-notes", pump(pd, function () { return pd.message !== ""; }) &&
         pd.message === "(nothing to follow)", pd.message);

@@ -176,7 +176,7 @@ check("an untokenised target links without an anchor",
 //  --- theme.js -> CSS ------------------------------------------------------
 //  The numbers are theme.js's; only their SPELLING is asserted here.
 check("a basic bright code", html.sgrCss("90") === "color:#7f7f7f", html.sgrCss("90"));
-check("a basic code", html.sgrCss("32") === "color:#00cd00", html.sgrCss("32"));
+check("a basic code", html.sgrCss("32") === "color:#43bc6c", html.sgrCss("32"));
 check("a 256 fg", html.sgrCss("38;5;56") === "color:#5f00d7", html.sgrCss("38;5;56"));
 check("a 256 bg", html.sgrCss("48;5;157") === "background:#afffaf", html.sgrCss("48;5;157"));
 check("bold is a weight", html.sgrCss("1") === "font-weight:bold", html.sgrCss("1"));

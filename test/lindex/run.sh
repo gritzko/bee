@@ -316,6 +316,36 @@ then ok "a second scan writes no new row ($XB bytes)"
 else bad "a second scan writes no new row (rc $RC, $XB -> $XA)" "$WORK/x6" "$WORK/x6e" "$WORK/x7"; fi
 
 # ==========================================================================
+# leg 7 — BEE-007: `bee index` runs THIS pass too, so the query answers off
+# rows no `lindex` run ever minted
+# ==========================================================================
+#   C  hint/note.mkd  names deep/dir/UNIQZ.c — a name no other fixture carries,
+#                     so the registry fan-out cannot lend a suspect.
+C="$WORK/C"
+fixC() {
+  mkdir -p hint deep/dir
+  printf 'the hint names deep/dir/UNIQZ.c and nothing else\n' > hint/note.mkd
+  printf 'int q;\n' > deep/dir/UNIQZ.c
+}
+mkfix "$C" fixC
+RCC=$(cd "$C" && pwd -P)
+
+# Y1: ONE `bee index` — no lindex run at all — and the link mark is already the
+# tip: the bare verb is the no-op, which is the proof the rows are index's.
+rtin "$C" index > "$WORK/y1" 2>"$WORK/y1e"; RC=$?
+rtin "$C" lindex > "$WORK/y2" 2>"$WORK/y2e"; RC2=$?
+if [ "$RC" = 0 ] && grep -q ' — scanned [0-9]* files, [0-9]* links, [0-9]* rows — ' "$WORK/y1" &&
+   [ "$RC2" = 0 ] && grep -q '^up to date: links at refs/heads/master ' "$WORK/y2"
+then ok "\`bee index\` ran the link pass — the bare \`lindex\` after it is the no-op"
+else bad "bee index ran the link pass (rc $RC/$RC2)" "$WORK/y1" "$WORK/y1e" "$WORK/y2"; fi
+
+# Y2: and the QUERY answers off those rows.
+rtin "$C" lindex deep/dir/UNIQZ.c > "$WORK/y3" 2>"$WORK/y3e"; RC=$?
+if [ "$RC" = 0 ] && [ "$(cat "$WORK/y3")" = "$RCC/hint/note.mkd" ]
+then ok "the query answers off the rows \`bee index\` minted"
+else bad "the query answers off index's rows (rc $RC)" "$WORK/y3" "$WORK/y3e"; fi
+
+# ==========================================================================
 if [ "$FAILED" != 0 ]; then
     echo "FAIL [lite/lindex] $FAILED of $CHECKS checks failed" >&2
     exit 1

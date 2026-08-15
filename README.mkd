@@ -20,8 +20,9 @@ picks the sink, `--plain` (also what a pipe defaults to), `--color`, `--html`:
 
  -  `bee` — in a git repo: index it, open the `list` browser; elsewhere as `bee <path>`
  -  `bee <path>...` — page files/dirs off the filesystem
- -  `bee index [<repo>]` — build/refresh `<repo>/.git/be/`; lazy, fully derived
- 
+ -  `bee index [<repo>]` — build/refresh `<repo>/.git/be/`; lazy, fully derived;
+    BOTH passes, the commit walk and the tip-blob link scan, each off its own
+    mark, both on the one summary line
  -  `bee lindex [<target>]` — backlink suspects; lazy, tip blobs only
      1. bare: bring the LINK rows up to the tip, this repo only
      2. `<target>`: the paths that may link to a file or a ticket code, looked

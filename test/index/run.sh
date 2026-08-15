@@ -503,6 +503,13 @@ if [ "$RC" = 0 ] && grep -q '^installed' "$WORK/b1" &&
 then ok "install registers the path in .config/bee/repos and leaves a lane"
 else bad "install registers + indexes (rc $RC)" "$WORK/b1" "$WORK/b1e" "$REG"; fi
 
+# B1b: BEE-007 — install is still the FULL bring-up: `a.mkd` names README.mkd,
+# so the LINK half ran too, off the one `index` call install now makes.
+LITE_FIX="$REPO4" rt --eval "require('$CASE/links.js')" > "$WORK/b1l" 2>"$WORK/b1le"
+if grep -q '^links=[1-9][0-9]* marks=1$' "$WORK/b1l"
+then ok "install brings BOTH halves up ($(cat "$WORK/b1l"))"
+else bad "install brings both halves up" "$WORK/b1l" "$WORK/b1le" "$WORK/b1"; fi
+
 # B2: a second install says so and adds NO second line.
 rt4 install > "$WORK/b2" 2>"$WORK/b2e"; RC=$?
 if [ "$RC" = 0 ] && grep -q '^already installed' "$WORK/b2" &&
@@ -550,6 +557,85 @@ printf '/old/three\n' >> "$FH5/.config/be/tracks"
 if [ "$RC" = 0 ] && ! grep -q '^/old/three$' "$REG5" && grep -q "^$REPO2\$" "$REG5"
 then ok "the retired tracks file is never read again"
 else bad "the retired tracks file is never read again (rc $RC)" "$WORK/b6" "$WORK/b6e" "$REG5"; fi
+
+# ==========================================================================
+# leg 5 — BEE-007: ONE bring-up verb, TWO marks
+# ==========================================================================
+# THE GAP THIS REPROS: `bee index` used to run the commit walk alone, so the
+# LINK rows only ever appeared if you also ran `bee lindex`.  The risk of the
+# fold is the other way round — a READ VIEW must still not lex a blob.
+REPO5="$WORK/repo5"; mkdir -p "$REPO5"
+mkfold() {
+  mkdir -p "$1/doc" "$1/src/abc"
+  (
+    cd "$1" || exit 1
+    git init -q -b master . && git config user.email t@t && git config user.name T || exit 1
+    printf 'the guide points at src/abc/TCP.c\n' > doc/guide.mkd
+    printf 'int tcp;\n' > src/abc/TCP.c
+    git add -A && GIT_AUTHOR_NAME=T GIT_AUTHOR_EMAIL=t@t \
+        GIT_COMMITTER_NAME=T GIT_COMMITTER_EMAIL=t@t \
+        GIT_AUTHOR_DATE="2022-02-02T00:00:00Z" GIT_COMMITTER_DATE="2022-02-02T00:00:00Z" \
+        git commit -q -m f0 || exit 1
+  )
+}
+mkfold "$REPO5" || { echo "index: cannot build the BEE-007 fixture" >&2; exit 2; }
+rt5() { ( cd "$REPO5" && HOME="$FAKEHOME" "$RT" "$@" ); }
+probe() { LITE_FIX="$1" rt --eval "require('$CASE/links.js')"; }
+bytes5() { cat "$1"/.git/be/* 2>/dev/null | wc -c | tr -d ' '; }
+
+# F1: ONE summary line, BOTH halves on it.
+rt5 index > "$WORK/f1" 2>"$WORK/f1e"; RC=$?
+if [ "$RC" = 0 ] &&
+   grep -q '^indexed 1 commits, [0-9]* revs, [0-9]* rows — scanned [0-9]* files, [0-9]* links, [0-9]* rows — refs/heads/master ' "$WORK/f1"
+then ok "one summary line covers the commit walk AND the link scan"
+else bad "one summary line covers both halves (rc $RC)" "$WORK/f1" "$WORK/f1e"; fi
+
+# F2: THE REPRO — the LINK rows are there with no `lindex` run at all.
+probe "$REPO5" > "$WORK/f2" 2>"$WORK/f2e"
+if grep -q '^links=[1-9][0-9]* marks=1$' "$WORK/f2"
+then ok "\`bee index\` alone left LINK rows and the lindex mark ($(cat "$WORK/f2"))"
+else bad "bee index left LINK rows" "$WORK/f2" "$WORK/f2e" "$WORK/f1"; fi
+
+# F3: BOTH marks hit on the second run — it writes nothing and says so, in the
+# ruled no-op words (no half-done phrase on the line).
+B5=$(bytes5 "$REPO5")
+rt5 index > "$WORK/f3" 2>"$WORK/f3e"; RC=$?
+A5=$(bytes5 "$REPO5")
+if [ "$RC" = 0 ] && grep -q '^up to date: refs/heads/master ' "$WORK/f3" &&
+   ! grep -q 'scanned' "$WORK/f3" && [ "$B5" = "$A5" ]
+then ok "a second \`bee index\` writes nothing and says up to date ($B5 bytes)"
+else bad "the second index is the two-mark no-op (rc $RC, $B5 -> $A5)" "$WORK/f3" "$WORK/f3e"; fi
+
+# F4: `lindex` is the QUERY form and still works — bare (its own mark hits, so
+# it is the no-op) and with a target.
+rt5 lindex > "$WORK/f4" 2>"$WORK/f4e"; RC=$?
+rt5 lindex src/abc/TCP.c > "$WORK/f5" 2>"$WORK/f5e"; RC2=$?
+R5=$(cd "$REPO5" && pwd -P)
+if [ "$RC" = 0 ] && grep -q '^up to date: links at refs/heads/master ' "$WORK/f4" &&
+   [ "$RC2" = 0 ] && [ "$(cat "$WORK/f5")" = "$R5/doc/guide.mkd" ]
+then ok "\`bee lindex\` still answers bare and with a target"
+else bad "lindex bare + target (rc $RC/$RC2)" "$WORK/f4" "$WORK/f4e" "$WORK/f5" "$WORK/f5e"; fi
+
+# F5: THE REGRESSION THIS FOLD RISKS — a READ VIEW calls `bringUp`, the COMMIT
+# half alone, so it lexes no blob and mints NO LINK row (and no lindex mark).
+REPO6="$WORK/repo6"; mkdir -p "$REPO6"
+mkfold "$REPO6" || { echo "index: cannot build the BEE-007 read-view fixture" >&2; exit 2; }
+rt6() { ( cd "$REPO6" && HOME="$FAKEHOME" "$RT" "$@" ); }
+rt6 list --plain > "$WORK/f6" 2>"$WORK/f6e"; RC=$?
+rt6 log --plain > "$WORK/f7" 2>"$WORK/f7e"; RC2=$?
+probe "$REPO6" > "$WORK/f8" 2>"$WORK/f8e"
+if [ "$RC" = 0 ] && [ -s "$WORK/f6" ] && [ "$RC2" = 0 ] && [ -s "$WORK/f7" ] &&
+   [ "$(cat "$WORK/f8")" = "links=0 marks=0" ]
+then ok "a read view brings the index up and mints NO link row"
+else bad "a read view mints no link row (rc $RC/$RC2)" "$WORK/f8" "$WORK/f6e" "$WORK/f7e"; fi
+
+# ...and the very next `bee index` over that lane runs the link half alone.
+rt6 index > "$WORK/f9" 2>"$WORK/f9e"; RC=$?
+probe "$REPO6" > "$WORK/fa" 2>"$WORK/fae"
+if [ "$RC" = 0 ] && grep -q '^up to date: refs/heads/master .* — scanned [0-9]* files, ' "$WORK/f9" &&
+   grep -q '^links=[1-9][0-9]* marks=1$' "$WORK/fa"
+then ok "...and the next \`bee index\` runs the link half alone, off its own mark"
+else bad "the link half catches up alone (rc $RC)" "$WORK/f9" "$WORK/f9e" "$WORK/fa"; fi
 
 # ==========================================================================
 if [ "$FAILED" != 0 ]; then

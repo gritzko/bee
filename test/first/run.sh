@@ -192,13 +192,13 @@ else bad "list wrote a repo-list row (rc $RC)" "$WORK/o4" "$WORK/e4"; fi
 if [ "$NOREPO" = 1 ]; then
     rtin "$NOWHERE" > "$WORK/n1" 2>"$WORK/n1e"; RC=$?
     if [ "$RC" != 0 ] && [ ! -s "$WORK/n1" ] &&
-       grep -q '^Usage: lite \[--plain|--color|--html\] <path>\.\.\.$' "$WORK/n1e"
+       grep -q '^Usage: bee \[--plain|--color|--html\] <path>\.\.\.$' "$WORK/n1e"
     then ok "outside a repo, a piped bare run is the old usage throw"
     else bad "non-repo bare run (rc $RC)" "$WORK/n1" "$WORK/n1e"; fi
 
     rtin "$NOWHERE" --plain > "$WORK/n2" 2>"$WORK/n2e"; RC=$?
     if [ "$RC" != 0 ] && [ ! -s "$WORK/n2" ] &&
-       grep -q '^Usage: lite \[--plain|--color|--html\] <path>\.\.\.$' "$WORK/n2e"
+       grep -q '^Usage: bee \[--plain|--color|--html\] <path>\.\.\.$' "$WORK/n2e"
     then ok "...and so is a bare --plain run"
     else bad "non-repo --plain run (rc $RC)" "$WORK/n2" "$WORK/n2e"; fi
 

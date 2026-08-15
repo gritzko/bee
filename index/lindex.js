@@ -16,6 +16,9 @@
 //  behind, which is exactly what keeps the lane's never-delete, idempotent
 //  contract intact — the index only narrows the grep.
 //
+//  BEE-007: `bee index` RUNS `scan` (one verb, two marks), so this verb is the
+//  QUERY form — bare it still brings the rows up and reports, as ever.
+//
 //  LAZY, TIP-ONLY, NEW BLOBS ONLY.  A MARK-style row under the RESERVED ref
 //  `hlOfText("lindex")` holds the commit the last scan finished at:
 //   1. the tip is already the mark -> no-op, not one byte written;

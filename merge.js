@@ -225,10 +225,11 @@ function install(repoArg) {
 
 //  BEE-001: the index half of the bring-up, as a phrase for the report line.
 //  A repo with NO COMMITS has nothing to index and says so (LITE-026).
+//  BEE-007: ONE call does both halves now — `index` carries the link record.
 function broughtUp(idx, root, unborn) {
   if (unborn) return "no commits to index yet";
   const rec = idx.index(root, { track: false });
-  const lr = require("index/lindex.js").lindex(undefined, { repo: root }).rec;
+  const lr = rec.link;
   if (rec.upToDate && lr.upToDate) return "the index and the links are up to date";
   return "indexed " + rec.commits + " commits, scanned " + lr.files +
          " files for links";

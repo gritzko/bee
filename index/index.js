@@ -23,6 +23,9 @@
 //  it is a separate, equally lazy round over the TIP blobs, and it rides the
 //  same lane so `rm -rf .git/be` still rebuilds everything.  BEE-002 keys it on
 //  the TARGET's own segment hashlets, so the indexing ORDER cannot change a key.
+//  BEE-007: `index()` RUNS that round too — one verb, two marks.  The VERB folds,
+//  the PASSES do not: each half keeps its own O(1) no-op, and `bringUp` stays the
+//  commit half alone, so a read view (`log`/`list`/`commit`) never lexes a blob.
 //
 //  LITE-044: a changed DIR gets a rev too — ONE REV-CMMT row on the DIR PATH's
 //  own `path_hl`, so `lite list` reads a dir's last commit off the lane exactly
@@ -737,17 +740,23 @@ function openRepo(arg, climb) {
 function closeRepo(ctx) { try { git.close(ctx.h); } catch (e) {} }
 
 //  --- the run ---------------------------------------------------------------
-//  index(repoArg, opts) -> the summary record.  `opts.home` overrides the
-//  registry root, `opts.track === false` skips the repo list (LITE-007's `log`
-//  brings the index up to date but must write nothing else), `opts.climb`
-//  looks for the repo above the arg.
+//  index(repoArg, opts) -> the summary record, `rec.link` holding the LINK
+//  half's.  `opts.home` overrides the registry root, `opts.track === false`
+//  skips the repo list (LITE-007's `log` brings the index up to date but must
+//  write nothing else), `opts.climb` looks for the repo above the arg,
+//  `opts.links === false` runs the commit half alone.
 function index(repoArg, opts) {
   opts = opts || {};
   const ctx = openRepo(repoArg, opts.climb);
   try {
     const ix = openIndex(ctx.gitdir, fresh(ctx.gitdir));
-    try { return bringUp(ctx, ix, opts); }
-    finally { try { ix.close(); } catch (e) {} }
+    try {
+      const rec = bringUp(ctx, ix, opts);
+      //  BEE-007: the LITE-033 round over the TIP blobs, off its OWN mark — it
+      //  is required lazily, so lindex.js's own `require("./index.js")` is fine.
+      if (opts.links !== false) rec.link = require("./lindex.js").scan(ctx, ix);
+      return rec;
+    } finally { try { ix.close(); } catch (e) {} }
   } finally { closeRepo(ctx); }
 }
 
@@ -885,14 +894,18 @@ function emitDir(wr, st, c, chl) {
   return true;
 }
 
-//  The one-line summary the verb prints.
+//  The one-line summary the verb prints, BOTH halves on it (BEE-007).  A half
+//  sitting on its mark says so and costs no words; both do -> the ruled no-op.
 function summary(rec) {
-  const tip = rec.tip.slice(0, 8);
+  const lane = rec.ref + " " + rec.tip.slice(0, 8) + " in " + rec.gitdir + "/" + IDX_DIR;
+  const lk = rec.link;                     // absent when the half did not run
+  const lp = !lk ? null : lk.upToDate ? "links up to date"
+           : "scanned " + lk.files + " files, " + lk.links + " links, " +
+             lk.rows + " rows";
   if (rec.upToDate)
-    return "up to date: " + rec.ref + " " + tip + " in " + rec.gitdir + "/" + IDX_DIR;
+    return "up to date: " + lane + (lk && !lk.upToDate ? " — " + lp : "");
   return "indexed " + rec.commits + " commits, " + rec.revs + " revs, " +
-         rec.rows + " rows — " + rec.ref + " " + tip +
-         " in " + rec.gitdir + "/" + IDX_DIR;
+         rec.rows + " rows" + (lp === null ? "" : " — " + lp) + " — " + lane;
 }
 
 //  hl60 -> the 15-hex name ODBHex resolves it by (mtimeidx.js `hexOf`).

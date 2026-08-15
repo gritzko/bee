@@ -292,7 +292,7 @@ method() {   # method <label> <verb> <want-status>
 method "POST is not allowed"   POST   405
 method "PUT is not allowed"    PUT    405
 method "DELETE is not allowed" DELETE 405
-has    "the refusal says lite http only reads" "lite http only reads"
+has    "the refusal says bee http only reads" "bee http only reads"
 # A body offered with the refused method changes nothing and mutates nothing.
 curl -s -o /dev/null -X POST --data-binary 'x=1' "$BASE/cat/a.txt"
 if [ "$(cat "$REPO/a.txt" | wc -l)" = 2 ] && [ -z "$(g status --porcelain -- doc.mkd)" ]

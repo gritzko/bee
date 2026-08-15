@@ -85,6 +85,15 @@ echo "pager: runtime $RT, fixtures $FIX"
 # ==========================================================================
 rt_plain() { ( cd "$LITE" && "$RT" "$@" ); }
 
+# LITE-018: bare (no path arg) INSIDE a git repo is `index` + `list`, so the
+# usage throw is an OUTSIDE-a-repo story — P8 runs from a non-repo dir, the way
+# test/first does, with the jsrc symlink the runtime resolves through.
+NOWHERE="$WORK/nowhere"; mkdir -p "$NOWHERE"
+ln -sf "$LITE" "$WORK/jsrc"
+if ( cd "$NOWHERE" && git rev-parse --show-toplevel ) >/dev/null 2>&1
+then NOREPO=0; echo "pager: $NOWHERE is inside a git repo — P8 skips" >&2
+else NOREPO=1; fi
+
 # P1: a plain file — `hunk <path>\n` then the bytes verbatim.
 { printf 'hunk %s\n' "$FIX/doc.txt"; cat "$FIX/doc.txt"; } > "$WORK/want"
 rt_plain --plain "$FIX/doc.txt" > "$WORK/got" 2>"$WORK/err"; RC=$?
@@ -137,11 +146,13 @@ if [ "$RC" != 0 ] && [ ! -s "$WORK/got" ] && grep -q "^cannot open $FIX/nosuch.t
 then ok "plain miss = stderr line + empty stdout + non-zero"
 else bad "plain miss = stderr line + empty stdout + non-zero (rc $RC)" "$WORK/got" "$WORK/err"; fi
 
-# P8: NO args — the usage line on stderr, non-zero exit.
-rt_plain --plain > "$WORK/got" 2>"$WORK/err"; RC=$?
-if [ "$RC" != 0 ] && grep -q '^Usage: lite \[--plain|--color|--html\] <path>\.\.\.$' "$WORK/err"
+# P8: NO args OUTSIDE a repo — the usage line on stderr, non-zero exit.
+if [ "$NOREPO" = 1 ]; then
+( cd "$NOWHERE" && "$RT" --plain ) > "$WORK/got" 2>"$WORK/err"; RC=$?
+if [ "$RC" != 0 ] && grep -q '^Usage: bee \[--plain|--color|--html\] <path>\.\.\.$' "$WORK/err"
 then ok "plain no args = usage on stderr + non-zero"
 else bad "plain no args = usage on stderr + non-zero (rc $RC)" "$WORK/got" "$WORK/err"; fi
+fi
 
 # P9: a MIXED batch — the miss is reported, what opened is dumped, exit 0.
 { printf 'hunk %s\n' "$FIX/doc.txt"; cat "$FIX/doc.txt"; } > "$WORK/want"

@@ -185,11 +185,11 @@ BASESHA=$(g rev-parse master)
 # into .git/info/attributes (never a tracked file: git ignores driver commands
 # from those).
 rtin "$REPO" install > "$WORK/i1" 2>"$WORK/i1e"; RC=$?
-DRV=$(g config --get merge.lite.driver 2>/dev/null || echo "")
-NAM=$(g config --get merge.lite.name 2>/dev/null || echo "")
+DRV=$(g config --get merge.bee.driver 2>/dev/null || echo "")
+NAM=$(g config --get merge.bee.name 2>/dev/null || echo "")
 if [ "$RC" = 0 ] && [ -n "$NAM" ] &&
    [ "$DRV" = "$RT merge %O %A %B -o %A -p %P" ] &&
-   grep -qx '\* merge=lite' "$REPO/.git/info/attributes"
+   grep -qx '\* merge=bee' "$REPO/.git/info/attributes"
 then ok "install: the driver in .git/config, the pattern in .git/info/attributes"
 else bad "install (rc $RC) driver='$DRV'" "$WORK/i1" "$WORK/i1e" "$REPO/.git/info/attributes"; fi
 
@@ -199,7 +199,7 @@ cp "$REPO/.git/config" "$WORK/cfg1"; cp "$REPO/.git/info/attributes" "$WORK/att1
 rtin "$REPO" install > "$WORK/i2" 2>"$WORK/i2e"; RC=$?
 if [ "$RC" = 0 ] && cmp -s "$WORK/cfg1" "$REPO/.git/config" &&
    cmp -s "$WORK/att1" "$REPO/.git/info/attributes" &&
-   [ "$(grep -c 'merge=lite' "$REPO/.git/info/attributes")" = 1 ] &&
+   [ "$(grep -c 'merge=bee' "$REPO/.git/info/attributes")" = 1 ] &&
    grep -q 'already installed' "$WORK/i2"
 then ok "install twice changes nothing (no duplicate attribute line)"
 else bad "reinstall no-op (rc $RC)" "$WORK/i2" "$WORK/i2e" "$REPO/.git/info/attributes"; fi

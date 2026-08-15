@@ -91,6 +91,11 @@ idempotent contract of the lane intact: the index only narrows the grep.
     at; a run diffs mark..tip through the SAME pruning tree diff the rev
     derivation rides and tokenises only the blobs that moved. A rerun over an
     unmoved tip writes nothing at all, and the mark row is the run's LAST write.
+ -  ONE BRING-UP VERB, TWO MARKS ([BEE-007]): `bee index` runs the commit walk
+    and then this scan, each still no-opping off its own mark. `bringUp` — what
+    the read views (`log`, `list`, `commit`) call on every invocation — stays the
+    COMMIT half alone, so printing a log never lexes a blob. `bee lindex` is the
+    query form and still brings the rows up bare.
  -  Link RECOGNITION is the tokenizer's and only the tokenizer's: a link is
     whatever the DOG-034 lexer fuses into one `F` token, read through
     `index/hook.js fTokens`. There is no second recognizer and no raw-byte scan.
@@ -143,6 +148,7 @@ The gaps, stated so a reader does not go looking for them.
 
 [BEE-001]: /todo/BEE/BEE-001.mkd
 [BEE-002]: /todo/BEE/BEE-002.mkd
+[BEE-007]: /todo/BEE/BEE-007.mkd
 [LITE-006]: /todo/LITE/LITE-006.mkd
 [LITE-007]: /todo/LITE/LITE-007.mkd
 [LITE-011]: /todo/LITE/LITE-011.mkd
