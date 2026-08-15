@@ -26,10 +26,16 @@ function writeStderr(str) { writeFd(2, utf8.Encode(str)); }
 //  THE fs open, shared by the plain dump and the pager (opts.open): stat the
 //  bare path, dir → listing hunk, file → mmap+tokenize; a miss → null.  The
 //  pager's door is `(path) -> hunks | null`, so the hunk rides a one-elem list.
+//  LITE-034: the door's first move, on its own — what the fs says a path is, or
+//  null.  A caller that only needs to RESOLVE never has to open to find out.
+function statOf(path) {
+  try { return io.stat(bro.fsPath(path)); } catch (e) { return null; }
+}
+
 function openPath(path) {
   const fp = bro.fsPath(path);
-  let st;
-  try { st = io.stat(fp); } catch (e) { return null; }
+  const st = statOf(path);
+  if (st === null) return null;
   let hunk;
   try {
     //  The hunk URI is the arg VERBATIM (trailing '/' kept) — only fs ops see fp.
@@ -224,6 +230,16 @@ function runHook(args) {
   if (note) writeStderr(note + "\n");
 }
 
+//  LITE-034: `lite serve [--port <n>]` — the repo browser over HTTP, the same
+//  views the pager shows.  A LONG-RUNNING verb: this returns once the listener
+//  is up and the pol loop takes over, until SIGINT.
+//  The whole DOOR is handed over — the verb table AND the reference resolution
+//  — so serve links through this file's code and owns no resolver of its own.
+function runServe(args) {
+  require("index/serve.js").serve(args, { verbs: VERBS, seatOf: seatOf,
+                                          statOf: statOf, openPath: openPath });
+}
+
 //  LITE-016: `lite chat [dir] [outdir]` renders the Claude Code session logs of
 //  a project dir as StrictMark pages, 1:1 by basename, append-only on a rerun.
 //  It reports on the message stream only, so stdout stays free.
@@ -331,19 +347,36 @@ const VERBS = {
   blob: function (arg) { return require("index/blob.js").blob(arg).hunks; }
 };
 
-//  LITE-015: the FSEG leg of the door — a path that does not stat may be a
-//  PARTIAL one, so the LITE-011 descent gets to name it before the miss stands.
-//  ONE hit opens; SEVERAL become the chooser; none leaves the caller's message.
-//  LITE-024: `tail` is the ref's `:line(:col)?` as written — the chooser ROWS
-//  carry it, so picking one still lands on the line the reference named.
-function openPartial(partial, tail) {
+//  LITE-034: THE DOOR'S RESOLUTION, split out of its opening.  A target that is
+//  not a `<verb> <arg>` line is a REFERENCE, and this is the one place one is
+//  resolved: the LITE-025 permalink follow when it carries a hashlet, else the
+//  path the fs answers, else the LITE-015/LITE-011 FSEG partial, else the
+//  LITE-024 worktree scan.  `openTarget` opens what comes back; `lite serve`
+//  turns the very same seat into an href — one mechanism, no serve-side variant.
+//
+//  -> null (nothing answers) | { rels, arg, tail } (SEVERAL: the chooser)
+//     | { full, line, col, lo, hi, note } (the landing).
+function seatOf(target) {
+  const ref = splitRef(target);
+  //  LITE-025: a permalink names a commit, so the fs cannot answer it alone.
+  if (ref.hash) {
+    let seat;
+    try { seat = require("index/perma.js").follow(ref.path, ref.off, ref.hash); }
+    catch (e) { return null; }
+    if (seat === null) return null;
+    if (seat.rels) return { rels: seat.rels, arg: ref.path + ref.tail, tail: ref.tail };
+    return { full: seat.full, line: seat.line, col: seat.col,
+             lo: seat.lo, hi: seat.hi, note: seat.note };
+  }
+  if (statOf(ref.path) !== null)
+    return { full: ref.path, line: ref.line, col: ref.col };
   //  LITE-024: no repo to descend (a jab tree, a plain dir) — a bounded
   //  worktree walk resolves the ref instead; git-repo semantics unchanged.
-  let paths = resolvePartial(partial);
-  if (paths === null) paths = scanPartial(io.cwd(), partial);
+  let paths = resolvePartial(ref.path);
+  if (paths === null) paths = scanPartial(io.cwd(), ref.path);
   if (paths.length === 0) return null;
-  if (paths.length === 1) return openPath(paths[0].full);
-  return [bro.buildChooserHunk(partial + (tail || ""), paths, tail)];
+  if (paths.length === 1) return { full: paths[0].full, line: ref.line, col: ref.col };
+  return { rels: paths, arg: ref.path + (ref.tail || ""), tail: ref.tail };
 }
 
 //  LITE-024: the no-git fallback — BFS the worktree from `root`, match the
@@ -434,39 +467,26 @@ function splitRef(target) {
            col: last };
 }
 
-//  LITE-025: the permalink leg of the door — the resolver names the file AND the
-//  row:col the anchored token sits on today, so the pager still does no path
-//  math.  Nothing resolves => null, and the caller's quiet bar message stands.
-function openPerma(ref) {
-  let seat;
-  try { seat = require("index/perma.js").follow(ref.path, ref.off, ref.hash); }
-  catch (e) { return null; }
-  if (seat === null) return null;
-  //  Several files answer the anchor: the chooser, carrying it, as LITE-024 does.
-  if (seat.rels) return [bro.buildChooserHunk(ref.path + ref.tail, seat.rels, ref.tail)];
-  const hs = openPath(seat.full);
-  if (hs === null) return null;
-  hs.land = { line: seat.line, col: seat.col };
-  //  LITE-029: the token the resolver walked to rides along as its own bytes —
-  //  the pager selects THAT, instead of re-deriving one from the column.
-  if (seat.hi > seat.lo) { hs.land.lo = seat.lo; hs.land.hi = seat.hi; }
-  if (seat.note) hs.land.note = seat.note;
-  return hs;
-}
-
+//  OPEN one target: a `<verb> <arg>` line goes to its verb, anything else is a
+//  REFERENCE that seatOf resolves and this opens.  A miss stays the caller's
+//  quiet bar message; SEVERAL hits become the LITE-015 chooser, carrying the
+//  LITE-024 tail so a picked row still lands on the line the reference named.
 function openTarget(target) {
   const sp = target.indexOf(" ");
   const fn = sp > 0 ? VERBS[target.slice(0, sp)] : null;
   if (!fn) {
-    //  LITE-024: shed the tail HERE — the ONE split point the click and the `:`
-    //  bar share — then hand the landing back riding the hunks.
-    const ref = splitRef(target);
-    //  LITE-025: a permalink names a commit, so the fs cannot answer it alone —
-    //  the resolver walks; a miss stays the caller's quiet bar message.
-    if (ref.hash) return openPerma(ref);
-    const at = openPath(ref.path);
-    const hs = at !== null ? at : openPartial(ref.path, ref.tail);
-    if (hs !== null && ref.line) hs.land = { line: ref.line, col: ref.col };
+    const seat = seatOf(target);
+    if (seat === null) return null;
+    if (seat.rels) return [bro.buildChooserHunk(seat.arg, seat.rels, seat.tail)];
+    const hs = openPath(seat.full);
+    if (hs === null) return null;
+    if (seat.line) {
+      hs.land = { line: seat.line, col: seat.col };
+      //  LITE-029: the token the resolver walked to rides along as its own bytes
+      //  — the pager selects THAT, instead of re-deriving one from the column.
+      if (seat.hi > seat.lo) { hs.land.lo = seat.lo; hs.land.hi = seat.hi; }
+      if (seat.note) hs.land.note = seat.note;
+    }
     return hs;
   }
   let hunks;
@@ -501,6 +521,7 @@ function main(argv) {
   if (argl.length && argl[0] === "install") return runInstall(argl.slice(1));
   if (argl.length && argl[0] === "hook") return runHook(argl.slice(1));
   if (argl.length && argl[0] === "chat") return runChat(argl.slice(1));
+  if (argl.length && argl[0] === "serve") return runServe(argl.slice(1));
   if (argl.length && argl[0] === "now") return runNow(argl.slice(1));
   if (argl.length && argl[0] === "list") return runView("index/list.js", "list", argl.slice(1));
   if (argl.length && argl[0] === "cat") return runView("index/cat.js", "cat", argl.slice(1));
@@ -523,6 +544,9 @@ function main(argv) {
 if (typeof module !== "undefined")
   module.exports = { main: main, openPath: openPath, openTarget: openTarget,
                      inRepo: inRepo, splitRef: splitRef,
+                     //  LITE-034: the door's resolution and its fs probe, so
+                     //  `lite serve` links through the SAME code the pager clicks.
+                     seatOf: seatOf, statOf: statOf,
                      ron60ISO: ron60ISO, ron60Text: ron60Text };
 if (process.argv[1] && process.argv[1].slice(-"/main.js".length) === "/main.js")
   main(process.argv);

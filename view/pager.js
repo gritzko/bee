@@ -468,17 +468,12 @@ Pager.prototype._land = function (land) {
   let hunk = null;
   for (const r of rows) if (!r.banner) { hunk = r.hunk; break; }
   if (!hunk) return;
-  //  the byte the line starts at, and the byte the column points at.
-  const t = hunk.text;
-  let off = 0, n = 1;
-  while (n < land.line && off < t.length) { if (t[off] === 0x0a) n++; off++; }
-  if (n < land.line) return;                     // past the last line — stay put
-  let eol = off;
-  while (eol < t.length && t[eol] !== 0x0a) eol++;
-  const col = land.col > 0 ? off + land.col - 1 : -1;
-  //  A column past the line's end names no byte of it: the LINE is the landing.
-  const at = col >= off && col < eol ? col : off;
-  const span = at === col ? this._landTok(hunk, land, at) : null;
+  //  LITE-034: the byte the line starts at and the byte the column points at —
+  //  view/bro.js's landAt, shared with the HTML painter's anchor.
+  const la = bro.landAt(hunk.text, land.line, land.col);
+  if (la === null) return;                       // past the last line — stay put
+  const off = la.off, at = la.at;
+  const span = la.oncol ? this._landTok(hunk, land, at) : null;
   let ri = this._rowOfByte(rows, hunk, at);
   if (ri < 0) ri = this._rowOfByte(rows, hunk, off);   // a col the no-wrap tail hides
   if (ri >= 0) {
@@ -494,20 +489,14 @@ Pager.prototype._land = function (land) {
 //  door carried them, else the token covering `at` in this hunk's tok stream.
 //  null = the byte sits in a GAP (whitespace, hidden bytes): the line alone.
 Pager.prototype._landTok = function (hunk, land, at) {
-  const text = hunk.text, toks = hunk.toks;
+  const text = hunk.text;
   const c = text[at];
   if (c === 0x20 || c === 0x09 || c === 0x0d || c === 0x0a) return null;
   if (land.hi > land.lo && land.lo >= 0 && land.hi <= text.length)
     return { hunk: hunk, lo: land.lo, hi: land.hi, at: at };
-  if (!toks || !toks.length) return null;
-  let lo = 0, hi = toks.length;
-  while (lo < hi) { const m = (lo + hi) >> 1;
-    if ((toks[m] & 0xffffff) <= at) lo = m + 1; else hi = m; }
-  if (lo >= toks.length) return null;
-  const tag = String.fromCharCode(65 + ((toks[lo] >>> 27) & 0x1f));
-  if (tag === "U" || tag === "O" || tag === "W") return null;
-  const s = lo > 0 ? (toks[lo - 1] & 0xffffff) : 0, e = toks[lo] & 0xffffff;
-  return e > s ? { hunk: hunk, lo: s, hi: e, at: at } : null;
+  const sp = bro.tokSpanAt(hunk, at);              // LITE-034: the shared bisect
+  if (sp === null || sp.tag === "U" || sp.tag === "O" || sp.tag === "W") return null;
+  return { hunk: hunk, lo: sp.lo, hi: sp.hi, at: at };
 };
 
 //  LITE-029: the display row a byte falls on — a wrapped line's column sits rows

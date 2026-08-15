@@ -269,6 +269,40 @@ function indexRows(hunk, cols, wrap) {
   return rows;
 }
 
+//  ---- the LANDING (LITE-034: shared, was welded into view/pager.js) -------
+//  A door that resolved a reference names a 1-based `line:col`; both the pager
+//  (which scrolls to it) and the HTML painter (which anchors on it) need the
+//  same two answers, so the math lives here once.
+
+//  A landing -> { off, at, oncol }: `off` the line's first byte, `at` the byte
+//  the landing names, `oncol` whether the COLUMN named a real byte of the line
+//  (a column past the line's end names none: the LINE START is the landing).
+//  null = the text has no such line.
+function landAt(text, line, col) {
+  if (!(line >= 1)) return null;
+  let off = 0, n = 1;
+  while (n < line && off < text.length) { if (text[off] === 0x0a) n++; off++; }
+  if (n < line) return null;
+  let eol = off;
+  while (eol < text.length && text[eol] !== 0x0a) eol++;
+  const c = col > 0 ? off + col - 1 : -1;
+  const on = c >= off && c < eol;
+  return { off: off, at: on ? c : off, oncol: on };
+}
+
+//  The token covering byte `at` -> { lo, hi, tag }, or null (no toks, or past
+//  the last one).  Token i starts where token i-1 ended, so one bisect names it.
+function tokSpanAt(hunk, at) {
+  const toks = hunk.toks;
+  if (!toks || !toks.length || at < 0) return null;
+  let lo = 0, hi = toks.length;
+  while (lo < hi) { const m = (lo + hi) >> 1;
+    if ((toks[m] & 0xffffff) <= at) lo = m + 1; else hi = m; }
+  if (lo >= toks.length) return null;
+  const s = lo > 0 ? (toks[lo - 1] & 0xffffff) : 0, e = toks[lo] & 0xffffff;
+  return e > s ? { lo: s, hi: e, tag: TOK_TAG(toks[lo]) } : null;
+}
+
 //  ---- status bar (BROStatusURI / BROStatusBar) ----------------------------
 //  The live re-typeable URI of the current view position: `<path>#L<line>`.
 //  LITE-001: plain concat — a lite hunk URI IS a filesystem path (no scheme,
@@ -331,6 +365,10 @@ module.exports = {
   pathExt: pathExt,
   indexRows: indexRows,
   rowEnd: rowEnd,
+  //  LITE-034: the landing math the pager scrolls by and the HTML painter
+  //  anchors by — one copy, so the two never drift.
+  landAt: landAt,
+  tokSpanAt: tokSpanAt,
   statusURI: statusURI,
   statusPos: statusPos,
   plainHunk: plainHunk,

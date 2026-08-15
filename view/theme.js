@@ -19,25 +19,36 @@ const ESC = "\x1b[";
 //  Each map: tag letter → SGR parameter string (what ANSIu8sFeedDelta spells
 //  going DEFAULT → slot).  Lite renders the SYNTAX view only, so the table is
 //  the tok-syntax tags; an absent tag ('S' default, 'A' sentinel) paints nothing.
+//  LITE-034: W/E/X/Q complete the table — the whitespace/body slot and the
+//  STATUS-verb slots `list` marks its rows with (dog/THEME.c THEME16TBL).
 const SLOTS_16 = {
   D: "90", G: "32", L: "96", H: "35", R: "94", P: "90",
   N: "1",  C: "1",  F: "38;5;56", T: "38;5;56",
+  W: "32", E: "33", X: "38;5;94", Q: "90",
 };
 
 const SLOTS_DARK = {
   D: "38;5;240", G: "38;5;37", L: "38;5;33", H: "38;5;166", R: "38;5;64",
   P: "38;5;240", N: "38;5;33;1", C: "38;5;33;1", F: "38;5;61", T: "38;5;61",
+  W: "32", E: "33", X: "38;5;94", Q: "38;5;240",
 };
 
 const SLOTS_LIGHT = {
   D: "38;5;245", G: "38;5;37", L: "38;5;33", H: "38;5;166", R: "38;5;64",
   P: "38;5;245", N: "38;5;33;1", C: "38;5;33;1", F: "38;5;61", T: "38;5;61",
+  W: "32", E: "33", X: "38;5;94", Q: "38;5;245",
 };
 
 //  --- banner band (dog/THEME.h THEME_BANNER) ------------------------------
 //  Status/header band: black fg (256:0) on pale-yellow bg (256:230); native
 //  space-fills to the terminal width.
 const BANNER_SGR = "38;5;0;48;5;230";
+
+//  --- diff wash (view/bro.js WASH_IN / WASH_RM, LITE-010) -----------------
+//  The changed-token BACKGROUNDS, as SGR parameters: salad green on the
+//  to-side, salmon on the from-side.  LITE-034's HTML painter spells its
+//  stylesheet out of THIS module alone, so the wash is named here too.
+const WASH_IN_SGR = "48;5;157", WASH_RM_SGR = "48;5;217";
 
 //  --- a theme object ------------------------------------------------------
 //  paint(slotLetter)  → ESC[<sgr>m for that slot, or "" (default/no paint).
@@ -65,6 +76,11 @@ function makeTheme(name, slots) {
   return {
     name: name,
     slots: slots,
+    //  LITE-034: the band and the wash as RAW SGR PARAMETERS — what a non-ANSI
+    //  sink (the HTML painter) needs, next to the ESC-wrapped spellings below.
+    banner: BANNER_SGR,
+    washIn: WASH_IN_SGR,
+    washRm: WASH_RM_SGR,
     paint: paint,
     reset: reset,
     bannerOpen: bannerOpen,
