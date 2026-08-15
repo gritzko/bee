@@ -18,6 +18,7 @@ const idx = require("index/index.js");
 const rd = require("index/read.js");
 const bro = require("view/bro.js");
 const html = require("view/html.js");
+const mark = require("mark/html.js");
 
 const PORT = 8034;                  // the fixed default; --port overrides
 const HOST = "127.0.0.1";           // localhost only — no flag opens this up
@@ -41,7 +42,8 @@ const ROUTE = {
   log:      "log",                  //  /log/<path|hex>
   commit:   "commit",               //  /commit/<hex>
   diff:     "diff",                 //  /diff/<hex|path>
-  cat:      "cat",                  //  /cat/<path>[?<rev>]
+  cat:      "cat",                  //  /cat/<path>[?<rev>]  a .md RENDERS here
+  raw:      "cat",                  //  /raw/<path>[?<rev>]  the painted source
   tree:     "tree",                 //  /tree/<path|hex>[?<rev>]
   blob:     "blob",                 //  /blob/<hexlet>
 };
@@ -164,6 +166,48 @@ function openOnce(pg, full) {
   return h;
 }
 
+//  --- LITE-035: the rendered Markdown page -----------------------------------
+//  `.md` only: `.mkd` is StrictMark and keeps serving as painted source.
+function isMd(path) {
+  const p = String(path);
+  return p.slice(p.lastIndexOf(".")).toLowerCase() === ".md";
+}
+
+//  The arg's PATH half, rev dropped — the same split `cat` itself makes.
+function argPath(arg) {
+  try { return rd.argSplit(arg).path; } catch (e) { return String(arg); }
+}
+
+//  A link destination -> its href, RESOLVED WHILE THE PAGE IS RENDERED, exactly
+//  as a painted reference is (LITE-034).  An absolute url and a bare `#anchor`
+//  ride as typed; a relative one goes through the door, so a `.md` target lands
+//  on its rendered page, another path on its painted view, and a target that
+//  resolves to nothing comes back "" — the emitter then paints plain text.
+function mdHref(pg, dir, dest) {
+  let u = null;
+  try { u = uri._parse(String(dest)); } catch (e) { u = null; }
+  if (u && (u.scheme || u.authority)) return String(dest);
+  if (u && !u.path) return u.fragment ? "#" + u.fragment : "";
+  const p = u ? unesc(u.path) : String(dest);
+  const rel = p.charAt(0) === "/" ? p.slice(1) : dir + p;
+  const url = refUrl(pg, rel);
+  if (url === "" || !u || !u.fragment || url.indexOf("#") >= 0) return url;
+  return url + "#" + u.fragment;
+}
+
+//  The page: the toggle bar, then the emitted body.  Links resolve against the
+//  document's OWN directory, the way a reader reads them.
+function mdPage(pg, rel, arg, hunks) {
+  const src = hunks.length ? utf8.Decode(hunks[0].text) : "";
+  const cut = rel.lastIndexOf("/");
+  const dir = cut < 0 ? "" : rel.slice(0, cut + 1);
+  const body = mark.toHtml(src, {
+    href: function (d) { return mdHref(pg, dir, d); }
+  });
+  return html.viewBar("cat " + rel, "source", argUrl(pg.root, "raw", arg)) +
+         html.markBody(body);
+}
+
 //  --- the response -----------------------------------------------------------
 function respond(sock, status, reason, type, body, headOnly) {
   sock.write(feedHead({ version: "HTTP/1.1", status: status, reason: reason,
@@ -214,8 +258,17 @@ function handle(req, sock, st) {
   const pg = { root: st.root, door: st.door, refs: new Map(), hunks: new Map(),
                left: REF_CAP };
   const link = function (t) { return urlOf(pg, t); };
-  const title = r.verb + (r.arg ? " " + r.arg : "");
-  sendPage(sock, 200, "OK", title, html.page(title, html.hunksHtml(hunks, link)), only);
+  const title = (r.head === "raw" ? "raw" : r.verb) + (r.arg ? " " + r.arg : "");
+  //  LITE-035: a `.md` READS as a page by default; `/raw/` is the same bytes
+  //  painted, and each view links to the other.
+  const path = r.verb === "cat" ? argPath(r.arg) : "";
+  let body;
+  if (r.head === "cat" && isMd(path)) body = mdPage(pg, path, r.arg, hunks);
+  else if (r.head === "raw")
+    body = html.viewBar("", isMd(path) ? "rendered" : "", argUrl(pg.root, "cat", r.arg)) +
+           html.hunksHtml(hunks, link);
+  else body = html.hunksHtml(hunks, link);
+  sendPage(sock, 200, "OK", title, html.page(title, body), only);
   return "200";
 }
 
@@ -290,4 +343,5 @@ function serve(args, door) {
 
 module.exports = { serve: serve, routeOf: routeOf, urlOf: urlOf, argUrl: argUrl,
                    escPath: escPath, repoRel: repoRel, anchorByte: anchorByte,
+                   isMd: isMd, argPath: argPath, mdHref: mdHref,
                    ROUTE: ROUTE, PORT: PORT, HOST: HOST, REF_CAP: REF_CAP };

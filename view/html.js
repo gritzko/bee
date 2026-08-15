@@ -71,7 +71,15 @@ const FRAME = [
   "pre.body{margin:0;padding:4px 8px;overflow-x:auto;white-space:pre}",
   "pre.note{margin:0;padding:4px 8px;font-style:italic}",
   "a{color:inherit;text-decoration:none;border-bottom:1px dotted currentColor}",
-  "a:hover{border-bottom-style:solid}"
+  "a:hover{border-bottom-style:solid}",
+  //  LITE-035: the rendered Markdown body — geometry and currentColor only, so
+  //  the theme still owns every colour on the page.
+  ".mark{padding:4px 12px;max-width:64em}",
+  ".mark pre{overflow-x:auto;padding:4px 8px;border:1px solid currentColor}",
+  ".mark table{border-collapse:collapse}",
+  ".mark th,.mark td{border:1px solid currentColor;padding:1px 6px}",
+  ".mark blockquote{margin:0 0 1em;padding-left:8px;border-left:3px solid currentColor}",
+  ".mark img{max-width:100%}"
 ].join("\n");
 
 //  stylesheet(thm) -> the CSS text.  `thm` defaults to theme.select(), so
@@ -153,6 +161,21 @@ function hunksHtml(hunks, link) {
   return out.join("");
 }
 
+//  LITE-035: the banner band on its own — a title and the link to the OTHER
+//  view of the same bytes (rendered <-> source).  Empty when there is neither.
+function viewBar(title, label, href) {
+  const tog = label && href ? '<a href="' + esc(href) + '">' + esc(label) + "</a>" : "";
+  if (!title && !tog) return "";
+  return '<div class="hunk"><div class="banner">' + esc(title) +
+         (title && tog ? " " : "") + tog + "</div></div>";
+}
+
+//  LITE-035: a rendered Markdown fragment in the SAME chrome the painted hunks
+//  wear — mark/html.js emits the body, this is all the page it gets.
+function markBody(fragment) {
+  return '<div class="hunk"><div class="mark">' + fragment + "</div></div>";
+}
+
 //  The page: a title, the one stylesheet, the hunks.  No chrome.
 function page(title, body) {
   return '<!DOCTYPE html>\n<html><head><meta charset="utf-8">' +
@@ -174,6 +197,8 @@ module.exports = {
   hunksHtml: hunksHtml,
   page: page,
   errorPage: errorPage,
+  viewBar: viewBar,
+  markBody: markBody,
   esc: esc,
   sgrCss: sgrCss,
   color256: color256,

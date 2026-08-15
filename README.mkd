@@ -31,6 +31,8 @@ Usage (`--plain` or a pipe dumps bare bytes; a terminal pages coloured hunks):
  -  `lite tree [<hex>|<path>][?<rev>]` — raw git-tree rows, `..` row when descended
  -  `lite blob <hexlet>` — a blob by object name
  -  `lite serve [--port <n>]` — the same views over HTTP on localhost:8034, read-only
+     1. a `.md` URL renders as a page, links resolved; `.mkd` stays painted
+     2. `/raw/<path>` is the painted source, and each view links to the other
  -  `lite install [<repo>]` — register lite as the repo's git merge driver and pre-commit hook
  -  `lite hook [<repo>]` — the pre-commit pass: fresh `file:line(:col)` refs in the staged text become `file:OFF:HASHLET` permalinks, re-staged
  -  `lite merge <base> <ours> <theirs> [-o <out>] [-p <path>]` — CRDT 3-way file merge
