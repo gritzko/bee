@@ -197,6 +197,17 @@ function list(arg, opts) {
       entries.push({ name: name, dir: ent.dir, sha: ent.sha,
                      marker: ent.dir ? "dir"
                            : markerOf(ctx.root + "/" + pfx + name, ent.sha) });
+    //  BEE-006: a GITLINK is no entry of `readTree`'s, so a submodule's row is
+    //  added here — a dir row, attributed off the dir revs the gitlink bumps mint.
+    const subs = idx.subTree(ctx.r, e.sha);
+    if (subs.size) {
+      for (const [name, sha] of subs)
+        entries.push({ name: name, dir: true, sub: true, sha: sha, marker: "dir" });
+      //  Git tree order is the row order, and a gitlink sorts as a PLAIN name
+      //  (only a subtree's name sorts as if it ended in '/').
+      const key = (x) => (x.dir && !x.sub ? x.name + "/" : x.name);
+      entries.sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
+    }
 
     //  The fuse rides the lane, so it brings the index up to date itself —
     //  `lite log`'s lazy contract.  LITE-018: it owns the FULL bring-up, so a

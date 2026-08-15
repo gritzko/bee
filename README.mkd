@@ -23,6 +23,7 @@ picks the sink, `--plain` (also what a pipe defaults to), `--color`, `--html`:
  -  `bee index [<repo>]` — build/refresh `<repo>/.git/be/`; lazy, fully derived;
     BOTH passes, the commit walk and the tip-blob link scan, each off its own
     mark, both on the one summary line
+     1. every INITIALISED submodule is indexed too, depth-first; an uninitialised one is skipped in words
  -  `bee lindex [<target>]` — backlink suspects; lazy, tip blobs only
      1. bare: bring the LINK rows up to the tip, this repo only
      2. `<target>`: the paths that may link to a file or a ticket code, looked
@@ -48,6 +49,7 @@ picks the sink, `--plain` (also what a pipe defaults to), `--color`, `--html`:
      3. `/bytes/<path>[?<rev>]` ships the file's raw bytes; a rendered image points there
  -  `bee install [<repo>]` — wire bee as the repo's git merge driver and pre-commit hook, list it in `~/.config/bee/repos`, index it
      1. a LINKED WORKTREE is refused: a repo is known by its path
+     2. a SUBMODULE is an ordinary repo: each initialised one is registered, indexed and lindexed too
  -  `bee hook [<repo>]` — the pre-commit pass: fresh `file:line(:col)` refs in the staged text become `file:OFF:HASHLET` permalinks, re-staged
  -  `bee merge <base> <ours> <theirs> [-o <out>] [-p <path>]` — CRDT 3-way file merge
      1. clean: merged bytes over `<ours>` (or `<out>`), exit 0

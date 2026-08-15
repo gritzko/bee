@@ -559,7 +559,117 @@ then ok "the retired tracks file is never read again"
 else bad "the retired tracks file is never read again (rc $RC)" "$WORK/b6" "$WORK/b6e" "$REG5"; fi
 
 # ==========================================================================
-# leg 5 — BEE-007: ONE bring-up verb, TWO marks
+# leg 5 — BEE-006: a SUBMODULE is an ordinary repo (install/index recurse)
+# ==========================================================================
+#   SUB   s.txt=s1 (s0), s.txt=s2 (s1)
+#   PAR   p.txt (p0), + html -> SUB at s0 (p1), gitlink bumped to s1 (p2)
+SUB="$WORK/sub"; PAR="$WORK/par"; FH6="$WORK/home6"; mkdir -p "$SUB" "$PAR" "$FH6"
+SUBOK=yes
+(
+  set -e
+  export GIT_AUTHOR_NAME=T GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=T GIT_COMMITTER_EMAIL=t@t
+  cd "$SUB"; git init -q -b master .
+  printf 's1\n' > s.txt; git add -A
+  GIT_AUTHOR_DATE="2022-03-01T00:00:00Z" GIT_COMMITTER_DATE="2022-03-01T00:00:00Z" \
+      git commit -q -m s0
+  cd "$PAR"; git init -q -b master .
+  printf 'p\n' > p.txt; git add -A
+  GIT_AUTHOR_DATE="2022-03-02T00:00:00Z" GIT_COMMITTER_DATE="2022-03-02T00:00:00Z" \
+      git commit -q -m p0
+  git -c protocol.file.allow=always submodule add -q "$SUB" html
+  git add -A
+  GIT_AUTHOR_DATE="2022-03-03T00:00:00Z" GIT_COMMITTER_DATE="2022-03-03T00:00:00Z" \
+      git commit -q -m "add html sub"
+  cd "$SUB"; printf 's2\n' > s.txt
+  GIT_AUTHOR_DATE="2022-03-04T00:00:00Z" GIT_COMMITTER_DATE="2022-03-04T00:00:00Z" \
+      git commit -qam s1
+  cd "$PAR/html"; git fetch -q origin master; git checkout -q FETCH_HEAD
+  cd "$PAR"
+  GIT_AUTHOR_DATE="2022-03-05T00:00:00Z" GIT_COMMITTER_DATE="2022-03-05T00:00:00Z" \
+      git commit -qam "bump html"
+) >/dev/null 2>&1 || SUBOK=no
+if [ "$SUBOK" != yes ]; then
+    echo "index: SKIP the BEE-006 leg — git built no submodule fixture" >&2
+else
+rtp() { ( cd "$PAR" && HOME="$FH6" "$RT" "$@" ); }
+REG6="$FH6/.config/bee/repos"
+
+# S1: install takes the sub — registered, its own lane, counted in the line.
+rtp install > "$WORK/s1" 2>"$WORK/s1e"; RC=$?
+if [ "$RC" = 0 ] && grep -q 'took 1 submodule' "$WORK/s1" &&
+   grep -q "^$PAR\$" "$REG6" && grep -q "^$PAR/html\$" "$REG6" &&
+   ls "$PAR/.git/modules/html/be" 2>/dev/null | grep -q '\.lite2\.idx$'
+then ok "install registers the submodule and leaves it a lane of its own"
+else bad "install takes the submodule (rc $RC)" "$WORK/s1" "$WORK/s1e" "$REG6"; fi
+
+# S2: THE REPRO — `list` in the parent attributes the `html/` row off the dir
+# revs the gitlink bumps mint (a blank summary is the bug).
+rtp list --plain > "$WORK/s2" 2>"$WORK/s2e"; RC=$?
+if [ "$RC" = 0 ] && grep -q '^dir html/  *bump html  *[0-9]*[smhdy]$' "$WORK/s2"
+then ok "list attributes the submodule row (last commit + age)"
+else bad "list attributes the submodule row (rc $RC)" "$WORK/s2" "$WORK/s2e"; fi
+
+# S3: a second install adds no second line for either repo.
+rtp install > "$WORK/s3" 2>"$WORK/s3e"; RC=$?
+if [ "$RC" = 0 ] && grep -q '^already installed' "$WORK/s3" &&
+   [ "$(wc -l < "$REG6")" = "2" ]
+then ok "a second install adds no duplicate line for parent or sub"
+else bad "a second install duplicates nothing (rc $RC)" "$WORK/s3" "$WORK/s3e" "$REG6"; fi
+
+# S4: BEE-001's linked-worktree refusal must NOT trip on a sub: its `.git` is a
+# GITFILE into <parent gitdir>/modules/<name> and carries no `commondir`.
+FH7="$WORK/home7"; mkdir -p "$FH7"
+( cd "$PAR/html" && HOME="$FH7" "$RT" install ) > "$WORK/s4" 2>"$WORK/s4e"; RC=$?
+if [ "$RC" = 0 ] && grep -q '^installed' "$WORK/s4" &&
+   [ ! -e "$PAR/.git/modules/html/commondir" ] &&
+   [ "$(cat "$FH7/.config/bee/repos")" = "$PAR/html" ]
+then ok "a submodule installs on its own — no commondir, so no worktree refusal"
+else bad "a submodule is no linked worktree (rc $RC)" "$WORK/s4" "$WORK/s4e"; fi
+
+# S5: an UNINITIALISED sub (a plain clone) is skipped IN WORDS, and the parent's
+# own run succeeds all the same.
+CL6="$WORK/parclone"; FH8="$WORK/home8"; mkdir -p "$FH8"
+git clone -q --no-local "$PAR" "$CL6" 2>/dev/null
+( cd "$CL6" && HOME="$FH8" "$RT" install ) > "$WORK/s5" 2>"$WORK/s5e"; RC=$?
+if [ "$RC" = 0 ] && grep -q 'skipped html (not initialised)' "$WORK/s5" &&
+   [ "$(cat "$FH8/.config/bee/repos")" = "$CL6" ]
+then ok "an uninitialised submodule is skipped in words, not a failure"
+else bad "an uninitialised submodule is skipped (rc $RC)" "$WORK/s5" "$WORK/s5e"; fi
+
+# S6: the rows leg — the recursion with the registry OFF, and what the parent's
+# lane holds about the gitlink (REV-CMMT only).
+FH9="$WORK/home9"
+LITE_FIX="$PAR" LITE_SUB=html LITE_HOME="$FH9" \
+    rt --eval "require('$CASE/subs.js')" > "$WORK/s6" 2>"$WORK/s6e"; RC=$?
+if [ "$RC" = 0 ] && grep -q '^DONE' "$WORK/s6" && ! grep -q '^FAIL' "$WORK/s6"; then
+    N=$(grep -c '^ok' "$WORK/s6"); CHECKS=$((CHECKS + N))
+    ok "submodule rows leg: $N checks (the walk / track:false / REV-CMMT only)"
+else
+    cat "$WORK/s6"; head -5 "$WORK/s6e"
+    bad "submodule rows leg (rc $RC)" "$WORK/s6"
+fi
+
+# S7: the GUARDS — a sub whose worktree is a symlink OUT of the parent is never
+# followed, and a second gitlink resolving to a repo already taken is a cycle.
+# Both gitlinks are COMMITTED first; only then are the worktrees swapped for
+# symlinks, or the commit would record a symlink blob instead of the gitlink.
+( cd "$PAR" &&
+  git -c protocol.file.allow=always submodule add -q "$SUB" two &&
+  git -c protocol.file.allow=always submodule add -q "$SUB" out &&
+  GIT_AUTHOR_NAME=T GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=T GIT_COMMITTER_EMAIL=t@t \
+  GIT_AUTHOR_DATE="2022-03-06T00:00:00Z" GIT_COMMITTER_DATE="2022-03-06T00:00:00Z" \
+  git commit -qam "add two and out" ) >/dev/null 2>&1
+rm -rf "$PAR/two" "$PAR/out"
+ln -s "$PAR/html" "$PAR/two"; ln -s "$SUB" "$PAR/out"
+rtp index > "$WORK/s7" 2>"$WORK/s7e"; RC=$?
+if [ "$RC" = 0 ] && grep -q 'skipped two (a cycle' "$WORK/s7" &&
+   grep -q 'skipped out (no worktree of the parent' "$WORK/s7" &&
+   ! grep -q "^$SUB\$" "$REG6"
+then ok "a cycle and an out-of-worktree sub are skipped, in words"
+else bad "the recursion guards (rc $RC)" "$WORK/s7" "$WORK/s7e" "$REG6"; fi
+fi
+# ==========================================================================
+# leg 6 — BEE-007: ONE bring-up verb, TWO marks
 # ==========================================================================
 # THE GAP THIS REPROS: `bee index` used to run the commit walk alone, so the
 # LINK rows only ever appeared if you also ran `bee lindex`.  The risk of the

@@ -37,6 +37,14 @@
 //  fuse therefore take its LAST rev alone, by galloping exact-key probes over
 //  the dense chain (`lastRev`): O(log) seeks, never O(history) rows.
 //
+//  BEE-006: a SUBMODULE is an ordinary repo — `index` and `install` RECURSE
+//  into every initialised one (depth-first, `$HOME/.config/bee/repos` and a lane
+//  of its own), an uninitialised or out-of-worktree one is skipped in words, and
+//  a cycle stops at the first repo already taken.  The parent keeps only the
+//  gitlink's own history: a commit that BUMPS the pointer mints ONE dir-shaped
+//  REV-CMMT row on the sub's path, never a REV-BLOB — a foreign commit is no
+//  blob of ours, which is why `readTree` drops gitlinks in the first place.
+//
 //  `vnib` is RESERVED (0) everywhere the ruled table does not name a field;
 //  CPAR's low nibble is the parent ordinal (first parent = 0), and a ROOT
 //  commit's CPAR row carries an EMPTY parent slot (all-ones, the same "empty
@@ -225,7 +233,8 @@ function track(repo, home) {
 //  dog/git cursor `git.tree`; commits through `git.parseCommit`.  No git
 //  framing is ever read in JS.
 function reader(h) {
-  return { h: h, trees: new Map(), commits: new Map(), ts: new Map() };
+  return { h: h, trees: new Map(), commits: new Map(), ts: new Map(),
+           subs: new Map() };
 }
 
 //  LITE-007: the name is any 6..40-char HEXLET, so a 15-hex hashlet60 (what the
@@ -240,6 +249,7 @@ function object(r, name) {
 
 //  A tree -> Map(name -> { sha, mode, dir, link }).  Gitlinks (0o160000) are
 //  DROPPED: a submodule's commit lives in another ODB, and it is no blob.
+//  BEE-006: `subTree` below is where they DO answer, on their own terms.
 function readTree(r, sha) {
   if (!sha) return null;
   const hit = r.trees.get(sha);
@@ -257,6 +267,74 @@ function readTree(r, sha) {
   if (r.trees.size >= TREE_CACHE_MAX) r.trees.clear();
   r.trees.set(sha, m);
   return m;
+}
+
+//  --- BEE-006: the gitlinks ---------------------------------------------------
+//  ONE tree's GITLINKS, name -> commit sha, memoized per tree like `readTree` —
+//  exactly what `readTree` drops, answered here on their own terms.
+const MODE_SUB = 0o160000;
+
+function subTree(r, sha) {
+  if (!sha) return new Map();
+  const hit = r.subs.get(sha);
+  if (hit !== undefined) return hit;
+  const o = object(r, sha);
+  const m = new Map();
+  if (o !== null && o.type === "tree") {
+    const c = git.tree(o.bytes);
+    while (c.next()) if (c.mode === MODE_SUB) m.set(c.str, c.sha);
+  }
+  if (r.subs.size >= TREE_CACHE_MAX) r.subs.clear();
+  r.subs.set(sha, m);
+  return m;
+}
+
+//  Every gitlink path under `tree`, at any depth -> [{ path, sha }].  The GATE
+//  is `.gitmodules` at the root: a repo without one pays one Map hit, no walk.
+function subPaths(r, tree, prefix, out) {
+  const M = readTree(r, tree);
+  if (M === null) return out;
+  for (const [name, sha] of subTree(r, tree))
+    out.push({ path: prefix + name, sha: sha });
+  for (const [name, e] of M)
+    if (e.dir) subPaths(r, e.sha, prefix + name + "/", out);
+  return out;
+}
+function submodulePaths(r, tree) {
+  const M = readTree(r, tree);
+  if (M === null || !M.has(".gitmodules")) return [];
+  return subPaths(r, tree, "", []);
+}
+
+//  The gitlink sha at `path` in `tree`, or null — the dirs off the cached
+//  `readTree`, the leaf off its parent tree's gitlink map.
+function subAt(r, tree, path) {
+  if (!tree) return null;
+  const segs = path.split("/");
+  let t = tree;
+  for (let i = 0; i + 1 < segs.length; i++) {
+    const M = readTree(r, t);
+    if (M === null) return null;
+    const e = M.get(segs[i]);
+    if (e === undefined || !e.dir) return null;
+    t = e.sha;
+  }
+  const sha = subTree(r, t).get(segs[segs.length - 1]);
+  return sha === undefined ? null : sha;
+}
+
+//  A commit that BUMPED a gitlink gets ONE DIR REV on the sub's path (LITE-044's
+//  shape): dog/git's tree diff drops gitlinks, so the compare is here.
+function subRevs(r, subs, tree, pTrees, out) {
+  for (const s of subs) {
+    const now = subAt(r, tree, s.path);
+    if (now === null) continue;
+    let same = false;
+    for (const t of pTrees) if (subAt(r, t, s.path) === now) { same = true; break; }
+    if (same) continue;
+    out.push({ path: s.path, phl: pathHl(s.path), blob: now, pblobs: [],
+               dir: true });
+  }
 }
 
 //  A commit -> { tree, parents[], ts, ats, author, subject } | null.  `ts` is
@@ -739,6 +817,33 @@ function openRepo(arg, climb) {
 }
 function closeRepo(ctx) { try { git.close(ctx.h); } catch (e) {} }
 
+//  BEE-006: the INITIALISED submodules of an open repo -> { subs, skipped }.  A
+//  sub's `.git` is a GITFILE with no `commondir`, so BEE-001's linked-worktree
+//  refusal never trips on it; an uninitialised or out-of-worktree one is
+//  skipped, in words, and never fails the parent's run.
+function submodules(ctx) {
+  const out = { subs: [], skipped: [] };
+  const m = readCommit(ctx.r, ctx.head.sha);
+  if (m === null || !m.tree) return out;
+  const pfx = ctx.root + "/";
+  for (const s of submodulePaths(ctx.r, m.tree)) {
+    let real = null;
+    try { real = io.realpath(pfx + s.path); } catch (e) { real = null; }
+    if (real === null || real.slice(0, pfx.length) !== pfx) {
+      out.skipped.push(s.path + " (no worktree of the parent's there)");
+      continue;
+    }
+    let kind = null;
+    try { kind = io.stat(real + "/.git").kind; } catch (e) { kind = null; }
+    if (kind !== "dir" && kind !== "reg") {
+      out.skipped.push(s.path + " (not initialised)");
+      continue;
+    }
+    out.subs.push({ path: s.path, root: real });
+  }
+  return out;
+}
+
 //  --- the run ---------------------------------------------------------------
 //  index(repoArg, opts) -> the summary record, `rec.link` holding the LINK
 //  half's.  `opts.home` overrides the registry root, `opts.track === false`
@@ -748,16 +853,48 @@ function closeRepo(ctx) { try { git.close(ctx.h); } catch (e) {} }
 function index(repoArg, opts) {
   opts = opts || {};
   const ctx = openRepo(repoArg, opts.climb);
+  let rec;
   try {
     const ix = openIndex(ctx.gitdir, fresh(ctx.gitdir));
     try {
-      const rec = bringUp(ctx, ix, opts);
+      rec = bringUp(ctx, ix, opts);
       //  BEE-007: the LITE-033 round over the TIP blobs, off its OWN mark — it
       //  is required lazily, so lindex.js's own `require("./index.js")` is fine.
       if (opts.links !== false) rec.link = require("./lindex.js").scan(ctx, ix);
-      return rec;
     } finally { try { ix.close(); } catch (e) {} }
+    //  BEE-006: DEPTH-FIRST into every initialised submodule — same bring-up,
+    //  same opts, so `track: false` writes no registry line for any of them.
+    if (opts.subs !== false) indexSubs(ctx, rec, opts);
   } finally { closeRepo(ctx); }
+  return rec;
+}
+
+//  BEE-006: the recursion itself.  `rec.subs` comes out FLAT (a nested sub
+//  keeps its parent-relative path) and `rec.skipped` says what was passed over;
+//  `_seen` holds the roots taken, so a sub pointing at one is a CYCLE and stops.
+function indexSubs(ctx, rec, opts) {
+  rec.subs = []; rec.skipped = [];
+  const seen = opts._seen || new Set();
+  seen.add(ctx.root);
+  const s = submodules(ctx);
+  for (const w of s.skipped) rec.skipped.push(w);
+  for (const sub of s.subs) {
+    if (seen.has(sub.root)) {
+      rec.skipped.push(sub.path + " (a cycle: that repo is taken already)");
+      continue;
+    }
+    let sr;
+    try {
+      sr = index(sub.root, { home: opts.home, track: opts.track, _seen: seen });
+    } catch (e) {
+      rec.skipped.push(sub.path + " (" + e + ")");
+      continue;
+    }
+    rec.subs.push({ path: sub.path, root: sub.root, rec: sr });
+    for (const g of (sr.subs || []))
+      rec.subs.push({ path: sub.path + "/" + g.path, root: g.root, rec: g.rec });
+    for (const w of (sr.skipped || [])) rec.skipped.push(sub.path + "/" + w);
+  }
 }
 
 //  bringUp(ctx, ix, opts) -> the summary record.  THE lazy step: the O(1) mark
@@ -782,6 +919,10 @@ function bringUp(ctx, ix, opts) {
   const st = state(ix);
   const prog = progress();
   const w = collect(r, hd.sha, st.done, prog);
+  //  BEE-006: the gitlink paths the TIP carries, minted once — a repo with no
+  //  `.gitmodules` there answers with the empty list and pays nothing per commit.
+  const tipC = readCommit(r, hd.sha);
+  const subs = tipC === null ? [] : submodulePaths(r, tipC.tree);
   const wr = idxWriter(ix);
   const nw = w.order.length;
   for (const sha of w.order) {
@@ -794,6 +935,7 @@ function bringUp(ctx, ix, opts) {
     const changed = [];
     const pTrees = m.parents.map((p) => { const pm = readCommit(r, p); return pm ? pm.tree : null; });
     descend(r, m.tree, pTrees, "", changed);
+    if (subs.length) subRevs(r, subs, m.tree, pTrees, changed);
     for (const c of changed) rec.revs += emit(wr, st, c, chl) ? 1 : 0;
     //  The MID-COMMIT golden: the revs are sealed, the CPAR rows never land —
     //  exactly what an auto-seal on a full memtable page can leave behind.  The
@@ -903,9 +1045,21 @@ function summary(rec) {
            : "scanned " + lk.files + " files, " + lk.links + " links, " +
              lk.rows + " rows";
   if (rec.upToDate)
-    return "up to date: " + lane + (lk && !lk.upToDate ? " — " + lp : "");
+    return "up to date: " + lane + (lk && !lk.upToDate ? " — " + lp : "") +
+           subsSaid(rec);
   return "indexed " + rec.commits + " commits, " + rec.revs + " revs, " +
-         rec.rows + " rows" + (lp === null ? "" : " — " + lp) + " — " + lane;
+         rec.rows + " rows" + (lp === null ? "" : " — " + lp) + " — " + lane +
+         subsSaid(rec);
+}
+
+//  BEE-006: what the recursion took and what it passed over, as a tail phrase —
+//  a skip is said in words on the ONE line, never a failure of this run.
+function subsSaid(rec) {
+  let s = "";
+  const n = (rec.subs || []).length;
+  if (n) s += ", took " + n + " submodule" + (n === 1 ? "" : "s");
+  for (const w of (rec.skipped || [])) s += ", skipped " + w;
+  return s;
 }
 
 //  hl60 -> the 15-hex name ODBHex resolves it by (mtimeidx.js `hexOf`).
@@ -915,6 +1069,10 @@ module.exports = {
   index: index, summary: summary, track: track, repos: repos,
   openIndex: openIndex, sweep: sweep,
   discover: discover, openRepo: openRepo, closeRepo: closeRepo,
+  //  BEE-006: the gitlink half — the walk, the sub list and the dir-rev source.
+  subTree: subTree, subPaths: subPaths, submodulePaths: submodulePaths,
+  subAt: subAt, subRevs: subRevs, submodules: submodules, subsSaid: subsSaid,
+  MODE_SUB: MODE_SUB,
   bringUp: bringUp, reader: reader, readCommit: readCommit, readTree: readTree,
   //  LITE-033: `lindex` reuses the pruning tree diff (the changed paths of
   //  mark..tip, each with its NEW blob) and the batching writer, rather than
