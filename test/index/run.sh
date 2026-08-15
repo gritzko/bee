@@ -99,7 +99,7 @@ then ok "first run indexes 5 commits / 7 revs (5 file, 2 dir)"
 else bad "first run indexes 5 commits / 7 revs (rc $RC)" "$WORK/o1" "$WORK/e1"; fi
 
 # V2: the run family landed in the repo's OWN .git/be/.
-if [ -d "$REPO/.git/be" ] && ls "$REPO/.git/be" | grep -q '\.lite\.idx$'
+if [ -d "$REPO/.git/be" ] && ls "$REPO/.git/be" | grep -q '\.lite2\.idx$'
 then ok "the run family lives in <repo>/.git/be/"
 else bad "the run family lives in <repo>/.git/be/" "$WORK/o1"; fi
 
@@ -499,7 +499,7 @@ REG="$FH4/.config/bee/repos"
 rt4 install > "$WORK/b1" 2>"$WORK/b1e"; RC=$?
 if [ "$RC" = 0 ] && grep -q '^installed' "$WORK/b1" &&
    [ -f "$REG" ] && [ "$(cat "$REG")" = "$REPO4" ] &&
-   ls "$REPO4/.git/be" 2>/dev/null | grep -q '\.lite\.idx$'
+   ls "$REPO4/.git/be" 2>/dev/null | grep -q '\.lite2\.idx$'
 then ok "install registers the path in .config/bee/repos and leaves a lane"
 else bad "install registers + indexes (rc $RC)" "$WORK/b1" "$WORK/b1e" "$REG"; fi
 

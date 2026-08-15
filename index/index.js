@@ -16,12 +16,13 @@
 //    4. CPAR      key = commit_hl:60|CPAR       val = parent_hl:60|ord:4
 //    5. B2P       key = blob_hl:60|B2P          val = path_hl:40|rev:20|vnib:4
 //    6. FSEG      key = fn_hl:40|prnt_hl:20|FSEG  val = seg0..seg5:10 each|depth:4
-//    7. LINK      key = dst_hl:40|0:20|LINK      val = src path_hl:40|0:20|vnib:4
+//    7. LINK      key = fn_hl:40|par:20|LINK     val = src path_hl:40|gpar:20|vnib:4
 //    8. MARK      key = ref_hl:60|MARK          val = tip commit_hl:60|vnib:4
 //
 //  LINK (LITE-033, index/lindex.js) is the one kind this file does not write:
 //  it is a separate, equally lazy round over the TIP blobs, and it rides the
-//  same lane so `rm -rf .git/be` still rebuilds everything.
+//  same lane so `rm -rf .git/be` still rebuilds everything.  BEE-002 keys it on
+//  the TARGET's own segment hashlets, so the indexing ORDER cannot change a key.
 //
 //  LITE-044: a changed DIR gets a rev too — ONE REV-CMMT row on the DIR PATH's
 //  own `path_hl`, so `lite list` reads a dir's last commit off the lane exactly
@@ -65,7 +66,9 @@ const isSha40 = refs.isSha40;
 
 //  The run family lives in the repo's own gitdir.
 const IDX_DIR = "be";
-const IDX_EXT = ".lite.idx";
+//  BEE-002: the lane FORMAT is its extension — the re-keyed LINK rows share the
+//  key space with the old ones, so `.lite.idx` retires and `openIndex` sweeps it.
+const IDX_EXT = ".lite2.idx";
 //  DOG-032: the INITIAL derive alone opens a big memtable (64Ki wh128 rows =
 //  1 MB) and seals lazily — an incremental run puts a handful of rows and keeps
 //  the one-page durable default.  The magic 200-row batch is gone: the batch IS
@@ -182,22 +185,29 @@ function readText(path) {
 //  The retired `$HOME/.config/be/tracks` SEEDS the new file once, when the new
 //  one is absent; writing it is what retires the old one for good.
 //  Returns { file, added }.
+//  BEE-002: the registered worktree paths, deduped ON READ, file order — what a
+//  cross-repo query fans out over.  The retired `tracks` file still seeds it.
+function repos(home) {
+  home = home || io.getenv("HOME");
+  if (!home) return [];
+  let txt = readText(home + "/.config/bee/repos");
+  if (txt === null) txt = readText(home + "/.config/be/tracks");
+  const out = [];
+  for (const raw of (txt === null ? "" : txt).split("\n")) {
+    const t = raw.trim();
+    if (t !== "" && out.indexOf(t) < 0) out.push(t);
+  }
+  return out;
+}
+
 function track(repo, home) {
   home = home || io.getenv("HOME");
   if (!home) throw "index: there is no HOME, so there is no repo list";
   const dir = home + "/.config/bee";
   const file = dir + "/repos";
-  let old = readText(file);
-  const seed = old === null;
-  if (seed) old = readText(home + "/.config/be/tracks");
-  const lines = [];
-  let have = false;
-  for (const raw of (old === null ? "" : old).split("\n")) {
-    const t = raw.trim();
-    if (t === "" || lines.indexOf(t) >= 0) continue;      // dedup on read
-    lines.push(t);
-    if (t === repo) have = true;
-  }
+  const seed = readText(file) === null;
+  const lines = repos(home);
+  const have = lines.indexOf(repo) >= 0;
   if (have && !seed) return { file: file, added: false };
   if (!have) lines.push(repo);
   io.mkdir(dir);
@@ -292,10 +302,27 @@ function identTs(ident) {
 //  directory is derived state this verb owns, never a store to be conjured.
 //  DOG-032: `bulk` opens the from-scratch derive's handle — a 1 MB memtable and
 //  lazy seals, finished by the ONE durable commit that writes the mark.
-function openIndex(gitdir, bulk) {
+//  BEE-002: `ro` opens the lane READ-ONLY (a query fanning out over another
+//  repo's lane must bring nothing up and sweep nothing there).
+function openIndex(gitdir, bulk, ro) {
   const o = { dir: gitdir + "/" + IDX_DIR, ext: IDX_EXT };
   if (bulk) { o.mem = IDX_BULK_ROWS; o.durable = false; }
+  if (ro) { o.mode = "r"; return abc.index("wh128", o); }
+  sweep(o.dir);
   return abc.index("wh128", o);
+}
+
+//  LITE-044/BEE-002: unlink every file of an OUTDATED format before the family
+//  is opened — the dir is fully derived, so the next run re-derives from the ODB.
+function sweep(dir) {
+  let fs;
+  try { fs = io.readdir(dir); } catch (e) { return; }
+  for (const f of fs) {
+    const n = f.length >= 1 && f.slice(-1) === "/" ? "" : f;
+    if (n === "" || (n.length >= IDX_EXT.length && n.slice(-IDX_EXT.length) === IDX_EXT))
+      continue;
+    try { io.unlink(dir + "/" + n); } catch (e) {}
+  }
 }
 
 //  Has this repo an index at all?  A dir with no run and no memtable is the
@@ -872,7 +899,8 @@ function summary(rec) {
 function hexOfHl(hl60) { return hl60.toString(16).padStart(15, "0"); }
 
 module.exports = {
-  index: index, summary: summary, track: track, openIndex: openIndex,
+  index: index, summary: summary, track: track, repos: repos,
+  openIndex: openIndex, sweep: sweep,
   discover: discover, openRepo: openRepo, closeRepo: closeRepo,
   bringUp: bringUp, reader: reader, readCommit: readCommit, readTree: readTree,
   //  LITE-033: `lindex` reuses the pruning tree diff (the changed paths of

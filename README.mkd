@@ -23,8 +23,10 @@ picks the sink, `--plain` (also what a pipe defaults to), `--color`, `--html`:
  -  `bee index [<repo>]` — build/refresh `<repo>/.git/be/`; lazy, fully derived
  
  -  `bee lindex [<target>]` — backlink suspects; lazy, tip blobs only
-     1. bare: bring the LINK rows up to the tip
-     2. `<target>`: the paths that may link to a file or a ticket code
+     1. bare: bring the LINK rows up to the tip, this repo only
+     2. `<target>`: the paths that may link to a file or a ticket code, looked
+        up in EVERY repo of `~/.config/bee/repos` (read-only) and printed
+        repo-qualified, the local repo first
  -  `bee log [<hex>|<path>]` — commit log, newest first; off-mainline rows grey
      1. bare: the checked-out tip's ancestry
      2. `<hex>`: that commit's ancestry

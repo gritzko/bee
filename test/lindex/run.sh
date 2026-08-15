@@ -1,16 +1,19 @@
 #!/bin/sh
-# lite/test/lindex/run.sh — LITE-033: `lite lindex`, the BACKLINK SUSPECTS in
-# the one `.lite.idx` lane.  Two legs over the landed lite tree:
+# bee/test/lindex/run.sh — LITE-033 + BEE-002: `bee lindex`, the BACKLINK
+# SUSPECTS in the one `.lite2.idx` lane.  Legs over the landed bee tree:
 #   verb  — this script: the CLI contract over a fixture git repo — who links to
 #           a file, who links to a ticket code, the incremental (mark..tip) run,
 #           a rerun that writes NOTHING, the stale row a removed link leaves,
-#           the ambiguous ref that mints nothing, the self-link, the binary skip.
-#   rows  — rows.js: the LINK record's ruled bit layout (key dst_hl:40|0:20|7,
-#           val src path_hl:40|0:20|vnib:4) and the mark under hlOfText("lindex").
+#           the self-link, the binary skip; then leg 6, the CROSS-REPO fan-out.
+#   rows  — rows.js: the LINK record's ruled bit layout (key fn_hl:40|par:20|7,
+#           val src path_hl:40|gpar:20|vnib:4) and the mark under
+#           hlOfText("lindex").
 #
 # THE GAP THIS REPROS: before the verb existed the lane could say what a path IS
 # (REV/B2P) and nothing at all about who POINTS at it — `lite lindex <file>`
-# answered "no such verb" and every check below was red.
+# answered "no such verb" and every check below was red.  BEE-002's own gap is
+# leg 6: a file in repo A linking a file in repo B was invisible from B, because
+# the dst key was minted through the LOCAL resolver and no other lane was read.
 #
 # Standalone: `sh lite/test/lindex/run.sh` from anywhere (it cds itself).
 # $LITEJAB picks the runtime (default `jab`); the DOG-034 lexer is what fuses a
@@ -76,6 +79,9 @@ mkdir -p "$REPO"
     git commit -q -m c0 || exit 1
 ) || { echo "lindex: cannot build the fixture repo" >&2; exit 2; }
 g() { git -C "$REPO" "$@"; }
+#  BEE-002: a suspect prints REPO-QUALIFIED, so every expectation carries the
+#  repo path the verb itself resolves to.
+RREPO=$(cd "$REPO" && pwd -P)
 echo "lindex: runtime $RT, repo $REPO"
 
 lanebytes() { cat "$REPO"/.git/be/* 2>/dev/null | wc -c | tr -d ' '; }
@@ -92,20 +98,20 @@ else bad "the first run scans the 5 prose blobs (rc $RC)" "$WORK/s1" "$WORK/s1e"
 
 # S2: THE QUERY — who links to src/abc/TCP.c?  doc/guide.mkd, as TEXT.
 rtin "$REPO" lindex src/abc/TCP.c > "$WORK/q1" 2>"$WORK/q1e"; RC=$?
-if [ "$RC" = 0 ] && [ "$(cat "$WORK/q1")" = "doc/guide.mkd" ]
+if [ "$RC" = 0 ] && [ "$(cat "$WORK/q1")" = "$RREPO/doc/guide.mkd" ]
 then ok "lindex src/abc/TCP.c = doc/guide.mkd"
 else bad "lindex src/abc/TCP.c = doc/guide.mkd (rc $RC)" "$WORK/q1" "$WORK/q1e"; fi
 
 # S3: a TICKET dst — the bare code is the target text, so the backlink is keyed
 # by `LITE-029` itself and no file has to exist for it.
 rtin "$REPO" lindex LITE-029 > "$WORK/q2" 2>"$WORK/q2e"; RC=$?
-if [ "$RC" = 0 ] && [ "$(cat "$WORK/q2")" = "doc/guide.mkd" ]
+if [ "$RC" = 0 ] && [ "$(cat "$WORK/q2")" = "$RREPO/doc/guide.mkd" ]
 then ok "lindex LITE-029 = doc/guide.mkd (the bare ticket code is the dst)"
 else bad "lindex LITE-029 = doc/guide.mkd (rc $RC)" "$WORK/q2" "$WORK/q2e"; fi
 
 # S4: a PARTIAL target resolves the same way the ref did — one dst_hl either way.
 rtin "$REPO" lindex abc/TCP.c > "$WORK/q3" 2>"$WORK/q3e"; RC=$?
-if [ "$RC" = 0 ] && [ "$(cat "$WORK/q3")" = "doc/guide.mkd" ]
+if [ "$RC" = 0 ] && [ "$(cat "$WORK/q3")" = "$RREPO/doc/guide.mkd" ]
 then ok "a partial target (abc/TCP.c) answers the same suspects"
 else bad "a partial target answers the same suspects (rc $RC)" "$WORK/q3" "$WORK/q3e"; fi
 
@@ -133,15 +139,22 @@ if [ "$RC" != 0 ] && [ ! -s "$WORK/q5" ] && grep -q 'names 2 files' "$WORK/q5e" 
 then ok "an ambiguous target is refused in plain words, both paths listed"
 else bad "an ambiguous target is refused in plain words (rc $RC)" "$WORK/q5" "$WORK/q5e"; fi
 
-# S8: a target nothing points at prints NOTHING and is no error.
+# S8: BEE-002 — the bare `TCP.c` ref keys with BOTH ancestors absent, so it is a
+# licensed false suspect of every TCP.c, net/TCP.c included.
 rtin "$REPO" lindex net/TCP.c > "$WORK/q6" 2>"$WORK/q6e"; RC=$?
-if [ "$RC" = 0 ] && [ ! -s "$WORK/q6" ] && [ ! -s "$WORK/q6e" ]
+if [ "$RC" = 0 ] && [ "$(cat "$WORK/q6")" = "$RREPO/doc/guide.mkd" ]
+then ok "a bare-filename ref suspects every same-named file"
+else bad "a bare-filename ref suspects every same-named file (rc $RC)" "$WORK/q6" "$WORK/q6e"; fi
+
+# S8b: a target nothing points at prints NOTHING and is no error.
+rtin "$REPO" lindex doc/other.mkd > "$WORK/q6b" 2>"$WORK/q6c"; RC=$?
+if [ "$RC" = 0 ] && [ ! -s "$WORK/q6b" ] && [ ! -s "$WORK/q6c" ]
 then ok "a target with no rows prints nothing, exit 0"
-else bad "a target with no rows prints nothing (rc $RC)" "$WORK/q6" "$WORK/q6e"; fi
+else bad "a target with no rows prints nothing (rc $RC)" "$WORK/q6b" "$WORK/q6c"; fi
 
 # S9: root-relative from a SUBDIR, like every other lite path arg.
 rtin "$REPO/doc" lindex src/abc/TCP.c > "$WORK/q7" 2>"$WORK/q7e"; RC=$?
-if [ "$RC" = 0 ] && [ "$(cat "$WORK/q7")" = "doc/guide.mkd" ]
+if [ "$RC" = 0 ] && [ "$(cat "$WORK/q7")" = "$RREPO/doc/guide.mkd" ]
 then ok "a query from a subdirectory answers root-relative paths"
 else bad "a query from a subdirectory answers root-relative paths (rc $RC)" "$WORK/q7" "$WORK/q7e"; fi
 
@@ -159,13 +172,13 @@ else bad "the gap run scans only the changed path (rc $RC)" "$WORK/s3" "$WORK/s3
 
 # I2: the new backlink is there, by the FULL path and by the partial the ref used.
 rtin "$REPO" lindex src/abc/FSW.c > "$WORK/q8" 2>"$WORK/q8e"; RC=$?
-if [ "$RC" = 0 ] && [ "$(cat "$WORK/q8")" = "doc/other.mkd" ]
+if [ "$RC" = 0 ] && [ "$(cat "$WORK/q8")" = "$RREPO/doc/other.mkd" ]
 then ok "the added link shows up: lindex src/abc/FSW.c = doc/other.mkd"
 else bad "the added link shows up (rc $RC)" "$WORK/q8" "$WORK/q8e"; fi
 
 # I3: the ticket now has TWO suspects, sorted.
 rtin "$REPO" lindex LITE-029 > "$WORK/q9" 2>"$WORK/q9e"; RC=$?
-printf 'doc/guide.mkd\ndoc/other.mkd\n' > "$WORK/q9w"
+printf '%s/doc/guide.mkd\n%s/doc/other.mkd\n' "$RREPO" "$RREPO" > "$WORK/q9w"
 if [ "$RC" = 0 ] && cmp -s "$WORK/q9w" "$WORK/q9"
 then ok "the ticket's suspects are both carriers, sorted"
 else bad "the ticket's suspects are both carriers (rc $RC)" "$WORK/q9w" "$WORK/q9" "$WORK/q9e"; fi
@@ -180,7 +193,7 @@ GIT_AUTHOR_DATE="2022-01-03T00:00:00Z" GIT_COMMITTER_DATE="2022-01-03T00:00:00Z"
 rtin "$REPO" lindex > "$WORK/s4" 2>"$WORK/s4e"; RC=$?
 rtin "$REPO" lindex src/abc/FSW.c > "$WORK/q10" 2>"$WORK/q10e"
 if [ "$RC" = 0 ] && grep -q '^scanned 1 files, 0 links, ' "$WORK/s4" &&
-   [ "$(cat "$WORK/q10")" = "doc/other.mkd" ]
+   [ "$(cat "$WORK/q10")" = "$RREPO/doc/other.mkd" ]
 then ok "a removed link leaves a STALE suspect — rows are never deleted"
 else bad "a removed link leaves a stale suspect (rc $RC)" "$WORK/s4" "$WORK/s4e" "$WORK/q10"; fi
 
@@ -192,10 +205,19 @@ rtin "$REPO" lindex > "$WORK/s5" 2>"$WORK/s5e"; RC=$?
 rtin "$REPO" lindex src/abc/TCP.c > "$WORK/q11" 2>"$WORK/q11e"
 rtin "$REPO" lindex src/abc/FSW.c > "$WORK/q12" 2>"$WORK/q12e"
 if [ "$RC" = 0 ] && grep -q '^scanned 5 files, ' "$WORK/s5" &&
-   [ "$(cat "$WORK/q11")" = "doc/guide.mkd" ] && [ ! -s "$WORK/q12" ]
+   [ "$(cat "$WORK/q11")" = "$RREPO/doc/guide.mkd" ] && [ ! -s "$WORK/q12" ]
 then ok "rm -rf .git/be rebuilds the LINK rows from the TIP blobs alone"
 else bad "rm -rf .git/be rebuilds the LINK rows (rc $RC)" "$WORK/s5" "$WORK/s5e" \
          "$WORK/q11" "$WORK/q12"; fi
+
+# L4b: BEE-002 — the EXTENSION IS THE FORMAT: a lane file of the retired one is
+# swept before the family opens, and the run answers off the re-derived rows.
+printf 'PRE-BEE-002 LANE\n' > "$REPO/.git/be/0000000000.lite.idx"
+rtin "$REPO" lindex src/abc/TCP.c > "$WORK/q13" 2>"$WORK/q13e"; RC=$?
+if [ "$RC" = 0 ] && [ ! -f "$REPO/.git/be/0000000000.lite.idx" ] &&
+   [ "$(cat "$WORK/q13")" = "$RREPO/doc/guide.mkd" ]
+then ok "an outdated lane file is swept, the answer stands"
+else bad "an outdated lane file is swept (rc $RC)" "$WORK/q13" "$WORK/q13e"; fi
 
 # ==========================================================================
 # leg 5 — the ROWS (the ruled bit layout + the lindex mark)
@@ -209,6 +231,89 @@ else
     cat "$WORK/r.out"; head -20 "$WORK/r.err"
     bad "rows leg (rc $RC)" "$WORK/r.out"
 fi
+
+# ==========================================================================
+# leg 6 — BEE-002: the CROSS-REPO fan-out over the BEE-001 registry
+# ==========================================================================
+#   A  notes/cross.mkd  names lib/net/SOCK.c (parent+grandparent), a bare
+#                       WIRE.h, the ticket code BEE-002 and ITSELF
+#   B  lib/net/SOCK.c   the target; alt/net/SOCK.c is the same fn under another
+#                       GRANDPARENT; lib/net/WIRE.h answers the bare ref
+#  Both are `bee install`ed, so both sit in `$FAKEHOME/.config/bee/repos`.
+A="$WORK/A"; B="$WORK/B"
+mkfix() {
+  D=$1; shift
+  mkdir -p "$D"
+  ( cd "$D" || exit 1
+    git init -q -b master . && git config user.email t@t && git config user.name T || exit 1
+    export GIT_AUTHOR_NAME=T GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=T GIT_COMMITTER_EMAIL=t@t
+    "$@" || exit 1
+    git add -A
+    GIT_AUTHOR_DATE="2022-02-01T00:00:00Z" GIT_COMMITTER_DATE="2022-02-01T00:00:00Z" \
+      git commit -q -m c0 ) || { echo "lindex: cannot build $D" >&2; exit 2; }
+}
+fixA() {
+  mkdir -p notes
+  printf 'the cross note\nit points at lib/net/SOCK.c over there\n' > notes/cross.mkd
+  printf 'and at a bare WIRE.h, and at BEE-002, and at notes/cross.mkd itself\n' \
+    >> notes/cross.mkd
+}
+fixB() {
+  mkdir -p lib/net alt/net
+  printf 'int sock;\n' > lib/net/SOCK.c
+  printf 'int alt;\n'  > alt/net/SOCK.c
+  printf 'int wire;\n' > lib/net/WIRE.h
+}
+mkfix "$A" fixA
+mkfix "$B" fixB
+RA=$(cd "$A" && pwd -P); RB=$(cd "$B" && pwd -P)
+rtin "$A" install > "$WORK/ia" 2>"$WORK/iae"; RCA=$?
+rtin "$B" install > "$WORK/ib" 2>"$WORK/ibe"; RCB=$?
+REG="$FAKEHOME/.config/bee/repos"
+if [ "$RCA" = 0 ] && [ "$RCB" = 0 ] && grep -qx "$RA" "$REG" && grep -qx "$RB" "$REG"
+then ok "both fixture repos install into the BEE-001 registry"
+else bad "both fixture repos install into the registry ($RCA/$RCB)" "$WORK/iae" "$WORK/ibe" "$REG"; fi
+
+# X1: THE REPRO — B has no link rows of its own, and the suspect lives in A.
+rtin "$B" lindex lib/net/SOCK.c > "$WORK/x1" 2>"$WORK/x1e"; RC=$?
+if [ "$RC" = 0 ] && [ "$(cat "$WORK/x1")" = "$RA/notes/cross.mkd" ]
+then ok "a cross-repo backlink answers, repo-qualified"
+else bad "a cross-repo backlink answers, repo-qualified (rc $RC)" "$WORK/x1" "$WORK/x1e"; fi
+
+# X2: a BARE-filename ref (both ancestor slots absent) still answers.
+rtin "$B" lindex lib/net/WIRE.h > "$WORK/x2" 2>"$WORK/x2e"; RC=$?
+if [ "$RC" = 0 ] && [ "$(cat "$WORK/x2")" = "$RA/notes/cross.mkd" ]
+then ok "a bare-filename ref answers across repos"
+else bad "a bare-filename ref answers across repos (rc $RC)" "$WORK/x2" "$WORK/x2e"; fi
+
+# X3: the GPAR FILTER — same fn, same parent, another grandparent: not a suspect.
+rtin "$B" lindex alt/net/SOCK.c > "$WORK/x3" 2>"$WORK/x3e"; RC=$?
+if [ "$RC" = 0 ] && [ ! -s "$WORK/x3" ]
+then ok "the gpar filter rejects the same name under another grandparent"
+else bad "the gpar filter rejects another grandparent (rc $RC)" "$WORK/x3" "$WORK/x3e"; fi
+
+# X4: a TICKET CODE keys as its own text and crosses repos the same way.
+rtin "$B" lindex BEE-002 > "$WORK/x4" 2>"$WORK/x4e"; RC=$?
+if [ "$RC" = 0 ] && [ "$(cat "$WORK/x4")" = "$RA/notes/cross.mkd" ]
+then ok "a ticket code answers across repos"
+else bad "a ticket code answers across repos (rc $RC)" "$WORK/x4" "$WORK/x4e"; fi
+
+# X5: A's SELF-LINK minted nothing, so it is not a suspect of itself anywhere.
+rtin "$B" lindex notes/cross.mkd > "$WORK/x5" 2>"$WORK/x5e"; RC=$?
+if [ "$RC" = 0 ] && [ ! -s "$WORK/x5" ]
+then ok "a self-link mints no row, in any repo"
+else bad "a self-link mints no row, in any repo (rc $RC)" "$WORK/x5" "$WORK/x5e"; fi
+
+# X6: IDEMPOTENCE — a second scan of A writes not one byte, and the answer keeps
+# its ONE line (no duplicate row, no duplicate suspect).
+XB=$(cat "$A"/.git/be/* 2>/dev/null | wc -c | tr -d ' ')
+rtin "$A" lindex > "$WORK/x6" 2>"$WORK/x6e"; RC=$?
+XA=$(cat "$A"/.git/be/* 2>/dev/null | wc -c | tr -d ' ')
+rtin "$B" lindex lib/net/SOCK.c > "$WORK/x7" 2>"$WORK/x7e"
+if [ "$RC" = 0 ] && [ "$XB" = "$XA" ] && grep -q '^up to date: links at ' "$WORK/x6" &&
+   [ "$(cat "$WORK/x7")" = "$RA/notes/cross.mkd" ]
+then ok "a second scan writes no new row ($XB bytes)"
+else bad "a second scan writes no new row (rc $RC, $XB -> $XA)" "$WORK/x6" "$WORK/x6e" "$WORK/x7"; fi
 
 # ==========================================================================
 if [ "$FAILED" != 0 ]; then

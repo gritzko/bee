@@ -1,11 +1,14 @@
-//  index/lindex.js — LITE-033: `lite lindex`, the BACKLINK round of the one
-//  `<gitdir>/be/*.lite.idx` lane.  The [LITE-006] records say what a path IS
-//  (REV/B2P); nothing said who POINTS at it, and "who links to this page" is
-//  the one wiki query the lane could not answer.
+//  index/lindex.js — LITE-033 + BEE-002: `bee lindex`, the BACKLINK round of
+//  the one `<gitdir>/be/*.lite2.idx` lane.  The [LITE-006] records say what a
+//  path IS (REV/B2P); nothing said who POINTS at it, and "who links to this
+//  page" is the one wiki query the lane could not answer.
 //
 //  RECORD `LINK` (kind nibble 7, the last free one):
-//      key = dst_hl:40 | 0:20 | 7        val = src path_hl:40 | 0:20 | vnib:4
-//  One row per (dst, src) pair; the spare 20 bits and `vnib` are RESERVED (0).
+//      key = fn_hl:40 | par:20 | 7   val = src path_hl:40 | gpar:20 | vnib:4
+//  One row per (dst, src) pair.  Every slot is a truncated TEXT hashlet of the
+//  TARGET's own segments — the filename's top 40 bits, the immediate parent
+//  dir's top 20, the grandparent's top 20 — under the [LITE-011] FSEG rule: `0`
+//  spells absent, a genuine 0 bumps to 1, the filename slot never bumps.
 //
 //  SUSPECTS, NOT PROOF (ruling 2026-08-15).  A row says "this file MAY link
 //  there"; precision comes from OPENING the suspect, never from deleting a row
@@ -26,11 +29,22 @@
 //  A rewritten history needs no special case: the mark row just jumps, and a
 //  mark commit that no longer reads makes the run a full tip walk.
 //
-//  THE DST IS TARGET TEXT, not a resolved object: the repo-relative PATH TEXT
-//  for a file link (so `abc/TCP.c` and `src/abc/TCP.c` key the same row), the
-//  BARE TICKET CODE for a ticket link (so a ticket's backlinks survive the
-//  thin<->fat layout move).  Anchors are dropped — a row names files, not
-//  places — and a self-link mints nothing.
+//  BEE-002: THE MINT IS TEXT-ONLY.  A ref keys on ITS OWN segments — nothing is
+//  resolved, no lane is read and no repo is named — so the indexing ORDER cannot
+//  change a key and a cross-repo target keys the same everywhere.  A ticket code
+//  (`LITE-029`) keys as its own text with both ancestor slots absent.  Anchors
+//  are dropped through `door.js splitRef` — a row names files, not places — and
+//  a ref spelling the carrier's own path mints nothing.
+//
+//  BEE-002: THE QUERY IS A FAN-OUT over the [BEE-001] registry
+//  `$HOME/.config/bee/repos`: every registered lane is opened READ-ONLY and
+//  none is brought up, two exact-key seeks each (`fn|0`, the bare-filename ref,
+//  and `fn|par`) off the target's full path, and a row carrying a `gpar` is kept
+//  only when it matches the target's.  No dst repo id is recorded anywhere, so
+//  two repos carrying a same-named file produce FALSE SUSPECTS — which the
+//  suspects contract licenses, and which registering a repo then costs nothing.
+//  Suspects are named back to text per repo (one descent of THAT repo's tip
+//  tree) and print repo-qualified, the local repo first.
 "use strict";
 
 const idx = require("./index.js");
@@ -44,29 +58,29 @@ const K_LINK = 0x7n;
 //  can never collide with a real one's [LITE-006] watermark.
 const LINDEX_REF = "lindex";
 
-//  key = dst_hl:40 | 0:20 | 7 — a rev key with the rev slot held at 0.
-function linkKey(dstHl) { return idx.revKey(dstHl, 0n, K_LINK); }
-//  val = src path_hl:40 | 0:20 | vnib:4 — the B2P value shape, rev slot 0.
-function linkVal(srcPhl) { return idx.pathRevVal(srcPhl, 0n); }
-function linkSrc(v) { return v >> 24n; }
+const GPAR_MASK = (1n << 20n) - 1n;
 
-//  --- the target text --------------------------------------------------------
-//  A fused ref's path -> the TEXT its dst_hl is minted from, or null when the
-//  indexer must not guess.  ONE file answers -> that repo-relative path; SEVERAL
-//  answer -> an ambiguity, skipped hook-style; NONE answers -> the ref's own
-//  text, verbatim, which is precisely the ruled ticket-code dst (`LITE-029`
-//  names no file and needs none).  Resolution is the [LITE-011] FSEG descent,
-//  the ONE resolver — there is no second one here.
-function dstText(ctx, ix, treeSha, partial, memo) {
-  const hit = memo.get(partial);
-  if (hit !== undefined) return hit;
-  let out;
-  try {
-    const paths = rs.resolve(ix, ctx.r, treeSha, partial);
-    out = paths.length > 1 ? null : (paths.length === 1 ? paths[0] : partial);
-  } catch (e) { out = null; }
-  memo.set(partial, out);
-  return out;
+//  key = fn_hl:40 | par:20 | 7 — a rev key whose rev slot holds the parent dir.
+function linkKey(fn, par) { return idx.revKey(fn, par, K_LINK); }
+//  val = src path_hl:40 | gpar:20 | vnib:4 — the B2P value shape, the rev slot
+//  holding the target's GRANDPARENT dir.
+function linkVal(srcPhl, gpar) { return idx.pathRevVal(srcPhl, gpar); }
+function linkSrc(v) { return v >> 24n; }
+function linkGpar(v) { return (v >> 4n) & GPAR_MASK; }
+
+//  --- the target's own segments ---------------------------------------------
+//  BEE-002: ONE text -> the three ruled slots, hashed by index.js's own [LITE-011]
+//  helpers.  Nothing is resolved here: a path, a partial one and a ticket code
+//  all go down the same three lines, which is what makes the mint order-free.
+function slots(text) {
+  const segs = [];
+  for (const s of String(text === undefined ? "" : text).split("/"))
+    if (s !== "" && s !== ".") segs.push(s);
+  const n = segs.length;
+  if (n === 0) return null;
+  return { fn: idx.fnHl(segs[n - 1]),
+           par: n > 1 ? idx.segHl(segs[n - 2], 20n) : 0n,
+           gpar: n > 2 ? idx.segHl(segs[n - 3], 20n) : 0n };
 }
 
 //  --- the way back to TEXT ---------------------------------------------------
@@ -153,7 +167,7 @@ function scan(ctx, ix) {
 
   //  3. one tokenised pass per new blob.
   const wr = idx.idxWriter(ix);
-  const cache = new Map(), memo = new Map();
+  const cache = new Map();
   const splitRef = require("door.js").splitRef;   // the ONE ref split point
   for (const c of changed) {
     //  LITE-044: `descend` now yields changed DIRS as well; a subtree carries
@@ -170,11 +184,12 @@ function scan(ctx, ix) {
       //  FILE, not a place, so `:12:24` and `:k4:d8K3` alike drop here.
       const sp = splitRef(t.text);
       if (sp.path === "") continue;
-      const dst = dstText(ctx, ix, tipC.tree, sp.path, memo);
-      if (dst === null) continue;                 // ambiguous: never guessed
-      if (dst === c.path) continue;               // a self-link mints no row
+      if (sp.path === c.path) continue;           // a self-link mints no row
+      //  BEE-002: the ref's OWN segments, resolved through nothing at all.
+      const q = slots(sp.path);
+      if (q === null) continue;
       rec.links++;
-      const key = linkKey(idx.pathHl(dst)), val = linkVal(c.phl);
+      const key = linkKey(q.fn, q.par), val = linkVal(c.phl, q.gpar);
       const have = valsOn(ix, key, cache);
       if (have.has(val)) continue;                // already a suspect: idempotent
       have.add(val);
@@ -193,11 +208,65 @@ function scan(ctx, ix) {
 }
 
 //  --- the query --------------------------------------------------------------
-//  suspects(ctx, ix, target) -> the paths that MAY link to `target`, sorted.
-//  ONE prefix scan of the target's dst_hl, then the tip-tree naming pass.  A
-//  target several files answer is an ambiguity the caller must settle, in the
-//  plain words index/resolve.js's `pick` uses.
-function suspects(ctx, ix, target) {
+//  BEE-002: ONE lane's carriers of `q`.  Two EXACT-key seeks — `fn|0` catches a
+//  bare-filename ref, `fn|par` a ref that named the parent — and a row carrying
+//  a grandparent is kept only when it is the target's.  Anything spelled deeper
+//  keys like a 3-segment ref, so depth costs false suspects, never a wider probe.
+function carriers(ix, q, want) {
+  const keys = q.par === 0n ? [linkKey(q.fn, 0n)]
+                            : [linkKey(q.fn, 0n), linkKey(q.fn, q.par)];
+  for (const key of keys) {
+    const c = ix.seek(key);
+    while (c.next()) {
+      if (c.key !== key) break;
+      const g = linkGpar(c.val);
+      if (g !== 0n && g !== q.gpar) continue;     // another grandparent: not ours
+      want.add(linkSrc(c.val));
+    }
+  }
+}
+
+//  The `path_hl` set named back to TEXT by one descent of a tip tree, sorted
+//  and deduped — the [LITE-033] naming pass, now run once PER REPO.
+function nameIn(r, treeSha, want) {
+  const out = [];
+  namePaths(r, treeSha, "", want, out);
+  out.sort();
+  const uniq = [];
+  for (const p of out) if (uniq.indexOf(p) < 0) uniq.push(p);
+  return uniq;
+}
+
+//  BEE-002: ONE registered repo's answer, repo-qualified.  Its lane is opened
+//  READ-ONLY and never brought up — a stale foreign lane answers with fewer
+//  suspects, never a wrong one — and anything unopenable is skipped in silence.
+function foreign(path, q) {
+  let ctx = null, ix = null;
+  try {
+    ctx = idx.openRepo(path, false);
+    if (idx.fresh(ctx.gitdir)) return [];         // no lane of this format
+    ix = idx.openIndex(ctx.gitdir, false, true);
+    const want = new Set();
+    carriers(ix, q, want);
+    if (want.size === 0) return [];
+    const tipC = idx.readCommit(ctx.r, ctx.head.sha);
+    if (tipC === null || !tipC.tree) return [];
+    return nameIn(ctx.r, tipC.tree, want).map(function (p) {
+      return ctx.root + "/" + p;
+    });
+  } catch (e) { return []; }
+  finally {
+    if (ix !== null) { try { ix.close(); } catch (e) {} }
+    if (ctx !== null) idx.closeRepo(ctx);
+  }
+}
+
+//  suspects(ctx, ix, target, opts) -> the paths that MAY link to `target`,
+//  repo-qualified, the LOCAL repo first and the registered ones after it in
+//  path order.  The target's own full path is resolved LOCALLY (the one thing
+//  a query still descends for); a target several files answer is an ambiguity
+//  the caller must settle, in the plain words index/resolve.js's `pick` uses.
+function suspects(ctx, ix, target, opts) {
   const tipC = idx.readCommit(ctx.r, ctx.head.sha);
   if (tipC === null || !tipC.tree)
     throw "lindex: cannot read the commit at " + ctx.head.ref;
@@ -205,23 +274,26 @@ function suspects(ctx, ix, target) {
   if (paths.length > 1)
     throw "lindex: " + target + " names " + paths.length + " files at " +
           ctx.head.sha.slice(0, 8) + " — say which:\n  " + paths.join("\n  ") + "\n";
-  //  The dst is minted from TEXT exactly as the scan minted it: the resolved
+  //  The slots come from TEXT exactly as the scan minted them: the resolved
   //  path when one file answers, the target verbatim (a ticket code) otherwise.
-  const text = paths.length === 1 ? paths[0] : target;
-  const key = linkKey(idx.pathHl(text));
+  const q = slots(paths.length === 1 ? paths[0] : target);
+  if (q === null) return [];
+  const out = [], seen = new Set();
   const want = new Set();
-  const c = ix.seek(key);
-  while (c.next()) {
-    if (c.key !== key) break;
-    want.add(linkSrc(c.val));
+  carriers(ix, q, want);
+  if (want.size) for (const p of nameIn(ctx.r, tipC.tree, want)) {
+    const line = ctx.root + "/" + p;
+    if (!seen.has(line)) { seen.add(line); out.push(line); }
   }
-  if (want.size === 0) return [];
-  const out = [];
-  namePaths(ctx.r, tipC.tree, "", want, out);
-  out.sort();
-  const uniq = [];
-  for (const p of out) if (uniq.indexOf(p) < 0) uniq.push(p);
-  return uniq;
+  for (const repo of idx.repos(opts && opts.home).sort()) {
+    if (repo === ctx.root || repo === ctx.repo) continue;   // the local lane answered
+    let real = repo;
+    try { real = io.realpath(repo); } catch (e) {}
+    if (real === ctx.root) continue;
+    for (const line of foreign(repo, q))
+      if (!seen.has(line)) { seen.add(line); out.push(line); }
+  }
+  return out;
 }
 
 //  --- the run ----------------------------------------------------------------
@@ -238,7 +310,7 @@ function lindex(target, opts) {
       idx.bringUp(ctx, ix, { track: false });
       const rec = scan(ctx, ix);
       const t = target === undefined || target === "" ? null : target;
-      return { rec: rec, paths: t === null ? null : suspects(ctx, ix, t) };
+      return { rec: rec, paths: t === null ? null : suspects(ctx, ix, t, opts) };
     } finally { try { ix.close(); } catch (e) {} }
   } finally { idx.closeRepo(ctx); }
 }
@@ -255,7 +327,8 @@ function summary(rec) {
 }
 
 module.exports = { lindex: lindex, summary: summary,
-                   scan: scan, suspects: suspects, dstText: dstText,
+                   scan: scan, suspects: suspects, slots: slots,
                    linkKey: linkKey, linkVal: linkVal, linkSrc: linkSrc,
+                   linkGpar: linkGpar, carriers: carriers, foreign: foreign,
                    markKey: markKey, markCommits: markCommits,
                    K_LINK: K_LINK, LINDEX_REF: LINDEX_REF };
