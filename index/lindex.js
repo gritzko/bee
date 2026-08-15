@@ -1,7 +1,7 @@
 //  index/lindex.js — LITE-033 + BEE-002: `bee lindex`, the BACKLINK round of
-//  the one `<gitdir>/be/*.lite2.idx` lane.  The [LITE-006] records say what a
+//  the one `<gitdir>/be/*.lite2.idx` index.  The [LITE-006] records say what a
 //  path IS (REV/B2P); nothing said who POINTS at it, and "who links to this
-//  page" is the one wiki query the lane could not answer.
+//  page" is the one wiki query the index could not answer.
 //
 //  RECORD `LINK` (kind nibble 7, the last free one):
 //      key = fn_hl:40 | par:20 | 7   val = src path_hl:40 | gpar:20 | vnib:4
@@ -13,7 +13,7 @@
 //  SUSPECTS, NOT PROOF (ruling 2026-08-15).  A row says "this file MAY link
 //  there"; precision comes from OPENING the suspect, never from deleting a row
 //  or hopping over the tip.  A removed link therefore leaves a false suspect
-//  behind, which is exactly what keeps the lane's never-delete, idempotent
+//  behind, which is exactly what keeps the index's never-delete, idempotent
 //  contract intact — the index only narrows the grep.
 //
 //  BEE-007: `bee index` RUNS `scan` (one verb, two marks), so this verb is the
@@ -33,14 +33,14 @@
 //  mark commit that no longer reads makes the run a full tip walk.
 //
 //  BEE-002: THE MINT IS TEXT-ONLY.  A ref keys on ITS OWN segments — nothing is
-//  resolved, no lane is read and no repo is named — so the indexing ORDER cannot
+//  resolved, no index is read and no repo is named — so the indexing ORDER cannot
 //  change a key and a cross-repo target keys the same everywhere.  A ticket code
 //  (`LITE-029`) keys as its own text with both ancestor slots absent.  Anchors
 //  are dropped through `door.js splitRef` — a row names files, not places — and
 //  a ref spelling the carrier's own path mints nothing.
 //
 //  BEE-002: THE QUERY IS A FAN-OUT over the [BEE-001] registry
-//  `$HOME/.config/bee/repos`: every registered lane is opened READ-ONLY and
+//  `$HOME/.config/bee/repos`: every registered index is opened READ-ONLY and
 //  none is brought up, two exact-key seeks each (`fn|0`, the bare-filename ref,
 //  and `fn|par`) off the target's full path, and a row carrying a `gpar` is kept
 //  only when it matches the target's.  No dst repo id is recorded anywhere, so
@@ -87,9 +87,9 @@ function slots(text) {
 }
 
 //  --- the way back to TEXT ---------------------------------------------------
-//  `path_hl` is a one-way 40-bit hash and the lane hands back no name
+//  `path_hl` is a one-way 40-bit hash and the index hands back no name
 //  ([INDEXES.mkd] "NO path text"), so the suspects are named the [LITE-011] way:
-//  the lane narrows, a REAL TREE OBJECT answers.  One descent of the TIP tree
+//  the index narrows, a REAL TREE OBJECT answers.  One descent of the TIP tree
 //  hashes every path it carries and keeps the ones the rows asked for — no
 //  sidecar record, so the stated gap survives untouched, and a suspect whose
 //  file is gone from the tip simply does not print (it carries no link now).
@@ -103,8 +103,8 @@ function namePaths(r, treeSha, prefix, want, out) {
   }
 }
 
-//  --- the lane ---------------------------------------------------------------
-//  Every val already sitting on one key.  A wh128 lane is UNKEYED, so a re-put
+//  --- the index ---------------------------------------------------------------
+//  Every val already sitting on one key.  A wh128 index is UNKEYED, so a re-put
 //  is a duplicate ROW rather than an overwrite — this is what makes a re-scan
 //  of the same blob write nothing at all.
 function valsOn(ix, key, cache) {
@@ -211,7 +211,7 @@ function scan(ctx, ix) {
 }
 
 //  --- the query --------------------------------------------------------------
-//  BEE-002: ONE lane's carriers of `q`.  Two EXACT-key seeks — `fn|0` catches a
+//  BEE-002: ONE index's carriers of `q`.  Two EXACT-key seeks — `fn|0` catches a
 //  bare-filename ref, `fn|par` a ref that named the parent — and a row carrying
 //  a grandparent is kept only when it is the target's.  Anything spelled deeper
 //  keys like a 3-segment ref, so depth costs false suspects, never a wider probe.
@@ -240,14 +240,14 @@ function nameIn(r, treeSha, want) {
   return uniq;
 }
 
-//  BEE-002: ONE registered repo's answer, repo-qualified.  Its lane is opened
-//  READ-ONLY and never brought up — a stale foreign lane answers with fewer
+//  BEE-002: ONE registered repo's answer, repo-qualified.  Its index is opened
+//  READ-ONLY and never brought up — a stale foreign index answers with fewer
 //  suspects, never a wrong one — and anything unopenable is skipped in silence.
 function foreign(path, q) {
   let ctx = null, ix = null;
   try {
     ctx = idx.openRepo(path, false);
-    if (idx.fresh(ctx.gitdir)) return [];         // no lane of this format
+    if (idx.fresh(ctx.gitdir)) return [];         // no index of this format
     ix = idx.openIndex(ctx.gitdir, false, true);
     const want = new Set();
     carriers(ix, q, want);
@@ -289,7 +289,7 @@ function suspects(ctx, ix, target, opts) {
     if (!seen.has(line)) { seen.add(line); out.push(line); }
   }
   for (const repo of idx.repos(opts && opts.home).sort()) {
-    if (repo === ctx.root || repo === ctx.repo) continue;   // the local lane answered
+    if (repo === ctx.root || repo === ctx.repo) continue;   // the local index answered
     let real = repo;
     try { real = io.realpath(repo); } catch (e) {}
     if (real === ctx.root) continue;
@@ -302,7 +302,7 @@ function suspects(ctx, ix, target, opts) {
 //  --- the run ----------------------------------------------------------------
 //  lindex(target) -> { rec, paths }.  `paths` is null for the bare form (bring
 //  the rows up to date and report), the suspect list otherwise.  Either way the
-//  LITE-006 lane is brought up first: the FSEG rows the resolver descends are
+//  LITE-006 index is brought up first: the FSEG rows the resolver descends are
 //  its, so a stale base index would answer with fewer files than exist.
 function lindex(target, opts) {
   opts = opts || {};
@@ -323,10 +323,10 @@ function summary(rec) {
   const tip = rec.tip.slice(0, 8);
   if (rec.upToDate)
     return "up to date: links at " + rec.ref + " " + tip + " in " +
-           rec.gitdir + "/" + idx.IDX_DIR;
+           idx.indexDir(rec.gitdir);
   return "scanned " + rec.files + " files, " + rec.links + " links, " +
          rec.rows + " rows — " + rec.ref + " " + tip + " in " +
-         rec.gitdir + "/" + idx.IDX_DIR;
+         idx.indexDir(rec.gitdir);
 }
 
 module.exports = { lindex: lindex, summary: summary,

@@ -45,7 +45,9 @@ bad() {
 FAKEHOME="$WORK/home"; mkdir -p "$FAKEHOME"
 : "${XDG_CACHE_HOME:=${HOME}/.cache}"
 export XDG_CACHE_HOME
-rt()   { ( cd "$LITE" && HOME="$FAKEHOME" "$RT" "$@" ); }
+#  BEE-005: the eval legs run from $WORK, whose `jsrc` plant is the require
+#  climb's first hit — from $LITE the climb walks past it to a foreign one.
+rt()   { ( cd "$WORK" && HOME="$FAKEHOME" "$RT" "$@" ); }
 rtin() { D=$1; shift; ( cd "$D" && HOME="$FAKEHOME" "$RT" "$@" ); }
 ln -sf "$LITE" "$WORK/jsrc"
 
@@ -193,13 +195,19 @@ then ok "a symlink diffs as its target string, never followed"
 else bad "symlink diff" "$WORK/d9"; fi
 ln -sf a.txt "$REPO/link.txt"
 
-# D7: a diff builds NO index — `.git/be` is `index`'s and `log`'s business,
-# and a diff must work in a repo that has never been indexed.
+# D7: the WORKTREE form is its own floor (the wt sits directly on HEAD), so it
+# folds the blob pair and reads NO index at all — a repo whose `.git/be` was
+# never built diffs without building one, and answers the same bytes.  The
+# forms that SPAN history (`diff <hex>`, `diff <hexA> <hexB>`) do weave, and
+# leg F pins their bring-up.
 rm -rf "$REPO/.git/be"
 rtin "$REPO" diff --plain > "$WORK/da" 2>"$WORK/dae"; RC=$?
 if [ "$RC" = 0 ] && [ ! -d "$REPO/.git/be" ] && cmp -s "$WORK/d3" "$WORK/da"
-then ok "diff writes no index and needs none"
-else bad "diff writes no index (rc $RC)" "$WORK/dae"; fi
+then ok "a worktree diff builds no index and answers the same (BEE-005)"
+else bad "the wt diff opens no index (rc $RC)" "$WORK/da" "$WORK/dae"; fi
+if [ ! -f "$FAKEHOME/.config/bee/repos" ]
+then ok "a diff writes no registry line"
+else bad "a diff writes no registry line" "$FAKEHOME/.config/bee/repos"; fi
 
 # D8: a path that is no repository is refused in plain words.
 mkdir -p "$WORK/norepo"
@@ -248,6 +256,84 @@ else
         bad "pty leg (rc $RC)" "$WORK/t.out"
     fi
 fi
+
+# ==========================================================================
+# leg 4 — BEE-005: the FORK, where a blob pair and a weave part company
+# ==========================================================================
+#   c0  f.txt = one two three four     the base (the LCA of c1 and c2)
+#   c1  line 2 -> TWO                  master, the merge's FIRST parent
+#   c2  line 3 -> THREE                the side branch
+#   c3  merge(c1, c2)                  one TWO THREE four
+FORK="$WORK/fork"
+mkdir -p "$FORK"
+(
+  cd "$FORK" || exit 1
+  git init -q -b master . && git config user.email t@t && git config user.name T || exit 1
+  export GIT_AUTHOR_NAME=T GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=T GIT_COMMITTER_EMAIL=t@t
+  cm() { GIT_AUTHOR_DATE="$1" GIT_COMMITTER_DATE="$1" git commit -q -m "$2"; }
+  printf 'one\ntwo\nthree\nfour\n' > f.txt
+  git add -A && cm "2020-02-01T00:00:00Z" c0 || exit 1
+  printf 'one\nTWO\nthree\nfour\n' > f.txt
+  git add -A && cm "2020-02-02T00:00:00Z" c1 || exit 1
+  git checkout -q -b side master~1
+  printf 'one\ntwo\nTHREE\nfour\n' > f.txt
+  git add -A && cm "2020-02-03T00:00:00Z" c2 || exit 1
+  git checkout -q master
+  git merge -q --no-edit side > /dev/null 2>&1
+  printf 'one\nTWO\nTHREE\nfour\n' > f.txt
+  git add -A
+  git commit -q --amend --no-edit > /dev/null 2>&1 ||
+    GIT_AUTHOR_DATE="2020-02-04T00:00:00Z" git commit -q -m c3
+) || { echo "diff: cannot build the fork fixture" >&2; exit 2; }
+gf() { git -C "$FORK" "$@"; }
+gfstat() { gf diff --numstat --no-renames "$@" | awk -F'\t' '{print $3" "$1" "$2}' | sort; }
+F0=$(gf rev-parse master^1^); F1=$(gf rev-parse master^1); F2=$(gf rev-parse master^2)
+F3=$(gf rev-parse master)
+
+# F1: the merge diff is what git says it is — the re-cut changes the SOURCE of
+# the answer, not the answer.
+rtin "$FORK" diff "$F3" --plain > "$WORK/f1" 2>"$WORK/f1e"; RC=$?
+gfstat "$F1" "$F3" > "$WORK/f1g"; litestat "$WORK/f1" > "$WORK/f1l"
+if [ "$RC" = 0 ] && cmp -s "$WORK/f1g" "$WORK/f1l"
+then ok "a merge diff still equals git's, file for file and count for count"
+else bad "merge vs first parent (rc $RC)" "$WORK/f1g" "$WORK/f1l" "$WORK/f1e"; fi
+
+# F2: the TWO-TIP form — neither tip is an ancestor of the other, so the weave
+# can only be rooted at their merge base.  It did not exist before BEE-005.
+rtin "$FORK" diff "$F1 $F2" --plain > "$WORK/f2" 2>"$WORK/f2e"; RC=$?
+gfstat "$F1" "$F2" > "$WORK/f2g"; litestat "$WORK/f2" > "$WORK/f2l"
+if [ "$RC" = 0 ] && cmp -s "$WORK/f2g" "$WORK/f2l" && grep -q '^+THREE$' "$WORK/f2"
+then ok "diff <hexA> <hexB> = the two tips, rooted at their merge base"
+else bad "the two-tip form (rc $RC)" "$WORK/f2g" "$WORK/f2l" "$WORK/f2e"; fi
+
+# F3: a tip UNREACHABLE from HEAD is indexed on demand and read back — the lazy
+# contract, not a fallback (BEE-005 ruling 6).  The side branch's own commit is
+# what `diff <hexA> <hexB>` had to bring up above.
+rm -rf "$FORK/.git/be"
+rtin "$FORK" diff "$F2" --plain > "$WORK/f3" 2>"$WORK/f3e"; RC=$?
+if [ "$RC" = 0 ] && [ -d "$FORK/.git/be" ] && grep -q '^+THREE$' "$WORK/f3"
+then ok "a commit off HEAD's branch indexes on demand and diffs"
+else bad "the lazy tip (rc $RC)" "$WORK/f3" "$WORK/f3e"; fi
+rtin "$FORK" diff "$F2" --plain > "$WORK/f4" 2>&1
+if cmp -s "$WORK/f3" "$WORK/f4"
+then ok "the second run over the same tip answers the same (the O(1) no-op)"
+else bad "a re-run of the lazy tip" "$WORK/f3" "$WORK/f4"; fi
+
+# F4: PROVENANCE — the repro proper.  A blob pair knows only ID_FROM/ID_TO; the
+# weave names the commit that inserted each token.  `fork.pre` pins what today's
+# (pre-BEE-005) blob-pair fold answered.
+LITE_FIX="$FORK" BEE_C0="$F0" BEE_C1="$F1" BEE_C2="$F2" BEE_C3="$F3" \
+  rt --eval "require('$CASE/fork.js')" > "$WORK/f5" 2>"$WORK/f5e"; RC=$?
+if [ "$RC" = 0 ] && grep -q '^DONE' "$WORK/f5" && ! grep -q '^FAIL' "$WORK/f5"; then
+    N=$(grep -c '^ok' "$WORK/f5"); CHECKS=$((CHECKS + N))
+    ok "fork leg: $N checks (the merge base, the two tips, the per-token blame)"
+else
+    cat "$WORK/f5"; head -5 "$WORK/f5e"
+    bad "fork leg (rc $RC)" "$WORK/f5"
+fi
+if [ -f "$CASE/fork.pre" ] && ! cmp -s "$CASE/fork.pre" "$WORK/f5"
+then ok "the answer differs from the pinned blob-pair one (fork.pre)"
+else bad "the pinned blob-pair answer is unchanged" "$CASE/fork.pre" "$WORK/f5"; fi
 
 # ==========================================================================
 if [ "$FAILED" != 0 ]; then

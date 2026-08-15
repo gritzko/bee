@@ -17,7 +17,7 @@
 #     never appears (a tracked file gone from the worktree reads `del`);
 #   * a dir's marker is a flat `dir` — be rolls worktree dirtiness up into it,
 #     which costs a subtree walk per row;
-#   * the FUSE is lite's own: a file is one LITE-006 lane prefix scan, a dir is
+#   * the FUSE is lite's own: a file is one LITE-006 index prefix scan, a dir is
 #     the CPAR ancestry walk, capped LITE-013-style (the fuse leg pins the cap).
 #
 # Standalone: `sh lite/test/list/run.sh` from anywhere (it cds itself).
@@ -121,7 +121,7 @@ else bad "sub/ not fused with C2" "$WORK/out"; fi
 if grep -q '^dir old/ .*C0 seed a and sub' "$WORK/out"
 then ok "old/ is fused with C0 — the newest commit under it IS its seed"
 else bad "old/ not fused with C0" "$WORK/out"; fi
-# LITE-044: a dir NESTED under a dir fuses too — one lane scan per entry, so
+# LITE-044: a dir NESTED under a dir fuses too — one index scan per entry, so
 # depth costs nothing and no walk ceiling can starve the row.
 rtin "$REPO" list --plain deep > "$WORK/deep.out" 2>"$WORK/deep.err"; RC=$?
 if [ "$RC" = 0 ] && grep -q '^dir er/ .*C0 seed a and sub' "$WORK/deep.out"
@@ -162,16 +162,16 @@ refuse "a climb out of the repository is refused" "is outside" ../elsewhere
 refuse "an unknown rev is refused in plain words" "no commit" "?deadbeefdead"
 
 # ==========================================================================
-# leg 1b — LITE-044: a garbage lane file in .git/be does not break the run;
+# leg 1b — LITE-044: a garbage index file in .git/be does not break the run;
 # the fresh derivation still yields fused dir rows.
 # ==========================================================================
 BE="$REPO/.git/be"
 rm -rf "$BE"; mkdir -p "$BE"
-printf 'PRE-LITE-044 LANE\n' > "$BE/0000000000.lite.idx"
+printf 'PRE-LITE-044 INDEX\n' > "$BE/0000000000.lite.idx"
 rtin "$REPO" list --plain > "$WORK/old.out" 2>"$WORK/old.err"; RC=$?
 if [ "$RC" = 0 ] && grep -q '^dir old/ .*C0 seed a and sub' "$WORK/old.out"
-then ok "a garbage lane file still yields fused dir rows"
-else bad "garbage lane file broke the run (rc $RC)" "$WORK/old.out" "$WORK/old.err"; fi
+then ok "a garbage index file still yields fused dir rows"
+else bad "garbage index file broke the run (rc $RC)" "$WORK/old.out" "$WORK/old.err"; fi
 
 # ==========================================================================
 # leg 2 — the FUSE itself (be/test/list/fuse.js ported), headless

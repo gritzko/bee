@@ -1,14 +1,14 @@
 //  index/resolve.js — LITE-011: turn a PARTIAL path (`abc/TCP.c`, or the bare
 //  `TCP.c`) into the full repo-relative path(s) it names IN A GIVEN COMMIT.
 //
-//  The LITE-006 lane is hash-only and hands back no text, so it cannot answer
+//  The LITE-006 index is hash-only and hands back no text, so it cannot answer
 //  alone: it NARROWS, and a real tree object answers.  The FSEG rows keyed by
 //  the filename hash carry the ancestor segment hashes, which prune a descent
 //  of the commit's tree down to (almost always) one line; the tree entries
 //  carry the real names, so the recovered path is TEXT.
 //
 //  THE DESCENT
-//   1. scan the lane for the key prefix — `fn_hl|prnt_hl` (60 bits) when the
+//   1. scan the index for the key prefix — `fn_hl|prnt_hl` (60 bits) when the
 //      partial has a parent, `fn_hl` alone (40 bits) for a bare filename;
 //   2. at level `i` keep only the entries whose name's top-10 hashlet equals
 //      `seg_i`, recursing into those trees and accumulating the real names;
@@ -34,7 +34,7 @@
 const idx = require("./index.js");
 
 //  The partial as typed -> { segs[], fn, prnt }.  `prnt` is null for a bare
-//  filename, which widens the lane scan from 60 bits to 40.
+//  filename, which widens the index scan from 60 bits to 40.
 function split(partial) {
   const segs = [];
   for (const s of String(partial === undefined ? "" : partial).split("/"))
@@ -45,7 +45,7 @@ function split(partial) {
            prnt: segs.length > 1 ? idx.segHl(segs[segs.length - 2], 20n) : null };
 }
 
-//  Step 1 — the candidate rows.  The lane is unkeyed and a crash can leave a
+//  Step 1 — the candidate rows.  The index is unkeyed and a crash can leave a
 //  byte-identical duplicate, so rows are deduped on (key, val).
 function candidates(ix, q) {
   const out = [], seen = new Set();

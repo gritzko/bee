@@ -187,7 +187,7 @@ else bad "subdir path / unknown path (rc $RC)" "$WORK/l6" "$WORK/l7" "$WORK/l7e"
 # leg 1c — LITE-011: a PARTIAL path resolves against the commit's tree
 # ==========================================================================
 # R1: `dir/b.txt` named by its BARE filename from the repo root.  `path_hl`
-# hashes the WHOLE path, so `b.txt` hashes to a key the lane does not hold —
+# hashes the WHOLE path, so `b.txt` hashes to a key the index does not hold —
 # the FSEG rows + the tree descent are what turn it back into `dir/b.txt`.
 rtin "$REPO" log b.txt 2>"$WORK/p1e" | cut -c1-8 > "$WORK/p1"
 if cmp -s "$WORK/l4w" "$WORK/p1"
@@ -355,7 +355,7 @@ else bad "gap run indexes only the new commit (rc $RC)" "$WORK/o3" "$WORK/e3"; f
 
 # V6: a REWRITTEN history — the mark names a commit that is no longer an
 # ancestor, so the fast no-op misses; but PRESENCE is the walk boundary, so the
-# climb stops at the first commit the lane already holds and only the ONE new
+# climb stops at the first commit the index already holds and only the ONE new
 # commit is indexed.  Nothing below it is re-walked and nothing is re-minted.
 g reset -q --hard "$C3"
 printf '9\n' > "$REPO/a.txt"; g add -A
@@ -363,10 +363,10 @@ GIT_AUTHOR_DATE="2020-01-07T00:00:00Z" GIT_COMMITTER_DATE="2020-01-07T00:00:00Z"
     g commit -q -m c6
 rt index "$REPO" > "$WORK/o4" 2>"$WORK/e4"; RC=$?
 if [ "$RC" = 0 ] && grep -q '^indexed 1 commits, 1 revs, ' "$WORK/o4"
-then ok "a rewritten history walks only what the lane lacks"
-else bad "a rewritten history walks only what the lane lacks (rc $RC)" "$WORK/o4" "$WORK/e4"; fi
+then ok "a rewritten history walks only what the index lacks"
+else bad "a rewritten history walks only what the index lacks (rc $RC)" "$WORK/o4" "$WORK/e4"; fi
 
-# V6b: INTERRUPT-RESUME.  Drop the lane's MARK runs only?  There is no such
+# V6b: INTERRUPT-RESUME.  Drop the index's MARK runs only?  There is no such
 # surgery — instead simulate the crash the ruling cares about: index a fixture
 # from scratch with the walk stopped part-way (the runtime is killed), then
 # rerun.  `resume.js` does exactly that in-process: it indexes with an injected
@@ -394,12 +394,12 @@ then ok "a non-repository arg is refused in plain words"
 else bad "a non-repository arg is refused in plain words (rc $RC)" "$WORK/o6" "$WORK/e6"; fi
 
 # ==========================================================================
-# leg 3 — LITE-028: a catch-up reads the NEW work, not the whole lane
+# leg 3 — LITE-028: a catch-up reads the NEW work, not the whole index
 # ==========================================================================
 # A synthetic history big enough for the asymmetry to be unmistakable: 1000
 # commits over 40 files, built by fast-import (a second, not a minute).  The
-# lane is brought up at 500 commits and again at 1000, and a ONE-commit
-# catch-up is measured over each — the rows READ must not grow with the lane.
+# index is brought up at 500 commits and again at 1000, and a ONE-commit
+# catch-up is measured over each — the rows READ must not grow with the index.
 REPO3="$WORK/repo3"
 mkdir -p "$REPO3"
 LAZY=yes
@@ -432,37 +432,37 @@ nm() { sed -n "s/.*$2=\([0-9]*\).*/\1/p" "$1"; }
 # `reset --hard` moves the BRANCH, so the whole history is pinned by a tag and
 # every step names its commit through that.
 g3 tag -f full master
-g3 reset -q --hard full~500 && lz index > "$WORK/z0" 2>&1       # lane: 500 commits
+g3 reset -q --hard full~500 && lz index > "$WORK/z0" 2>&1       # index: 500 commits
 g3 reset -q --hard full~499
 lz meas > "$WORK/z1" 2>"$WORK/z1e"; RC=$?
-g3 reset -q --hard full && lz index >> "$WORK/z0" 2>&1          # lane: 1000 commits
+g3 reset -q --hard full && lz index >> "$WORK/z0" 2>&1          # index: 1000 commits
 printf 'tail\n' > "$REPO3/dir0/file0.txt"; g3 add -A
 GIT_AUTHOR_DATE="2021-06-01T00:00:00Z" GIT_COMMITTER_DATE="2021-06-01T00:00:00Z" \
     g3 commit -q -m tail
 lz meas > "$WORK/z2" 2>"$WORK/z2e"; RC2=$?
 
-R1=$(nm "$WORK/z1" reads); L1=$(nm "$WORK/z1" lane)
-R2=$(nm "$WORK/z2" reads); L2=$(nm "$WORK/z2" lane)
+R1=$(nm "$WORK/z1" reads); L1=$(nm "$WORK/z1" index)
+R2=$(nm "$WORK/z2" reads); L2=$(nm "$WORK/z2" index)
 C1=$(nm "$WORK/z1" commits); C2=$(nm "$WORK/z2" commits)
 
-# Z1: both catch-ups are one commit, and the lane really did double.
+# Z1: both catch-ups are one commit, and the index really did double.
 if [ "$RC" = 0 ] && [ "$RC2" = 0 ] && [ "$C1" = 1 ] && [ "$C2" = 1 ] &&
    [ "$L2" -gt "$((L1 * 3 / 2))" ]
-then ok "the fixture catches up one commit over a lane that doubled ($L1 -> $L2 rows)"
+then ok "the fixture catches up one commit over an index that doubled ($L1 -> $L2 rows)"
 else bad "the LITE-028 fixture (rc $RC/$RC2)" "$WORK/z1" "$WORK/z1e" "$WORK/z2" "$WORK/z2e"; fi
 
-# Z2: THE REPRO.  Reading the lane to index one commit is the bug; before the
-# fix `reads` was the whole lane (L + a few) both times.
+# Z2: THE REPRO.  Reading the index to index one commit is the bug; before the
+# fix `reads` was the whole index (L + a few) both times.
 if [ "$R1" -lt "$((L1 / 4))" ] && [ "$R2" -lt "$((L2 / 4))" ]
-then ok "a one-commit catch-up reads a fraction of the lane ($R1/$L1, $R2/$L2 rows)"
-else bad "a one-commit catch-up reads a fraction of the lane ($R1/$L1, $R2/$L2 rows)" \
+then ok "a one-commit catch-up reads a fraction of the index ($R1/$L1, $R2/$L2 rows)"
+else bad "a one-commit catch-up reads a fraction of the index ($R1/$L1, $R2/$L2 rows)" \
          "$WORK/z1" "$WORK/z2"; fi
 
 # Z3: what it DOES read is the touched file's own chain — 1 of the 40 files, so
-# ~lane/40 revs at 3-4 rows each.  The old full pass read L+2 rows both times.
+# ~index/40 revs at 3-4 rows each.  The old full pass read L+2 rows both times.
 E1=$((500 / 40 * 4 + 16)); E2=$((1000 / 40 * 4 + 16))
 if [ "$R1" -le "$E1" ] && [ "$R2" -le "$E2" ]
-then ok "what it reads is the file's own chain, not the lane ($R1<=$E1, $R2<=$E2)"
+then ok "what it reads is the file's own chain, not the index ($R1<=$E1, $R2<=$E2)"
 else bad "what it reads is the file's own chain ($R1 of $E1, $R2 of $E2)" \
          "$WORK/z1" "$WORK/z2"; fi
 
@@ -495,12 +495,12 @@ REPO4="$WORK/repo4"; FH4="$WORK/home4"; mkdir -p "$REPO4" "$FH4"
 rt4() { ( cd "$REPO4" && HOME="$FH4" "$RT" "$@" ); }
 REG="$FH4/.config/bee/repos"
 
-# B1: install registers the path AND leaves a lane behind.
+# B1: install registers the path AND leaves an index behind.
 rt4 install > "$WORK/b1" 2>"$WORK/b1e"; RC=$?
 if [ "$RC" = 0 ] && grep -q '^installed' "$WORK/b1" &&
    [ -f "$REG" ] && [ "$(cat "$REG")" = "$REPO4" ] &&
    ls "$REPO4/.git/be" 2>/dev/null | grep -q '\.lite2\.idx$'
-then ok "install registers the path in .config/bee/repos and leaves a lane"
+then ok "install registers the path in .config/bee/repos and leaves an index"
 else bad "install registers + indexes (rc $RC)" "$WORK/b1" "$WORK/b1e" "$REG"; fi
 
 # B1b: BEE-007 — install is still the FULL bring-up: `a.mkd` names README.mkd,
@@ -594,12 +594,12 @@ else
 rtp() { ( cd "$PAR" && HOME="$FH6" "$RT" "$@" ); }
 REG6="$FH6/.config/bee/repos"
 
-# S1: install takes the sub — registered, its own lane, counted in the line.
+# S1: install takes the sub — registered, its own index, counted in the line.
 rtp install > "$WORK/s1" 2>"$WORK/s1e"; RC=$?
 if [ "$RC" = 0 ] && grep -q 'took 1 submodule' "$WORK/s1" &&
    grep -q "^$PAR\$" "$REG6" && grep -q "^$PAR/html\$" "$REG6" &&
    ls "$PAR/.git/modules/html/be" 2>/dev/null | grep -q '\.lite2\.idx$'
-then ok "install registers the submodule and leaves it a lane of its own"
+then ok "install registers the submodule and leaves it an index of its own"
 else bad "install takes the submodule (rc $RC)" "$WORK/s1" "$WORK/s1e" "$REG6"; fi
 
 # S2: THE REPRO — `list` in the parent attributes the `html/` row off the dir
@@ -637,7 +637,7 @@ then ok "an uninitialised submodule is skipped in words, not a failure"
 else bad "an uninitialised submodule is skipped (rc $RC)" "$WORK/s5" "$WORK/s5e"; fi
 
 # S6: the rows leg — the recursion with the registry OFF, and what the parent's
-# lane holds about the gitlink (REV-CMMT only).
+# index holds about the gitlink (REV-CMMT only).
 FH9="$WORK/home9"
 LITE_FIX="$PAR" LITE_SUB=html LITE_HOME="$FH9" \
     rt --eval "require('$CASE/subs.js')" > "$WORK/s6" 2>"$WORK/s6e"; RC=$?
@@ -739,7 +739,7 @@ if [ "$RC" = 0 ] && [ -s "$WORK/f6" ] && [ "$RC2" = 0 ] && [ -s "$WORK/f7" ] &&
 then ok "a read view brings the index up and mints NO link row"
 else bad "a read view mints no link row (rc $RC/$RC2)" "$WORK/f8" "$WORK/f6e" "$WORK/f7e"; fi
 
-# ...and the very next `bee index` over that lane runs the link half alone.
+# ...and the very next `bee index` over that index runs the link half alone.
 rt6 index > "$WORK/f9" 2>"$WORK/f9e"; RC=$?
 probe "$REPO6" > "$WORK/fa" 2>"$WORK/fae"
 if [ "$RC" = 0 ] && grep -q '^up to date: refs/heads/master .* — scanned [0-9]* files, ' "$WORK/f9" &&

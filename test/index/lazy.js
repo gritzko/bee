@@ -1,13 +1,13 @@
 //  lite/test/index/lazy.js — LITE-028: a catch-up costs the NEW work, not the
-//  history.  Before this, `bringUp` read the WHOLE lane (every K_BLOB/K_CMMT/
+//  history.  Before this, `bringUp` read the WHOLE index (every K_BLOB/K_CMMT/
 //  K_CPAR row ever written) to index a single new commit, so one `git commit`
 //  in a linux-sized repo stalled the next verb for ~10 s.
 //
 //  The leg is driven by run.sh, which owns the git steps; one MODE per call:
-//    index — bring the lane up to date, quietly (no repo-list line);
+//    index — bring the index up to date, quietly (no repo-list line);
 //    meas  — bring it up through a COUNTING shim: `reads` is every row pulled
-//            off the lane, `lane` is how many rows are in it;
-//    check — the lane's own integrity: each path's revs are exactly 0..k, and
+//            off the index, `index` is how many rows are in it;
+//    check — the index's own integrity: each path's revs are exactly 0..k, and
 //            no path carries two revs of one commit (a missed per-path read
 //            would mint a duplicate rev 0 and show up here).
 "use strict";
@@ -17,7 +17,7 @@ const repo = io.getenv("LITE_FIX");
 const mode = io.getenv("LITE_MODE") || "meas";
 function w1(s) { const b = utf8.Encode(s); const x = io.buf(b.length + 8); x.feed(b); io.writeAll(1, x); }
 
-//  Every row the lane hands out, counted.  Puts and commits pass straight
+//  Every row the index hands out, counted.  Puts and commits pass straight
 //  through, so the run writes exactly what it would write unwrapped.
 function counted(ix, st) {
   return {
@@ -33,7 +33,7 @@ function counted(ix, st) {
   };
 }
 
-function laneRows(ix) {
+function indexRows(ix) {
   let n = 0;
   const c = ix.seek(0n);
   while (c.next()) n++;
@@ -51,9 +51,9 @@ try {
     const rec = idx.bringUp(ctx, counted(ix, st), { track: false });
     const ms = Date.now() - t0;
     w1("commits=" + rec.commits + " reads=" + st.reads + " seeks=" + st.seeks +
-       " ms=" + ms + " lane=" + laneRows(ix) + "\n");
+       " ms=" + ms + " index=" + indexRows(ix) + "\n");
   } else {
-    //  check: fold the whole lane and test the two invariants the arrival
+    //  check: fold the whole index and test the two invariants the arrival
     //  state is responsible for.
     const revs = new Map(), pairs = [];
     let bad = 0, n = 0;

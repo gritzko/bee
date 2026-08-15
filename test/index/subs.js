@@ -1,11 +1,11 @@
 //  lite/test/index/subs.js — BEE-006: a submodule is an ordinary repo.  The
 //  leg the shell cannot see: what the RECURSION writes and what the parent's
-//  lane holds about the gitlink.
+//  index holds about the gitlink.
 //
 //  `LITE_FIX` is a parent repo with ONE initialised submodule at `LITE_SUB`,
 //  `LITE_HOME` a home nobody has registered anything in yet.
 //    1. `submodules` finds the initialised sub and names its worktree;
-//    2. `index(parent, { track: false })` recurses — a lane per sub — and
+//    2. `index(parent, { track: false })` recurses — an index per sub — and
 //       writes NO registry line, for the parent or for any sub;
 //    3. the gitlink's path carries REV-CMMT rows and ONLY those: a foreign
 //       commit is no blob of ours, so no REV-BLOB, no B2P, no FSEG.
@@ -38,7 +38,7 @@ check("submodules() finds the one initialised sub",
 //  --- 2. the recursion, with the registry OFF -------------------------------
 try { io.rmdir(repo + "/.git/be", true); } catch (e) {}
 const rec = idx.index(repo, { track: false, home: home });
-//  The sub's lane lives in ITS OWN gitdir — `<parent gitdir>/modules/<name>`,
+//  The sub's index lives in ITS OWN gitdir — `<parent gitdir>/modules/<name>`,
 //  which is what the gitfile points at — and it is brought up or already up.
 check("index recurses depth-first into the sub",
       (rec.subs || []).length === 1 && rec.subs[0].path === sub &&
@@ -49,12 +49,12 @@ let reg = null;
 try { reg = io.stat(home + "/.config/bee/repos").kind; } catch (e) { reg = null; }
 check("track: false writes no registry line, for the parent or the sub",
       reg === null, String(reg));
-let lane = false;
+let index = false;
 try {
   for (const f of io.readdir(rec.subs[0].rec.gitdir + "/" + idx.IDX_DIR))
-    if (f.slice(-idx.IDX_EXT.length) === idx.IDX_EXT) lane = true;
-} catch (e) { lane = false; }
-check("the sub has a lane of its own in ITS gitdir", lane,
+    if (f.slice(-idx.IDX_EXT.length) === idx.IDX_EXT) index = true;
+} catch (e) { index = false; }
+check("the sub has an index of its own in ITS gitdir", index,
       rec.subs[0].rec.gitdir);
 
 //  --- 3. the parent's rows about the gitlink --------------------------------
@@ -82,7 +82,7 @@ try {
 check("the gitlink path carries REV-CMMT rows and no REV-BLOB",
       bumps > 0 && kinds.has(idx.K_CMMT) && !kinds.has(idx.K_BLOB),
       "kinds " + Array.from(kinds).join(",") + " revs " + bumps);
-check("the sub's commit keys no row of the parent's lane", foreign === 0,
+check("the sub's commit keys no row of the parent's index", foreign === 0,
       String(foreign));
 
 w1(bad ? "FAILED " + bad + " of " + n + "\n" : "DONE " + n + " checks\n");

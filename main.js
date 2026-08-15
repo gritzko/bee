@@ -52,13 +52,13 @@ function runIndex(args) {
   writeFd(1, utf8.Encode(idx.summary(rec) + "\n"));
 }
 
-//  LITE-033: `bee lindex [<target>]` — the BACKLINK SUSPECTS of the index lane.
+//  LITE-033: `bee lindex [<target>]` — the BACKLINK SUSPECTS of the index index.
 //  BEE-007: this is the QUERY form; `bee index` is the bring-up for both halves.
 //  Bare, it brings the LINK rows up to the tip (only the blobs the tip moved are
 //  tokenised) and prints one summary line.  With a target — a path, a partial
 //  one, or a ticket code — it prints the paths that MAY link to it, one per
 //  line.  Suspects, not proof: a stale row is legal and the caller kills it by
-//  opening the file, which is what keeps the lane append-only.
+//  opening the file, which is what keeps the index append-only.
 function runLindex(args) {
   const li = require("index/lindex.js");
   //  A mode flag is a no-op here — plain lines either way, no hunk to page.

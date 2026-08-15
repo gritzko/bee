@@ -1,0 +1,18 @@
+merge hunk f.txt#L1
+merge   +THREE <- (none)
+merge   -three <- (none)
+ok   the merge diff still says -three +THREE
+FAIL every emitted token carries a who
+     got: undefined
+FAIL +THREE blames the SIDE BRANCH c2, not the merge
+     got: (none)
+FAIL -three blames the BASE c0 (the token the merge base carried)
+     got: (none)
+FAIL diff <hexA> <hexB> is a form
+     got: path/0
+FAIL -TWO blames c1 (ours), +THREE blames c2 (theirs)
+     got: -/-
+ok   no token blames a fake layer id
+FAIL the lane graph reader is there
+     got: index/lane.js is missing
+FAILED 8 checks

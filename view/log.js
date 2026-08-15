@@ -1,5 +1,5 @@
 //  view/log.js — LITE-007: `quickjab log [<hex>|<path>]`, the commit and file
-//  logs read OFF the LITE-006 lane.
+//  logs read OFF the LITE-006 index.
 //
 //  Three forms, one arg, the ruled classification: 6..40 hex = a commit, any
 //  other arg = a path, no arg = the live tip.
@@ -161,7 +161,7 @@ function parentsOf(ix, hl) {
   for (const e of cparOf(ix, hl)) if (e.hl !== idx.CPAR_NONE) out.push(e.hl);
   return out;
 }
-//  Is this commit in the lane at all?  ANY CPAR row says yes (a root commit's
+//  Is this commit in the index at all?  ANY CPAR row says yes (a root commit's
 //  empty-slot row is exactly what makes parentless distinguishable from
 //  unindexed) — the same test the indexer's walk boundary uses.
 function isIndexed(ix, hl) { return cparOf(ix, hl).length > 0; }

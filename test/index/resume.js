@@ -29,8 +29,8 @@ function wipe() { try { io.rmdir(repo + "/.git/be", true); } catch (e) {} }
 function run(opts) { return idx.index(repo, Object.assign({ track: false }, opts || {})); }
 function logRows() { return lg.log(undefined, { from: repo }).rows; }
 
-//  Every REV row in the lane, as path_hl -> [rev...] and a (path, commit) set.
-function laneRevs() {
+//  Every REV row in the index, as path_hl -> [rev...] and a (path, commit) set.
+function indexRevs() {
   const ctx = idx.openRepo(repo, false);
   const ix = idx.openIndex(ctx.gitdir);
   const pairs = [], revs = [];
@@ -51,7 +51,7 @@ function laneRevs() {
 wipe();
 const ref = run();
 const refLog = logRows();
-const refRows = laneRevs();
+const refRows = indexRevs();
 check("reference run indexes the whole history",
       ref.commits > 0 && ref.revs > 0 && refLog.length === ref.commits,
       "commits " + ref.commits + " revs " + ref.revs + " rows " + refLog.length);
@@ -63,7 +63,7 @@ let first = null, threw = false;
 try { run({ _faultAfter: 2 }); } catch (e) { threw = true; }
 check("an injected fault aborts the run", threw);
 //  the faulted run sealed its rows but wrote NO mark, so the next run must not
-//  see a no-op — it must see exactly the commits the lane still lacks.
+//  see a no-op — it must see exactly the commits the index still lacks.
 const second = run();
 check("the resumed run is not a no-op", second.upToDate === false, second.upToDate);
 check("resumed commits = the reference minus what the faulted run sealed",
@@ -117,14 +117,14 @@ const midLog = logRows();
 check("the mid-crash log is byte-identical to the reference log",
       midLog.join("\n") === refLog.join("\n"),
       "rows " + midLog.length + " vs " + refLog.length);
-//  ...and the lane holds EXACTLY the reference's rows: the stranded commit's
+//  ...and the index holds EXACTLY the reference's rows: the stranded commit's
 //  revs were re-derived to nothing, so no path carries two revs of one commit
 //  and the total rev count is unchanged.
-const midRows = laneRevs();
+const midRows = indexRevs();
 check("no path carries two revs of one commit",
       new Set(midRows.pairs.map(String)).size === midRows.pairs.length,
       midRows.pairs.length + " (path,commit) rows");
-check("the lane holds exactly the reference's rev count",
+check("the index holds exactly the reference's rev count",
       midRows.revs.length === refRows.revs.length,
       midRows.revs.length + " vs " + refRows.revs.length);
 

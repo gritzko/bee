@@ -21,14 +21,14 @@
 //
 //  LINK (LITE-033, index/lindex.js) is the one kind this file does not write:
 //  it is a separate, equally lazy round over the TIP blobs, and it rides the
-//  same lane so `rm -rf .git/be` still rebuilds everything.  BEE-002 keys it on
+//  same index so `rm -rf .git/be` still rebuilds everything.  BEE-002 keys it on
 //  the TARGET's own segment hashlets, so the indexing ORDER cannot change a key.
 //  BEE-007: `index()` RUNS that round too — one verb, two marks.  The VERB folds,
 //  the PASSES do not: each half keeps its own O(1) no-op, and `bringUp` stays the
 //  commit half alone, so a read view (`log`/`list`/`commit`) never lexes a blob.
 //
 //  LITE-044: a changed DIR gets a rev too — ONE REV-CMMT row on the DIR PATH's
-//  own `path_hl`, so `lite list` reads a dir's last commit off the lane exactly
+//  own `path_hl`, so `lite list` reads a dir's last commit off the index exactly
 //  the way it reads a file's, at any depth and with no ancestry walk.  A dir
 //  mints nothing else: REV-BLOB/REV-PARS/B2P/FSEG all describe a FILE's content
 //  or a FILE's name, and a subtree sha is neither.
@@ -38,7 +38,7 @@
 //  the dense chain (`lastRev`): O(log) seeks, never O(history) rows.
 //
 //  BEE-006: a SUBMODULE is an ordinary repo — `index` and `install` RECURSE
-//  into every initialised one (depth-first, `$HOME/.config/bee/repos` and a lane
+//  into every initialised one (depth-first, `$HOME/.config/bee/repos` and an index
 //  of its own), an uninitialised or out-of-worktree one is skipped in words, and
 //  a cycle stops at the first repo already taken.  The parent keeps only the
 //  gitlink's own history: a commit that BUMPS the pointer mints ONE dir-shaped
@@ -56,13 +56,13 @@
 //  THE LAZY CONTRACT (ruling 2026-08-13: PRESENCE is the boundary, and there
 //  is no walk ceiling at all).
 //   1. the tip is already this ref's MARK -> no-op, without even a scan;
-//   2. else the lane is asked, by KEY, whether it holds a given commit (its
+//   2. else the index is asked, by KEY, whether it holds a given commit (its
 //      CPAR rows) and what state a given path has arrived at (LITE-028);
 //   3. walk UP from the tip, never entering a commit in that set.  So each run
 //      indexes exactly the commits no run has indexed yet: a history of ANY
 //      size converges over successive runs, an INTERRUPTED run keeps every
 //      commit it sealed, and a rebase needs no special case (the rewritten
-//      commits are simply not in the lane, so they are what gets walked);
+//      commits are simply not in the index, so they are what gets walked);
 //   4. per commit the rev rows go in FIRST and the CPAR rows LAST, because a
 //      seal persists a PREFIX of what was put — so a CPAR row on disk proves
 //      the commit's rev rows are on disk too, and a kill between them costs a
@@ -77,7 +77,7 @@ const isSha40 = refs.isSha40;
 
 //  The run family lives in the repo's own gitdir.
 const IDX_DIR = "be";
-//  BEE-002: the lane FORMAT is its extension — the re-keyed LINK rows share the
+//  BEE-002: the index FORMAT is its extension — the re-keyed LINK rows share the
 //  key space with the old ones, so `.lite.idx` retires and `openIndex` sweeps it.
 const IDX_EXT = ".lite2.idx";
 //  DOG-032: the INITIAL derive alone opens a big memtable (64Ki wh128 rows =
@@ -96,7 +96,7 @@ const REV_BITS = 20n, PHL_BITS = 40n;
 const REV_MAX = (1n << REV_BITS) - 1n;          // also the empty PARS slot
 const PHL_MASK = (1n << PHL_BITS) - 1n;
 const HL60_MASK = (1n << 60n) - 1n;
-//  Ruling 2026-08-13: the walk stops at commits already in the lane, so EVERY
+//  Ruling 2026-08-13: the walk stops at commits already in the index, so EVERY
 //  indexed commit must carry a row that says so — and a ROOT commit has no
 //  parent to hang a CPAR row on.  It gets ONE CPAR row with an EMPTY parent
 //  slot, all-ones, which is the ruled table's own vocabulary for an empty slot
@@ -383,10 +383,19 @@ function identTs(ident) {
 //  directory is derived state this verb owns, never a store to be conjured.
 //  DOG-032: `bulk` opens the from-scratch derive's handle — a 1 MB memtable and
 //  lazy seals, finished by the ONE durable commit that writes the mark.
-//  BEE-002: `ro` opens the lane READ-ONLY (a query fanning out over another
-//  repo's lane must bring nothing up and sweep nothing there).
+//  BEE-002: `ro` opens the index READ-ONLY (a query fanning out over another
+//  repo's index must bring nothing up and sweep nothing there).
+//  A LINKED WORKTREE shares the ODB and the refs, so it shares the INDEX: the
+//  dir is the COMMON gitdir's, never the per-worktree one (only HEAD is local).
+function indexDir(gitdir) {
+  const c = refs.commonDir(gitdir);
+  let d = c;                                  // a worktree's is `<gd>/../..`
+  try { d = io.realpath(c); } catch (e) {}
+  return d + "/" + IDX_DIR;
+}
+
 function openIndex(gitdir, bulk, ro) {
-  const o = { dir: gitdir + "/" + IDX_DIR, ext: IDX_EXT };
+  const o = { dir: indexDir(gitdir), ext: IDX_EXT };
   if (bulk) { o.mem = IDX_BULK_ROWS; o.durable = false; }
   if (ro) { o.mode = "r"; return abc.index("wh128", o); }
   sweep(o.dir);
@@ -409,7 +418,7 @@ function sweep(dir) {
 //  Has this repo an index at all?  A dir with no run and no memtable is the
 //  from-scratch derive — the one run that wants the big memtable.
 function fresh(gitdir) {
-  const dir = gitdir + "/" + IDX_DIR;
+  const dir = indexDir(gitdir);
   try {
     for (const f of io.readdir(dir))
       if (f.length >= IDX_EXT.length && f.slice(-IDX_EXT.length) === IDX_EXT)
@@ -459,7 +468,7 @@ function idxWriter(ix) {
   };
 }
 
-//  Every MARK val this ref carries.  A wh128 lane is UNKEYED, so a bumped mark
+//  Every MARK val this ref carries.  A wh128 index is UNKEYED, so a bumped mark
 //  is a SECOND row on the same key and nothing in the row says which is newer —
 //  which does not matter: the walk stops at ANY of them, and the newest is the
 //  one it meets first coming down from the tip.
@@ -501,7 +510,7 @@ function state(ix) {
   const st = { ix: ix, next: new Map(), byPB: new Map(), top: new Map(),
                have: new Set(), dirs: new Set(),          // LITE-044: loadDir's
                yes: new Set(), no: new Set(), all: false };
-  //  An EMPTY lane is fully known after ONE row read — the from-scratch derive
+  //  An EMPTY index is fully known after ONE row read — the from-scratch derive
   //  then seeks for nothing, because every row it will ever read is its own.
   if (!ix.seek(0n).next()) st.all = true;
   //  `done` without materializing it: ONE keyed CPAR seek per PROBED commit —
@@ -577,7 +586,7 @@ function loadDir(st, phl) {
                       commit: valHl60(revValAt(st.ix, phl, last, K_CMMT)) });
 }
 
-//  One lane row into the state, the fold the old full pass did per row.
+//  One index row into the state, the fold the old full pass did per row.
 function row(st, k, v) {
   const kind = keyKind(k);
   if (kind === K_CPAR) { st.yes.add(keyHl60(k)); return; }
@@ -605,16 +614,16 @@ function row(st, k, v) {
 
 //  --- the commit walk -------------------------------------------------------
 //  Ruling 2026-08-13: THERE IS NO WALK CEILING.  The walk climbs from the tip
-//  and stops at any commit ALREADY IN THE LANE — presence, not a watermark, is
+//  and stops at any commit ALREADY IN THE INDEX — presence, not a watermark, is
 //  the boundary.  Three things fall out of that:
 //   -  a history of any size CONVERGES: each run indexes strictly the commits
 //      no run has indexed yet, so the work left shrinks every time;
 //   -  an INTERRUPTED run keeps its progress: whatever was sealed is a
 //      boundary the next run stops at, and nothing is redone;
 //   -  a rebase/reset needs no special case: the rewritten commits are simply
-//      not in the lane, so they are exactly what gets walked.
+//      not in the index, so they are exactly what gets walked.
 //  The MARK survives as the ruled per-ref watermark and as the O(1) no-op:
-//  tip already marked -> answer without even scanning the lane.
+//  tip already marked -> answer without even scanning the index.
 function collect(r, tip, done, prog) {
   const set = new Set(), queue = [];
   if (done.has(hlOfSha(tip))) return { set: set, order: [] };
@@ -898,30 +907,34 @@ function indexSubs(ctx, rec, opts) {
 }
 
 //  bringUp(ctx, ix, opts) -> the summary record.  THE lazy step: the O(1) mark
-//  check, then index strictly the commits the lane does not hold yet, reading
+//  check, then index strictly the commits the index does not hold yet, reading
 //  (LITE-028) only the commits it probes and the paths they touch.  `ix` is
 //  the caller's open handle, so `log` queries the very rows this just wrote.
+//  BEE-005: `opts.tip` indexes from an ARBITRARY commit instead of the checked-
+//  out one — no ref names it, so its watermark is keyed by its COMMIT hashlet.
 function bringUp(ctx, ix, opts) {
   opts = opts || {};
   const hd = ctx.head, r = ctx.r;
-  const rec = { repo: ctx.repo, gitdir: ctx.gitdir, ref: hd.ref, tip: hd.sha,
-                tracks: null, tracked: false, upToDate: false,
+  const tip = (opts.tip && opts.tip !== hd.sha) ? opts.tip : hd.sha;
+  const bare = tip !== hd.sha;
+  const rec = { repo: ctx.repo, gitdir: ctx.gitdir, ref: bare ? tip : hd.ref,
+                tip: tip, tracks: null, tracked: false, upToDate: false,
                 commits: 0, revs: 0, rows: 0 };
   if (opts.track !== false) {
     const t = track(ctx.repo, opts.home);
     rec.tracks = t.file; rec.tracked = t.added;
   }
-  const refHl = hlOfText(hd.ref);
+  const refHl = bare ? hlOfSha(tip) : hlOfText(hd.ref);
   //  The watermark is the FAST no-op only: the tip it names is already indexed
   //  with everything below it, so there is nothing to scan and nothing to do.
-  if (markSet(ix, refHl).has(hlOfSha(hd.sha))) { rec.upToDate = true; return rec; }
+  if (markSet(ix, refHl).has(hlOfSha(tip))) { rec.upToDate = true; return rec; }
 
   const st = state(ix);
   const prog = progress();
-  const w = collect(r, hd.sha, st.done, prog);
+  const w = collect(r, tip, st.done, prog);
   //  BEE-006: the gitlink paths the TIP carries, minted once — a repo with no
   //  `.gitmodules` there answers with the empty list and pays nothing per commit.
-  const tipC = readCommit(r, hd.sha);
+  const tipC = readCommit(r, tip);
   const subs = tipC === null ? [] : submodulePaths(r, tipC.tree);
   const wr = idxWriter(ix);
   const nw = w.order.length;
@@ -967,7 +980,7 @@ function bringUp(ctx, ix, opts) {
   rec.rows = wr.rows;
   //  The MARK is the LAST write of the run (DOG-027) and DOG-032's ONE durable
   //  commit: a lazy bulk run's earlier seals are made good right here.
-  ix.put(hlKey(refHl, K_MARK), hlVal(hlOfSha(hd.sha), 0n));
+  ix.put(hlKey(refHl, K_MARK), hlVal(hlOfSha(tip), 0n));
   ix.commit(true);
   rec.rows++;
   if (rec.commits === 0) rec.upToDate = true;   // the tip was indexed, unmarked
@@ -1039,16 +1052,16 @@ function emitDir(wr, st, c, chl) {
 //  The one-line summary the verb prints, BOTH halves on it (BEE-007).  A half
 //  sitting on its mark says so and costs no words; both do -> the ruled no-op.
 function summary(rec) {
-  const lane = rec.ref + " " + rec.tip.slice(0, 8) + " in " + rec.gitdir + "/" + IDX_DIR;
+  const index = rec.ref + " " + rec.tip.slice(0, 8) + " in " + indexDir(rec.gitdir);
   const lk = rec.link;                     // absent when the half did not run
   const lp = !lk ? null : lk.upToDate ? "links up to date"
            : "scanned " + lk.files + " files, " + lk.links + " links, " +
              lk.rows + " rows";
   if (rec.upToDate)
-    return "up to date: " + lane + (lk && !lk.upToDate ? " — " + lp : "") +
+    return "up to date: " + index + (lk && !lk.upToDate ? " — " + lp : "") +
            subsSaid(rec);
   return "indexed " + rec.commits + " commits, " + rec.revs + " revs, " +
-         rec.rows + " rows" + (lp === null ? "" : " — " + lp) + " — " + lane +
+         rec.rows + " rows" + (lp === null ? "" : " — " + lp) + " — " + index +
          subsSaid(rec);
 }
 
@@ -1083,7 +1096,7 @@ module.exports = {
   //  LITE-010: `diff` reads blob/commit objects straight off the ODB.
   object: object,
   firstLine: firstLine, identTs: identTs, heap: heap, hexOfHl: hexOfHl,
-  IDX_DIR: IDX_DIR, IDX_EXT: IDX_EXT, IDX_BULK_ROWS: IDX_BULK_ROWS,
+  IDX_DIR: IDX_DIR, IDX_EXT: IDX_EXT, IDX_BULK_ROWS: IDX_BULK_ROWS, indexDir: indexDir,
   fresh: fresh,
   CPAR_NONE: CPAR_NONE,
   K_BLOB: K_BLOB, K_CMMT: K_CMMT, K_PARS: K_PARS,

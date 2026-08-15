@@ -1,9 +1,10 @@
 //  view/commit.js — LITE-009: `lite commit [<hex>]`, ONE commit's metadata,
 //  ported from be/views/commit/commit.js.
 //
-//  A commit view is PURE ODB: `git.getHex` takes any 6..40 hexlet, so the arg
-//  IS an object name and no lane row, no `bringUp` and no repo-list line is ever
-//  touched — `commit` answers on a repo whose index was never built.
+//  The METADATA half is PURE ODB: `git.getHex` takes any 6..40 hexlet, so the
+//  arg IS an object name and no repo-list line is ever touched.  BEE-005: the
+//  FILES half is a diff, so it brings the index up to that commit (lazily, and
+//  never a registry line) — a diff is a projection of the path's weave now.
 //
 //  THE OUTPUT IS THE OBJECT.  be's key finding carries over verbatim: the plain
 //  bytes are EXACTLY
@@ -216,7 +217,7 @@ function commit(arg, opts) {
     //  The commit's files, under the metadata: a changed or added one gets its
     //  diff hunks, a removed one an EMPTY hunk (the banner alone).
     const m = idx.readCommit(ctx.r, sha);
-    const files = m === null ? [] : df.commitHunks(ctx, m, []);
+    const files = m === null ? [] : df.commitHunks(ctx, m, [], sha);
     return { sha: sha, uri: uri, hunks: [hunk(uri, b)].concat(files) };
   } finally { idx.closeRepo(ctx); }
 }

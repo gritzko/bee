@@ -9,7 +9,7 @@
 //  Driven by run.sh with the cwd inside the fixture repo:
 //    LITE_FIX  the repo
 //
-//  It runs LAST, after the `rm -rf .git/be` rebuild, so the lane's LINK rows are
+//  It runs LAST, after the `rm -rf .git/be` rebuild, so the index's LINK rows are
 //  exactly what the TIP (c2) blobs carry: doc/guide.mkd -> `src/abc/TCP.c`,
 //  `TCP.c` and `LITE-029`, and nothing else.
 "use strict";

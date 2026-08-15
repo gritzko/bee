@@ -156,8 +156,201 @@ function weave3(base, ours, theirs, ext) {
   return mergedLive(wm, _W3_MRG, [[_W3_BASE, _W3_OURS], [_W3_BASE, _W3_THRS]]);
 }
 
+//  ===========================================================================
+//  BEE-005: the file weave RECONSTRUCTION — be/shared/weave.js `buildDag` over
+//  bee's REV index instead of be's recomputed pathdag.  ONE weave per path: the
+//  path's blob at the LCA FLOOR of the tips folded first (as the floor's own
+//  commit), then every rev above it once, in rev order, each folded with its
+//  ancestor closure.  Shared history is folded ONCE for every tip.
+//  ===========================================================================
+
+const ln = require("./dag.js");
+const idx = require("./index.js");
+
+//  A layer id is a 16-hex hashlet (cfold.c JABCcfoldHi64).  The index holds 60
+//  bits of the commit sha, so the id is that hashlet SHIFTED — the low nibble
+//  is always 0, which is what keeps the reserved ids below off the commit space.
+function layerId(chl) { return idx.hexOfHl(chl) + "0"; }
+//  The seed layer when the tips have NO common rev at all (the path is an
+//  addition on one side): an EMPTY first layer under a reserved id, over which
+//  the first real rev reads as a plain insert (BEE-005 ruling 4).
+const LAYER_NIL = "0000000000000005";
+//  BE-010: the worktree's on-disk edit rides as a FINAL synthetic layer.
+const WT_SRC = "00000000005774ed";
+//  A path whose history above the floor is deeper than this is re-rooted at the
+//  from-side rev, in words — a fold per rev is a cost, not a promise.
+const LAYER_CAP = 1 << 10;
+
+//  Blob bytes for a 60-bit blob hashlet — THE one ODB read of the whole fold
+//  (a hashlet IS an object name: `git.getHex` takes any 6..40 hexlet).
+//  undefined = unreadable, not a blob, or over the source cap.
+function blobOf(r, bhl) {
+  let o = null;
+  try { o = idx.object(r, idx.hexOfHl(bhl)); } catch (e) { o = null; }
+  if (o === null || o.type !== "blob") return undefined;
+  return o.bytes.length > MAX_SOURCE_SIZE ? undefined : o.bytes;
+}
+
+//  weaveDiff(r, ix, path, tips, ext) -> the ONE weave and one READING per tip.
+//  `tips` are `{ chl, blob }` — the commit hashlet and the blob sha the tip's
+//  TREE carries there (undefined = the path is not there at all), the FROM side
+//  first.  The result is be's `build` shape:
+//    weave           the CFOLD container every rev reads out of
+//    views[i]        -> { rev, ids } the layer id that tip's view stands on
+//    idToHl          layer id -> the commit hashlet that folded it (blame)
+//  A tip the path is absent at gets an EMPTY layer of its own, so an addition
+//  is a plain insert above the floor and a deletion a plain removal: neither
+//  needs the inverted 2-layer fold a blob pair does (ruling 4).
+function weaveDiff(r, ix, path, tips, ext) {
+  const pr = ln.pathRevs(ix, path);
+  const reps = new Map();
+  const all = [];
+  for (const t of tips) {
+    const rs = ln.repsOf(ix, pr, t.chl);
+    reps.set(t.chl, rs);
+    for (const rev of rs) if (all.indexOf(rev) < 0) all.push(rev);
+  }
+  //  The index knows no rev of this path (nothing above it was ever indexed):
+  //  the tips still fold their OWN blobs over an empty seed, under their own
+  //  commit ids — a degraded weave, never a silently missing file.
+  let f = all.length ? ln.floorRev(pr, all) : { floor: null, above: [] };
+  if (f.above.length > LAYER_CAP) {
+    //  Too deep to fold rev by rev: re-root at the from side's own rev, in
+    //  words.  Still one weave with real commit ids, never a blob pair.
+    io.log("diff: " + path + " has over " + LAYER_CAP +
+           " revisions above the merge base — rooting the weave at the from side\n");
+    const from = reps.get(tips[0].chl) || [];
+    f = { floor: from.length ? from[from.length - 1] : null,
+          above: all.filter(function (rev) { return from.indexOf(rev) < 0; }) };
+  }
+
+  const idOfRev = new Map(), closure = new Map(), idToHl = new Map();
+  let w, seedId, seedIds;
+  const fe = f.floor === null ? undefined : pr.revs.get(f.floor);
+  //  An unreadable (or over-cap) floor blob seeds EMPTY rather than dropping
+  //  the path: the layers above still carry their own commit ids.
+  const seedBytes = fe === undefined ? undefined : blobOf(r, fe.blob);
+  if (seedBytes !== undefined) {
+    const e = fe, bytes = seedBytes;
+    seedId = layerId(e.commit);
+    idToHl.set(seedId, e.commit);
+    w = fold(null, bytes, ext, seedId, []);
+    idOfRev.set(f.floor, seedId);
+    closure.set(f.floor, new Set([seedId]));
+  } else {
+    seedId = LAYER_NIL;
+    w = fold(null, new Uint8Array(0), ext, seedId, []);
+  }
+  seedIds = new Set([seedId]);
+
+  for (const rev of f.above) {
+    const e = pr.revs.get(rev);
+    if (e === undefined) continue;
+    const ps = e.pars.filter(function (p) { return idOfRev.has(p); });
+    const anc = new Set(seedIds);
+    for (const p of ps) for (const id of closure.get(p)) anc.add(id);
+    const bytes = blobOf(r, e.blob);
+    if (bytes === undefined) {
+      //  Unreadable or a BLOB: not woven — carry a parent's view (be foldCommit).
+      const carry = ps.length ? idOfRev.get(ps[0]) : seedId;
+      idOfRev.set(rev, carry);
+      closure.set(rev, anc);
+      continue;
+    }
+    const id = layerId(e.commit);
+    w = fold(w, bytes, ext, id, Array.from(anc));
+    idToHl.set(id, e.commit);
+    anc.add(id);
+    idOfRev.set(rev, id);
+    closure.set(rev, anc);
+  }
+
+  //  be `viewAt`: a tip stands on ONE rev, or JOINS several under its own id —
+  //  a merge that touched no path of its own has no rev to stand on otherwise.
+  //  An ABSENT path folds an empty layer, a tip the index has no rev for folds
+  //  its own blob: either way the tip's view is a real layer, never a guess.
+  const views = [];
+  for (const t of tips) {
+    const rs = reps.get(t.chl);
+    const live = [], ids = new Set();
+    for (const rev of rs) {
+      const id = idOfRev.get(rev);
+      if (id === undefined) continue;
+      if (live.indexOf(id) < 0) live.push(id);
+      for (const x of (closure.get(rev) || [])) ids.add(x);
+    }
+    //  A tip with no commit at all (a root commit's parent) is the EMPTY side.
+    const tid = t.chl === null ? LAYER_NIL : layerId(t.chl);
+    let rev = null;
+    if (live.length === 1) rev = live[0];
+    else if (live.length > 1) {                  // the contentless JOIN
+      rev = tid;
+      w = merge(w, rev, Array.from(ids));
+      idToHl.set(rev, t.chl);
+      ids.add(rev);
+    }
+    const own = t.blob === undefined ? new Uint8Array(0)
+              : (rev === null ? blobOf(r, idx.hlOfSha(t.blob)) : null);
+    if (own !== null && own !== undefined && tid !== seedId && rev !== tid) {
+      //  absent (fold empty = the delete) or unrepresented (fold its bytes).
+      w = fold(w, own, ext, tid, Array.from(rev === null ? seedIds : ids));
+      idToHl.set(tid, t.chl);
+      ids.add(tid);
+      rev = tid;
+    }
+    if (rev === null) { rev = seedId; for (const x of seedIds) ids.add(x); }
+    views.push({ rev: rev, ids: ids });
+  }
+  return { get weave() { return w; }, views: views, idToHl: idToHl,
+           seed: seedId, revs: pr };
+}
+
+//  BEE-005: a PARENT->CHILD pair needs no index at all — the merge base of a
+//  commit and its own parent IS that parent, and nothing lies between them, so
+//  the weave is the parent's blob as the seed and the child's as the one layer
+//  above it.  Same shape as `weaveDiff`, same real commit ids, no rev read: it
+//  is what keeps `bee commit` an ODB-only view (ruling, test/commit).
+function blobDiff(from, to, ext) {
+  const idToHl = new Map();
+  const fid = from.chl === null ? LAYER_NIL : layerId(from.chl);
+  if (from.chl !== null) idToHl.set(fid, from.chl);
+  let w = fold(null, from.bytes || new Uint8Array(0), ext, fid, []);
+  //  The WORKTREE side is no commit: the caller folds it with `foldWt` over
+  //  this one view, so the pair stops at the seed.
+  if (to.wt)
+    return { get weave() { return w; }, seed: fid, idToHl: idToHl,
+             views: [{ rev: fid, ids: new Set([fid]) }] };
+  const tid = to.chl === null ? LAYER_NIL : layerId(to.chl);
+  if (tid === fid)                                 // the same commit both sides
+    return { get weave() { return w; }, seed: fid, idToHl: idToHl,
+             views: [{ rev: fid, ids: new Set([fid]) },
+                     { rev: fid, ids: new Set([fid]) }] };
+  w = fold(w, to.bytes || new Uint8Array(0), ext, tid, [fid]);
+  idToHl.set(tid, to.chl);
+  return { get weave() { return w; }, seed: fid, idToHl: idToHl,
+           views: [{ rev: fid, ids: new Set([fid]) },
+                   { rev: tid, ids: new Set([fid, tid]) }] };
+}
+
+//  BE-010 (be/shared/weave.js `foldWt`): the worktree's on-disk bytes as a
+//  FINAL synthetic layer over the view `rev` — the wt diff's to-side.  An
+//  adjacent-equal wt (or one over the cap) adds no layer at all.
+function foldWt(w, rev, ids, bytes, ext) {
+  if (!w || rev == null || bytes == null) return { weave: w, layered: false };
+  if (bytes.length > MAX_SOURCE_SIZE) return { weave: w, layered: false };
+  const prev = io.ram(MAX_SOURCE_MARKED_UP);
+  w.produce(rev, prev);
+  if (bytesEq(prev.data(), bytes)) return { weave: w, layered: false };
+  return { weave: fold(w, bytes, ext, WT_SRC, Array.from(ids)), layered: true };
+}
+
 module.exports = { weave3: weave3, mergedLive: mergedLive,
                    fold: fold, merge: merge,
                    bytesEq: bytesEq, extOf: extOf, isBinary: isBinary,
                    MAX_SOURCE_SIZE: MAX_SOURCE_SIZE,
-                   MAX_SOURCE_MARKED_UP: MAX_SOURCE_MARKED_UP };
+                   MAX_SOURCE_MARKED_UP: MAX_SOURCE_MARKED_UP,
+                   //  BEE-005: the ONE weave a diff projects.
+                   weaveDiff: weaveDiff, blobDiff: blobDiff,
+                   foldWt: foldWt, blobOf: blobOf,
+                   layerId: layerId, LAYER_NIL: LAYER_NIL, WT_SRC: WT_SRC,
+                   LAYER_CAP: LAYER_CAP };

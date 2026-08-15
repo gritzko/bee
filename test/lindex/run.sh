@@ -1,6 +1,6 @@
 #!/bin/sh
 # bee/test/lindex/run.sh — LITE-033 + BEE-002: `bee lindex`, the BACKLINK
-# SUSPECTS in the one `.lite2.idx` lane.  Legs over the landed bee tree:
+# SUSPECTS in the one `.lite2.idx` index.  Legs over the landed bee tree:
 #   verb  — this script: the CLI contract over a fixture git repo — who links to
 #           a file, who links to a ticket code, the incremental (mark..tip) run,
 #           a rerun that writes NOTHING, the stale row a removed link leaves,
@@ -9,11 +9,11 @@
 #           val src path_hl:40|gpar:20|vnib:4) and the mark under
 #           hlOfText("lindex").
 #
-# THE GAP THIS REPROS: before the verb existed the lane could say what a path IS
+# THE GAP THIS REPROS: before the verb existed the index could say what a path IS
 # (REV/B2P) and nothing at all about who POINTS at it — `lite lindex <file>`
 # answered "no such verb" and every check below was red.  BEE-002's own gap is
 # leg 6: a file in repo A linking a file in repo B was invisible from B, because
-# the dst key was minted through the LOCAL resolver and no other lane was read.
+# the dst key was minted through the LOCAL resolver and no other index was read.
 #
 # Standalone: `sh lite/test/lindex/run.sh` from anywhere (it cds itself).
 # $LITEJAB picks the runtime (default `jab`); the DOG-034 lexer is what fuses a
@@ -84,7 +84,7 @@ g() { git -C "$REPO" "$@"; }
 RREPO=$(cd "$REPO" && pwd -P)
 echo "lindex: runtime $RT, repo $REPO"
 
-lanebytes() { cat "$REPO"/.git/be/* 2>/dev/null | wc -c | tr -d ' '; }
+indexbytes() { cat "$REPO"/.git/be/* 2>/dev/null | wc -c | tr -d ' '; }
 
 # ==========================================================================
 # leg 1 — the scan
@@ -116,10 +116,10 @@ then ok "a partial target (abc/TCP.c) answers the same suspects"
 else bad "a partial target answers the same suspects (rc $RC)" "$WORK/q3" "$WORK/q3e"; fi
 
 # S5: THE RERUN WRITES NOTHING — the tip has not moved, so the mark hits and not
-# one byte lands in the lane.
-BEFORE=$(lanebytes)
+# one byte lands in the index.
+BEFORE=$(indexbytes)
 rtin "$REPO" lindex > "$WORK/s2" 2>"$WORK/s2e"; RC=$?
-AFTER=$(lanebytes)
+AFTER=$(indexbytes)
 if [ "$RC" = 0 ] && grep -q '^up to date: links at refs/heads/master ' "$WORK/s2" &&
    [ "$BEFORE" = "$AFTER" ]
 then ok "a rerun with no tip move is a no-op and writes nothing ($BEFORE bytes)"
@@ -198,7 +198,7 @@ then ok "a removed link leaves a STALE suspect — rows are never deleted"
 else bad "a removed link leaves a stale suspect (rc $RC)" "$WORK/s4" "$WORK/s4e" "$WORK/q10"; fi
 
 # ==========================================================================
-# leg 4 — the lane is DERIVED
+# leg 4 — the index is DERIVED
 # ==========================================================================
 rm -rf "$REPO/.git/be"
 rtin "$REPO" lindex > "$WORK/s5" 2>"$WORK/s5e"; RC=$?
@@ -210,14 +210,14 @@ then ok "rm -rf .git/be rebuilds the LINK rows from the TIP blobs alone"
 else bad "rm -rf .git/be rebuilds the LINK rows (rc $RC)" "$WORK/s5" "$WORK/s5e" \
          "$WORK/q11" "$WORK/q12"; fi
 
-# L4b: BEE-002 — the EXTENSION IS THE FORMAT: a lane file of the retired one is
+# L4b: BEE-002 — the EXTENSION IS THE FORMAT: an index file of the retired one is
 # swept before the family opens, and the run answers off the re-derived rows.
-printf 'PRE-BEE-002 LANE\n' > "$REPO/.git/be/0000000000.lite.idx"
+printf 'PRE-BEE-002 INDEX\n' > "$REPO/.git/be/0000000000.lite.idx"
 rtin "$REPO" lindex src/abc/TCP.c > "$WORK/q13" 2>"$WORK/q13e"; RC=$?
 if [ "$RC" = 0 ] && [ ! -f "$REPO/.git/be/0000000000.lite.idx" ] &&
    [ "$(cat "$WORK/q13")" = "$RREPO/doc/guide.mkd" ]
-then ok "an outdated lane file is swept, the answer stands"
-else bad "an outdated lane file is swept (rc $RC)" "$WORK/q13" "$WORK/q13e"; fi
+then ok "an outdated index file is swept, the answer stands"
+else bad "an outdated index file is swept (rc $RC)" "$WORK/q13" "$WORK/q13e"; fi
 
 # ==========================================================================
 # leg 5 — the ROWS (the ruled bit layout + the lindex mark)

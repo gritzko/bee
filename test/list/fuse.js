@@ -12,7 +12,7 @@
 //
 //  be attributes both halves from ONE bounded first-touch walk (its
 //  shared/lastcommit.js).  lite reads BOTH halves off the entry's OWN rows on
-//  the LITE-006 lane instead — a file folds its chain, and since LITE-044 a dir
+//  the LITE-006 index instead — a file folds its chain, and since LITE-044 a dir
 //  takes the newest of the rev rows the indexer now mints for it.  No history
 //  walk either way, so no ceiling and no depth can leave a row blank.
 //
@@ -79,7 +79,7 @@ try {
     dirs = ls.lastCommits(ix, ctx.r, "", [D("sub"), D("old"), D("deep")]);
     deep = ls.lastCommits(ix, ctx.r, "deep/", [D("er")]);
     //  LITE-044: the DIR REV rows themselves — the dir path's own `path_hl`
-    //  span on the lane, the very rows the fuse now scans.
+    //  span on the index, the very rows the fuse now scans.
     dirRevs = [];
     ix.prefix(idx.pathHl("old") << 24n, 24, function (e) {
       if (idx.keyKind(e[0]) === idx.K_CMMT)
@@ -88,7 +88,7 @@ try {
   } finally { try { ix.close(); } catch (e) {} }
 } finally { idx.closeRepo(ctx); }
 
-check("a FILE attributes off ONE lane prefix scan of its own chain",
+check("a FILE attributes off ONE index prefix scan of its own chain",
       files["a.txt"].ts === E && files["b.txt"].ts === E + DAY,
       files["a.txt"].ts + " " + files["b.txt"].ts);
 check("a DIR attributes off its OWN rows, taking the newest rev",
@@ -99,9 +99,9 @@ check("attributed ts increase C0 < C1 < C2",
 //  THE LITE-044 REPRO.  The dir fuse used to walk the CPAR ancestry from the
 //  tip, capped at 512 commits, so a dir whose newest commit lay deeper came out
 //  BLANK — on linux that was every dir below the first level.  The indexer now
-//  emits a REV row per CHANGED DIR, so the answer is a lane scan with no walk,
+//  emits a REV row per CHANGED DIR, so the answer is an index scan with no walk,
 //  no ceiling and no tip: `old/` and `deep/er/` were touched at C0 only.
-check("LITE-044: the lane holds the dir's own REV rows",
+check("LITE-044: the index holds the dir's own REV rows",
       dirRevs.length === 1, dirRevs.join(" "));
 check("LITE-044: and they name C0, the one commit that touched old/",
       dirRevs.length === 1 && TIP.indexOf(dirRevs[0]) !== 0 &&

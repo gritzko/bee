@@ -10,7 +10,7 @@ jab-shared API suite) as submodules:
         -DJAB_JSRC=<this tree> -DQUICKJAB_JSRC_PACK=ON
     ninja -C build quickjab
 
-Layout: `index/` reads the lane and the ODB, `view/` turns an arg into hunks
+Layout: `index/` reads the index and the ODB, `view/` turns an arg into hunks
 (one module per verb), `render/` turns hunks into bytes (`plain` `ansi` `html`
 over `wrap` + `theme`), `door.js` turns a target into a view, and `main.js`
 `pager.js` `http.js` `merge.js` `chat.js` are the apps.
@@ -34,10 +34,12 @@ picks the sink, `--plain` (also what a pipe defaults to), `--color`, `--html`:
      2. `<hex>`: that commit's ancestry
      3. `<path>`: the file's revisions
  -  `bee commit [<hex>]` — one commit, header + message; tree/parent hashes are links
- -  `bee diff [<hex>|<path>]` — the token-level diff
+ -  `bee diff [<hex> [<hex>]|<path>]` — the token-level diff: one weave per path,
+    seeded at the two revisions' merge base, every token naming its own commit
      1. bare: worktree vs HEAD
      2. `<hex>`: that commit vs its first parent
-     3. `<path>`: that file/dir only
+     3. `<hex> <hex>`: any two revisions, rooted at their merge base
+     4. `<path>`: that file/dir only
  -  `bee list [<path>][?<rev>]` — dir browser: marker, name, last commit, age
  -  `bee cat <path>[?<rev>]` — the file's own bytes, syntax-painted
  -  `bee tree [<hex>|<path>][?<rev>]` — raw git-tree rows, `..` row when descended

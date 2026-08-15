@@ -25,11 +25,11 @@
 //  reads as a worktree one — `lite diff`'s own model.
 //
 //  THE FUSE is lite's own machinery, not be's lastcommit.js: ONE prefix scan of
-//  the entry's `path_hl` on the LITE-006 lane (view/log.js fileLog, capped at
+//  the entry's `path_hl` on the LITE-006 index (view/log.js fileLog, capped at
 //  one row) — exact, at any depth, with no history walk at all.
 //
 //  LITE-044: that used to be the FILE half only.  A dir cannot be enumerated
-//  from the lane (the path hash is one-way), so a dir's newest commit came off
+//  from the index (the path hash is one-way), so a dir's newest commit came off
 //  a CPAR ancestry walk capped at 512 — and on linux every dir below the first
 //  level starved, up to 152k commits past the ceiling.  The indexer now emits a
 //  REV row per changed DIR (index/index.js descend), so both halves are the one
@@ -75,7 +75,7 @@ function markerOf(abs, sha) {
 }
 
 //  --- the fuse --------------------------------------------------------------
-//  Every entry's last commit, read off the entry's OWN rows on the lane — no
+//  Every entry's last commit, read off the entry's OWN rows on the index — no
 //  history walk for either half, so depth costs nothing and nothing starves.
 //   -  a FILE folds its chain (view/log.js fileLog, capped at one row): the
 //      chain is short, and PARS is what orders a rewritten file history;
@@ -209,7 +209,7 @@ function list(arg, opts) {
       entries.sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
     }
 
-    //  The fuse rides the lane, so it brings the index up to date itself —
+    //  The fuse rides the index, so it brings the index up to date itself —
     //  `lite log`'s lazy contract.  LITE-018: it owns the FULL bring-up, so a
     //  repo that was never indexed is derived right here, at the bulk handle
     //  `lite index` uses (a small memtable would seal per commit); `opts.track`

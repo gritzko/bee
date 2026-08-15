@@ -1,10 +1,10 @@
 //  bee/test/index/links.js — BEE-007: the LINK half of the ONE bring-up, read
-//  straight off the lane a run left behind.  Prints `links=<n> marks=<n>` — the
+//  straight off the index a run left behind.  Prints `links=<n> marks=<n>` — the
 //  [LITE-033] LINK rows and the reserved `hlOfText("lindex")` MARK rows — so
 //  run.sh can pin that `bee index` mints them with no `lindex` run of its own,
 //  and that a READ VIEW (`log`/`list`, which call `bringUp` alone) mints none.
 //
-//  Driven by run.sh with LITE_FIX = the repo.  The lane is opened READ-ONLY, so
+//  Driven by run.sh with LITE_FIX = the repo.  The index is opened READ-ONLY, so
 //  the probe brings nothing up, sweeps nothing and writes nothing.
 "use strict";
 const idx = require("index/index.js");

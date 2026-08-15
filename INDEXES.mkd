@@ -1,6 +1,6 @@
 #   Beagle-lite index records
 
-The record catalogue of the `.git/be/` index a lite verb reads and writes ([LITE-006]). One `abc.index("wh128", …)` family — a dog Pup stack of `(key:u64, val:u64)` rows, sorted by key, unkeyed (a key may carry many rows) — lives in the repo's OWN gitdir as `<gitdir>/be/*.lite2.idx`. Everything there is DERIVED: `rm -rf` it and the next run rebuilds it from the ODB — and the EXTENSION IS THE FORMAT, so a lane of an outdated one is swept (unlinked) before the family opens ([BEE-002]). Registered repos are listed in `$HOME/.config/bee/repos` ([BEE-001]), one absolute worktree path per line, written by `bee install`. The kind nibble is the LOW 4 bits of every key, so one lane holds every record family and one scan sees them all.
+The record catalogue of the `.git/be/` index a lite verb reads and writes ([LITE-006]). One `abc.index("wh128", …)` family — a dog Pup stack of `(key:u64, val:u64)` rows, sorted by key, unkeyed (a key may carry many rows) — lives in the repo's OWN gitdir as `<gitdir>/be/*.lite2.idx`. Everything there is DERIVED: `rm -rf` it and the next run rebuilds it from the ODB — and the EXTENSION IS THE FORMAT, so an index of an outdated one is swept (unlinked) before the family opens ([BEE-002]). Registered repos are listed in `$HOME/.config/bee/repos` ([BEE-001]), one absolute worktree path per line, written by `bee install`. The kind nibble is the LOW 4 bits of every key, so one index holds every record family and one scan sees them all.
 
 ##  Field vocabulary
 
@@ -43,7 +43,7 @@ Eight kinds, the nibble in `key & 0xf`. Rows are never deleted and re-puts are i
     slot is a truncated TEXT hashlet of the TARGET's own segments ([BEE-002]) —
     the filename's top 40 bits, the parent dir's top 20, the grandparent's top
     20, `0` spelling absent — minted from the ref TEXT alone: nothing is
-    resolved, no lane is read and NO repo id is recorded, so the indexing ORDER
+    resolved, no index is read and NO repo id is recorded, so the indexing ORDER
     cannot change a key and a cross-repo target keys the same everywhere. A
     ticket code (`LITE-029`) keys as its own text with both ancestors absent, so
     a ticket's backlinks survive the thin↔fat layout move. Anchors are dropped:
@@ -61,7 +61,7 @@ Each query is a scan of ONE key prefix; no ODB ancestry walk happens at query ti
  -  The commit DAG is the CPAR rows alone, which is what `lite log` walks
     ([LITE-007] `ancestry`), newest-first over a reverse Kahn.
  -  `CPAR` doubles as the INDEXED flag: a commit with any CPAR row is in the
-    lane, which is why a root commit still gets an empty-parent row.
+    index, which is why a root commit still gets an empty-parent row.
  -  A commit hashlet IS an object name — `git.getHex` takes any 6..40 hexlet —
     so a row's 15-hex `hashlet60` reads date, author and subject off the ODB.
  -  `lite list`'s last-commit fuse ([LITE-017]) reads both halves off the
@@ -73,7 +73,21 @@ Each query is a scan of ONE key prefix; no ODB ancestry walk happens at query ti
  -  A PARTIAL path (`abc/TCP.c`, bare `TCP.c`) resolves via one FSEG scan plus
     a pruned descent of a commit's tree (`index/resolve.js`): the tree entries
     carry the real names, so the answer is TEXT and ambiguity is a list.
- -  "Who links to this?" is TWO exact-key seeks per lane — `fn|0` for a
+ -  A DIFF is a projection of ONE weave per path ([BEE-005], `index/dag.js` +
+    `index/weave.js weaveDiff`): `repsOf` reads the rev a commit's view stands
+    on (its own, else its nearest ancestor's over `CPAR` — a merge that touched
+    no path of its own stands on several and they JOIN), `floorRev` finds the
+    LCA inside the index over `REV-PARS` edges and DESCENDS until every folded
+    rev has its parents in the fold, and the seed is the floor rev's REV-BLOB.
+    So the changed-path SET still comes off the trees, while the floor, the
+    seed, the layers and their edges all come off the index — the only ODB read
+    left in a fold is the BLOB BYTES of a rev (a `hashlet60` IS an object name).
+ -  A layer id is the rev's commit hashlet shifted one nibble, so `blame(off)`
+    on an emitted token names the COMMIT that inserted it and the low nibble 0
+    keeps the reserved ids (an empty side, the worktree layer) off that space.
+ -  EVERY read here rides the SEEK cursor: `range`/`prefix` have been seen to
+    answer NOTHING for a key a `seek` finds (index.js's own KNOWN TRAP).
+ -  "Who links to this?" is TWO exact-key seeks per index — `fn|0` for a
     bare-filename ref, `fn|par` for one that named the parent — over EVERY repo
     in `$HOME/.config/bee/repos` ([BEE-002]): the vals are the carriers'
     `path_hl`, named back to text by that repo's own tree descent.
@@ -84,7 +98,7 @@ Each query is a scan of ONE key prefix; no ODB ancestry walk happens at query ti
 link to the target, and precision comes from OPENING the suspect — never from
 deleting a row and never from a tip-filtering hop. A removed link therefore
 leaves a false suspect behind, which is exactly what keeps the never-delete,
-idempotent contract of the lane intact: the index only narrows the grep.
+idempotent contract of the index intact: the index only narrows the grep.
 
  -  ONLY TIP BLOBS are scanned, and lazily. `lindex`'s own MARK row (the
     reserved ref `hlOfText("lindex")`) holds the commit the last scan finished
@@ -103,8 +117,8 @@ idempotent contract of the lane intact: the index only narrows the grep.
     there is no ambiguity to skip and no local descent to depend on. A ref
     spelling the carrier's own path mints no row, and a binary or over-cap blob
     is never tokenised.
- -  A QUERY FANS OUT over the [BEE-001] registry: every registered lane is
-    opened READ-ONLY and NONE is brought up, so a stale foreign lane answers
+ -  A QUERY FANS OUT over the [BEE-001] registry: every registered index is
+    opened READ-ONLY and NONE is brought up, so a stale foreign index answers
     with fewer suspects and never with a wrong one; a repo that cannot be opened
     is skipped in silence. Suspects print repo-qualified, the local repo first.
  -  FALSE SUSPECTS ARE THE PRICE of keying on text alone: no dst repo id is
@@ -120,8 +134,12 @@ idempotent contract of the lane intact: the index only narrows the grep.
 PRESENCE is the boundary and there is no walk ceiling (ruling 2026-08-13), so runs converge and an interrupted run keeps every commit it sealed.
 
  -  The tip is already this ref's MARK → no-op without even a scan; else one
-    pass over the lane yields the arrival state and the indexed set.
- -  The walk climbs from the tip and never enters a commit already in the lane,
+    pass over the index yields the arrival state and the indexed set.
+ -  ANY COMMIT IS A TIP ([BEE-005]): `bringUp(ctx, ix, {tip})` indexes from a
+    commit no ref names — a diff naming one INDEXES it rather than working
+    around it — and its watermark is keyed by its own COMMIT hashlet, since
+    there is no ref hashlet to key it by.
+ -  The walk climbs from the tip and never enters a commit already in the index,
     so a rebase needs no special case (rewritten commits are simply absent).
  -  Per commit the rev rows go in FIRST and the CPAR rows LAST: a seal persists
     a PREFIX, so a CPAR row on disk proves that commit's rev rows are on disk.
@@ -134,20 +152,23 @@ The gaps, stated so a reader does not go looking for them.
 
  -  NO path text: `path_hl` is a one-way 40-bit hash, so the index can TEST a
     known path and can never enumerate or print one. `lindex` prints its
-    suspects as TEXT the FSEG way — the lane narrows, a real tree object names:
+    suspects as TEXT the FSEG way — the index narrows, a real tree object names:
     one descent of the tip tree hashes the paths it carries and keeps the ones
     the rows asked for. No sidecar of path text is kept anywhere.
- -  NO suffix lookup in the LANE ALONE: `dog/git/ZINF.h`, `git/ZINF.h` and
+ -  NO suffix lookup in the INDEX ALONE: `dog/git/ZINF.h`, `git/ZINF.h` and
     `ZINF.h` hash to three unrelated keys; a partial path finds files only
     through the FSEG descent, which reads real tree objects for the names.
  -  NO directory LISTING: a dir carries REV-CMMT rows saying WHEN it changed
     ([LITE-044]) and nothing else — no subtree sha, no entries, no name — so
-    what is IN a directory still comes from the ODB or the fs, never the lane.
- -  HEAD only: one branch is indexed, so a commit off it has no CPAR rows and
-    `lite log` says so in plain words rather than answering wrong.
+    what is IN a directory still comes from the ODB or the fs, never the index.
+ -  NOT ASKED FOR: a bring-up walks from HEAD, or from a tip a verb NAMED
+    ([BEE-005]) — never from every ref.  A commit no run has walked to has no
+    CPAR rows, and `lite log` says so in plain words rather than answering
+    wrong; a diff naming it brings it up instead.
 
 [BEE-001]: /todo/BEE/BEE-001.mkd
 [BEE-002]: /todo/BEE/BEE-002.mkd
+[BEE-005]: /todo/BEE/BEE-005.mkd
 [BEE-007]: /todo/BEE/BEE-007.mkd
 [LITE-006]: /todo/LITE/LITE-006.mkd
 [LITE-007]: /todo/LITE/LITE-007.mkd
