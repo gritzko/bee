@@ -20,6 +20,7 @@ const wv = require("index/weave.js");
 const bro = require("view/bro.js");
 const html = require("view/html.js");
 const mark = require("mark/html.js");
+const rst = require("mark/rst.js");
 
 const PORT = 8034;                  // the fixed default; --port overrides
 const HOST = "127.0.0.1";           // localhost only — no flag opens this up
@@ -66,13 +67,17 @@ const MIME = {
   bmp:  "image/bmp",
 };
 
-//  A path -> its content type.  The last dot of the LAST segment names the
-//  extension; anything else (no dot, a dotfile, an unlisted name) is octet.
-function mimeOf(path) {
+//  A path -> its extension, lowercased: the last dot of the LAST segment names
+//  it, and no dot or a dotfile names none.
+function extOf(path) {
   const p = String(path);
   const dot = p.lastIndexOf("."), cut = p.lastIndexOf("/");
-  const ext = dot > cut + 1 ? p.slice(dot + 1).toLowerCase() : "";
-  const t = MIME[ext];
+  return dot > cut + 1 ? p.slice(dot + 1).toLowerCase() : "";
+}
+
+//  A path -> its content type; off the list is octet-stream.
+function mimeOf(path) {
+  const t = MIME[extOf(path)];
   return typeof t === "string" ? t : OCTET;
 }
 
@@ -214,11 +219,17 @@ function openOnce(pg, full) {
   return h;
 }
 
-//  --- LITE-035: the rendered Markdown page -----------------------------------
-//  `.md` only: `.mkd` is StrictMark and keeps serving as painted source.
-function isMd(path) {
-  const p = String(path);
-  return p.slice(p.lastIndexOf(".")).toLowerCase() === ".md";
+//  --- the rendered page ------------------------------------------------------
+//  LITE-037: the two rendered dialects and their parsers — `.md` CommonMark
+//  (LITE-035), `.rst` reStructuredText.  The PARSER is all that differs: the
+//  emitter, the page shell and the link door below are one set for both.
+//  `.mkd` is StrictMark and keeps serving as painted source.
+const RENDER = { md: mark.toHtml, rst: rst.toHtml };
+
+//  A path -> the function that renders it, or null for a painted-source file.
+function renderOf(path) {
+  const r = RENDER[extOf(path)];
+  return typeof r === "function" ? r : null;
 }
 
 //  The arg's PATH half, rev dropped — the same split `cat` itself makes.
@@ -239,7 +250,7 @@ function argRev(arg) {
 //  LITE-036: an IMAGE destination (the emitter's own flag, never the bytes)
 //  goes to `/bytes/` instead — the same door, the same resolved file, only the
 //  spelling differs; a plain LINK to an image file keeps its painted `/cat/`.
-function mdHref(pg, dir, dest, isImage) {
+function pageHref(pg, dir, dest, isImage) {
   let u = null;
   try { u = uri._parse(String(dest)); } catch (e) { u = null; }
   if (u && (u.scheme || u.authority)) return String(dest);
@@ -252,14 +263,15 @@ function mdHref(pg, dir, dest, isImage) {
   return url + "#" + u.fragment;
 }
 
-//  The page: the toggle bar, then the emitted body.  Links resolve against the
-//  document's OWN directory, the way a reader reads them.
-function mdPage(pg, rel, arg, hunks) {
+//  The page: the toggle bar, then the emitted body.  `toHtml` is the dialect's
+//  own parser plus the ONE emitter; links resolve against the document's OWN
+//  directory, the way a reader reads them.
+function pageBody(pg, rel, arg, hunks, toHtml) {
   const src = hunks.length ? utf8.Decode(hunks[0].text) : "";
   const cut = rel.lastIndexOf("/");
   const dir = cut < 0 ? "" : rel.slice(0, cut + 1);
-  const body = mark.toHtml(src, {
-    href: function (d, isImage) { return mdHref(pg, dir, d, isImage); }
+  const body = toHtml(src, {
+    href: function (d, isImage) { return pageHref(pg, dir, d, isImage); }
   });
   return html.viewBar("cat " + rel, "source", argUrl(pg.root, "raw", arg)) +
          html.markBody(body);
@@ -339,13 +351,14 @@ function handle(req, sock, st) {
                left: REF_CAP, rev: r.verb === "cat" ? argRev(r.arg) : "" };
   const link = function (t) { return urlOf(pg, t); };
   const title = (r.head === "raw" ? "raw" : r.verb) + (r.arg ? " " + r.arg : "");
-  //  LITE-035: a `.md` READS as a page by default; `/raw/` is the same bytes
-  //  painted, and each view links to the other.
+  //  LITE-035/037: a `.md` or `.rst` READS as a page by default; `/raw/` is the
+  //  same bytes painted, and each view links to the other.
   const path = r.verb === "cat" ? argPath(r.arg) : "";
+  const rend = path ? renderOf(path) : null;
   let body;
-  if (r.head === "cat" && isMd(path)) body = mdPage(pg, path, r.arg, hunks);
+  if (r.head === "cat" && rend) body = pageBody(pg, path, r.arg, hunks, rend);
   else if (r.head === "raw")
-    body = html.viewBar("", isMd(path) ? "rendered" : "", argUrl(pg.root, "cat", r.arg)) +
+    body = html.viewBar("", rend ? "rendered" : "", argUrl(pg.root, "cat", r.arg)) +
            html.hunksHtml(hunks, link);
   else body = html.hunksHtml(hunks, link);
   sendPage(sock, 200, "OK", title, html.page(title, body), only);
@@ -423,6 +436,7 @@ function serve(args, door) {
 
 module.exports = { serve: serve, routeOf: routeOf, urlOf: urlOf, argUrl: argUrl,
                    escPath: escPath, repoRel: repoRel, anchorByte: anchorByte,
-                   isMd: isMd, argPath: argPath, argRev: argRev, mdHref: mdHref,
+                   renderOf: renderOf, argPath: argPath, argRev: argRev,
+                   pageHref: pageHref, extOf: extOf,
                    mimeOf: mimeOf, ROUTE: ROUTE, MIME: MIME, PORT: PORT,
                    HOST: HOST, REF_CAP: REF_CAP, MAXBYTES: MAXBYTES };
