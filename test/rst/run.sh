@@ -1,6 +1,6 @@
 #!/bin/sh
 #  lite/test/rst/run.sh — LITE-037: `mark/rst.js`, the reStructuredText SUBSET
-#  parser, and the `lite serve` glue that renders a `.rst` URL.  Five legs:
+#  parser, and the `lite http` glue that renders a `.rst` URL.  Five legs:
 #
 #   1. the layering — the parser loads, and NOTHING inside the vendored files,
 #      the gfm-* layer or the LITE-035 emitter carries a LITE-037 edit: `.rst`
@@ -353,7 +353,7 @@ DOCRST
 
 PORT="${LITEPORT:-18037}"
 BASE="http://127.0.0.1:$PORT"
-( cd "$REPO"; exec env HOME="$FAKEHOME" "$RT" serve --port "$PORT" ) \
+( cd "$REPO"; exec env HOME="$FAKEHOME" "$RT" http --port "$PORT" ) \
   > "$WORK/srv.log" 2>&1 &
 SRVPID=$!
 i=0

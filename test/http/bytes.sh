@@ -1,5 +1,5 @@
 #!/bin/sh
-# lite/test/serve/bytes.sh — LITE-036: `/bytes/<path>[?<rev>]`, the RAW image
+# lite/test/http/bytes.sh — LITE-036: `/bytes/<path>[?<rev>]`, the RAW image
 # route, and the `<img src>` a rendered `.md` page emits into it.
 #
 # What it pins:
@@ -14,12 +14,12 @@
 #   * a rendered `.md` points its `<img src>` at `/bytes/`, while an ordinary
 #     LINK to the same file keeps its painted `/cat/` view.
 #
-# Standalone: `sh lite/test/serve/bytes.sh` from anywhere (it cds itself).
+# Standalone: `sh lite/test/http/bytes.sh` from anywhere (it cds itself).
 # $LITEJAB picks the runtime (default `jab`), built from THIS tree.
 # $LITEPORT overrides the loopback port the fixture server binds.
 set -u
 
-CASE=$(cd "$(dirname "$0")" && pwd)              # lite/test/serve
+CASE=$(cd "$(dirname "$0")" && pwd)              # lite/test/http
 LITE=$(cd "$CASE/../.." && pwd)                  # lite/
 
 RT="${LITEJAB:-jab}"
@@ -95,7 +95,7 @@ else BIG=0; echo "bytes: no dd — skipping the over-cap leg" >&2; fi
 # ==========================================================================
 # up it goes
 # ==========================================================================
-( cd "$REPO"; exec env HOME="$FAKEHOME" "$RT" serve --port "$PORT" ) \
+( cd "$REPO"; exec env HOME="$FAKEHOME" "$RT" http --port "$PORT" ) \
   > "$WORK/srv.log" 2>&1 &
 SRVPID=$!
 N=0

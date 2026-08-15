@@ -432,7 +432,7 @@ function textNode(parent, s) {
 //  standalone URI is its own label, and re-reading it would find that URI
 //  again.  An UNRESOLVED reference never gets here: the caller lays down the
 //  source bytes as plain text instead, so a page carries no dead link (the
-//  serve ruling of 2026-08-15, which the emitter's href hook applies again).
+//  http ruling of 2026-08-15, which the emitter's href hook applies again).
 function linkNode(parent, dest, text, ctx, depth, verbatim) {
   const a = addNode(parent, "link");
   a.destination = dest;

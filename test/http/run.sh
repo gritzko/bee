@@ -1,5 +1,5 @@
 #!/bin/sh
-# lite/test/serve/run.sh — LITE-034: `lite serve`, the repo browser over HTTP.
+# lite/test/http/run.sh — LITE-034: `lite http`, the repo browser over HTTP.
 # One long-running verb, so this leg starts it once against a fixture repo and
 # then walks the URL table with curl, asserting three things per page:
 #
@@ -15,32 +15,32 @@
 #   * ONE stylesheet, generated off view/theme.js, linked by every page.
 #
 # The headless half (the URL table both ways, theme -> CSS, the painter over
-# hand-built hunks) is test/serve/url.js, run last.
+# hand-built hunks) is test/http/url.js, run last.
 #
-# Standalone: `sh lite/test/serve/run.sh` from anywhere (it cds itself).
+# Standalone: `sh lite/test/http/run.sh` from anywhere (it cds itself).
 # $LITEJAB picks the runtime (default `jab`), built from THIS tree.
 # $LITEPORT overrides the loopback port the fixture server binds.
 set -u
 
-CASE=$(cd "$(dirname "$0")" && pwd)              # lite/test/serve
+CASE=$(cd "$(dirname "$0")" && pwd)              # lite/test/http
 LITE=$(cd "$CASE/../.." && pwd)                  # lite/
 
 RT="${LITEJAB:-jab}"
 case "$RT" in
-    */*) [ -x "$RT" ] || { echo "serve: no runtime at $RT" >&2; exit 2; }
+    */*) [ -x "$RT" ] || { echo "http: no runtime at $RT" >&2; exit 2; }
          RT=$(cd "$(dirname "$RT")" && pwd)/$(basename "$RT") ;;
-    *)   command -v "$RT" >/dev/null 2>&1 || { echo "serve: no runtime '$RT' on PATH" >&2; exit 2; } ;;
+    *)   command -v "$RT" >/dev/null 2>&1 || { echo "http: no runtime '$RT' on PATH" >&2; exit 2; } ;;
 esac
-command -v git  >/dev/null 2>&1 || { echo "serve: SKIP — no git to build a fixture" >&2; exit 0; }
-command -v curl >/dev/null 2>&1 || { echo "serve: SKIP — no curl to drive the server" >&2; exit 0; }
+command -v git  >/dev/null 2>&1 || { echo "http: SKIP — no git to build a fixture" >&2; exit 0; }
+command -v curl >/dev/null 2>&1 || { echo "http: SKIP — no curl to drive the server" >&2; exit 0; }
 
 TMPROOT="${HOME}/tmp"
-mkdir -p "$TMPROOT" || { echo "serve: cannot mkdir $TMPROOT" >&2; exit 2; }
-WORK=$(mktemp -d "$TMPROOT/lite-serve.XXXXXX") || exit 2
+mkdir -p "$TMPROOT" || { echo "http: cannot mkdir $TMPROOT" >&2; exit 2; }
+WORK=$(mktemp -d "$TMPROOT/lite-http.XXXXXX") || exit 2
 CHECKS=0; FAILED=0; SRVPID=""
 trap 'rc=$?; [ -n "$SRVPID" ] && kill "$SRVPID" 2>/dev/null
       if [ "$rc" = 0 ] && [ "$FAILED" = 0 ]; then rm -rf "$WORK";
-      else echo "serve: fixtures kept at $WORK" >&2; fi; exit $rc' EXIT
+      else echo "http: fixtures kept at $WORK" >&2; fi; exit $rc' EXIT
 
 ok()  { CHECKS=$((CHECKS + 1)); echo "ok   $1"; }
 bad() {
@@ -52,7 +52,7 @@ ln -sf "$LITE" "$WORK/jsrc"                      # unpacked-runtime require clim
 FAKEHOME="$WORK/home"; mkdir -p "$FAKEHOME"
 PORT="${LITEPORT:-18034}"
 BASE="http://127.0.0.1:$PORT"
-echo "serve: runtime $RT, fixtures $WORK, port $PORT"
+echo "http: runtime $RT, fixtures $WORK, port $PORT"
 
 # ==========================================================================
 # the fixture — three commits, one uncommitted edit, a subdir, a .mkd carrying a
@@ -90,7 +90,7 @@ REPO="$WORK/repo"; mkdir -p "$REPO/sub"
   GIT_AUTHOR_DATE='@1700172800 +0000' GIT_COMMITTER_DATE='@1700172800 +0000' \
     git commit -q -m 'C2 two lines prepended, MARK002 gone' || exit 1
   printf 'A0-dirty\n' >> a.txt                   # uncommitted: `lite diff` bare
-) || { echo "serve: cannot build the fixture repo" >&2; exit 2; }
+) || { echo "http: cannot build the fixture repo" >&2; exit 2; }
 g() { git -C "$REPO" "$@"; }
 TIP=$(g rev-parse HEAD); TIP8=$(echo "$TIP" | cut -c1-8)
 C1=$(g rev-parse HEAD~1); C18=$(echo "$C1" | cut -c1-8)
@@ -120,7 +120,7 @@ printf '//  moved: target.c:%s\n//  gone:  target.c:%s\n//  line:  target.c:6\n/
 # ==========================================================================
 refuse() {   # refuse <label> <dir> <word...>
     _l=$1; _d=$2; shift 2
-    ( cd "$_d" && HOME="$FAKEHOME" "$RT" serve "$@" ) > "$WORK/r.out" 2>"$WORK/r.err"
+    ( cd "$_d" && HOME="$FAKEHOME" "$RT" http "$@" ) > "$WORK/r.out" 2>"$WORK/r.err"
     _rc=$?
     if [ "$_rc" != 0 ] && [ ! -s "$WORK/r.out" ]
     then ok "refused: $_l"
@@ -135,7 +135,7 @@ refuse "no repository here" "$WORK"
 # ==========================================================================
 # up it goes — one server for every page below
 # ==========================================================================
-( cd "$REPO"; exec env HOME="$FAKEHOME" "$RT" serve --port "$PORT" ) \
+( cd "$REPO"; exec env HOME="$FAKEHOME" "$RT" http --port "$PORT" ) \
   > "$WORK/srv.log" 2>&1 &
 SRVPID=$!
 N=0
@@ -145,7 +145,7 @@ while [ "$N" -lt 100 ]; do
     N=$((N + 1)); sleep 0.1
 done
 if grep -qi "in use" "$WORK/srv.log"; then
-    echo "serve: SKIP — port $PORT is taken; rerun with LITEPORT=<free port>" >&2
+    echo "http: SKIP — port $PORT is taken; rerun with LITEPORT=<free port>" >&2
     SRVPID=""; exit 0
 fi
 if [ "$N" -lt 100 ]; then ok "the listener came up on $PORT"
@@ -292,7 +292,7 @@ method() {   # method <label> <verb> <want-status>
 method "POST is not allowed"   POST   405
 method "PUT is not allowed"    PUT    405
 method "DELETE is not allowed" DELETE 405
-has    "the refusal says lite serve only reads" "lite serve only reads"
+has    "the refusal says lite http only reads" "lite http only reads"
 # A body offered with the refused method changes nothing and mutates nothing.
 curl -s -o /dev/null -X POST --data-binary 'x=1' "$BASE/cat/a.txt"
 if [ "$(cat "$REPO/a.txt" | wc -l)" = 2 ] && [ -z "$(g status --porcelain -- doc.mkd)" ]
@@ -334,8 +334,8 @@ else
 fi
 
 if [ "$FAILED" != 0 ]; then
-    echo "FAIL [lite/serve] $FAILED of $CHECKS checks failed" >&2
+    echo "FAIL [lite/http] $FAILED of $CHECKS checks failed" >&2
     exit 1
 fi
-echo "PASS [lite/serve] $CHECKS checks, runtime $RT"
+echo "PASS [lite/http] $CHECKS checks, runtime $RT"
 exit 0

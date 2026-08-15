@@ -8,7 +8,7 @@
 //  render/theme.js.
 //
 //  VERB-BLIND, like every renderer: it knows tags, sides and hunks, never which
-//  view made them.  `lite serve` is the app pinned to it.
+//  view made them.  `lite http` is the app pinned to it.
 //
 //  The column layout is the terminal's, unchanged — a hunk body is a `<pre>`,
 //  so a list/log row's padding and a diff hunk's weave line up as they do at a
@@ -197,9 +197,9 @@ function errorPage(title, message) {
 
 //  ---- the RENDERER (LITE-045) -----------------------------------------------
 //  render(hunks, opts) -> bytes: ONE SELF-CONTAINED page — the very hunks
-//  `lite serve` paints, with the stylesheet INLINE, because a `lite --html x >
+//  `lite http` paints, with the stylesheet INLINE, because a `lite --html x >
 //  x.html` dump has no server to fetch /style.css from.  `opts.link` is the
-//  same `(target) -> url` resolver serve passes; with none, a reference is
+//  same `(target) -> url` resolver http passes; with none, a reference is
 //  plain painted text (ruling 2026-08-15) and the page stands alone.
 //  Nothing to show renders NOTHING, so the three renderers agree on silence.
 function render(hunks, opts) {

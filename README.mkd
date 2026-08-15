@@ -12,7 +12,7 @@ jab-shared API suite) as submodules, no jab tree involved:
 Layout: `index/` reads the lane and the ODB, `view/` turns an arg into hunks
 (one module per verb), `render/` turns hunks into bytes (`plain` `ansi` `html`
 over `wrap` + `theme`), `door.js` turns a target into a view, and `main.js`
-`pager.js` `serve.js` `merge.js` `chat.js` are the apps.
+`pager.js` `http.js` `merge.js` `chat.js` are the apps.
 
 Usage — a terminal with no flag pages coloured hunks; otherwise one mode flag
 picks the sink, `--plain` (also what a pipe defaults to), `--color`, `--html`:
@@ -36,7 +36,7 @@ picks the sink, `--plain` (also what a pipe defaults to), `--color`, `--html`:
  -  `lite cat <path>[?<rev>]` — the file's own bytes, syntax-painted
  -  `lite tree [<hex>|<path>][?<rev>]` — raw git-tree rows, `..` row when descended
  -  `lite blob <hexlet>` — a blob by object name
- -  `lite serve [--port <n>]` — the same views over HTTP on localhost:8034, read-only
+ -  `lite http [--port <n>]` — the same views over HTTP on localhost:8034, read-only
      1. a `.md` URL renders as a page, links resolved; `.mkd` stays painted
     1. an `.rst` URL renders the reST subset; directives and tables show literal
      2. `/raw/<path>` is the painted source, and each view links to the other

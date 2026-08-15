@@ -1,4 +1,4 @@
-//  serve.js — LITE-034: `lite serve [--port <n>]`, the repo browser over
+//  http.js — LITE-034: `lite http [--port <n>]`, the repo browser over
 //  HTTP.  Three parts and no fourth: quickjab's `net.createServer` on the one
 //  implicit `pol` loop for the transport, QJAB-004's `http._drain`/`http._feed`
 //  for the message heads, and a ROUTER TABLE mapping URL forms onto the SAME
@@ -320,13 +320,13 @@ function sendPage(sock, status, reason, title, body, headOnly) {
 //  The DOOR already named the file and read it (the `cat` verb, its own path
 //  gate and its own `?<rev>`) — this only ships what came back: the bytes
 //  VERBATIM, typed off the NAME, `nosniff` so no browser guesses otherwise.
-//  Over the cap it refuses in plain words rather than stream — a serve page is
+//  Over the cap it refuses in plain words rather than stream — an http page is
 //  a whole buffer here as everywhere.
 function sendBytes(sock, hunks, path, headOnly) {
   const bytes = hunks.length ? hunks[0].text : new Uint8Array(0);
   if (bytes.length > MAXBYTES) {
     respond(sock, 413, "Payload Too Large", TEXT,
-            utf8.Encode("lite serve: " + path + " is too big to serve (over " +
+            utf8.Encode("lite http: " + path + " is too big to serve (over " +
                         (MAXBYTES >> 20) + " MB)\n"), headOnly);
     return "413";
   }
@@ -347,7 +347,7 @@ function handle(req, sock, st) {
   //  No write endpoints of any kind: reads answer, everything else is refused.
   if (m !== "GET" && !only) {
     respond(sock, 405, "Method Not Allowed", TEXT,
-            utf8.Encode("lite serve only reads; " + m + " is not allowed\n"), false);
+            utf8.Encode("lite http only reads; " + m + " is not allowed\n"), false);
     return "405";
   }
   const r = routeOf(req.uri);
@@ -356,8 +356,8 @@ function handle(req, sock, st) {
     return "200";
   }
   if (r.verb === undefined) {
-    sendPage(sock, 404, "Not Found", "lite serve",
-             html.errorPage("lite serve", "there is no /" + r.head + " page here"), only);
+    sendPage(sock, 404, "Not Found", "lite http",
+             html.errorPage("lite http", "there is no /" + r.head + " page here"), only);
     return "404";
   }
   let hunks;
@@ -389,18 +389,18 @@ function handle(req, sock, st) {
 }
 
 //  --- the verb ---------------------------------------------------------------
-//  serve(args, door) — `door` IS main.js's own door (the verb table plus the
+//  http(args, door) — `door` IS main.js's own door (the verb table plus the
 //  reference resolution), handed in rather than required back: one mechanism in
-//  the tree, no serve-side variant, and no import cycle.
-function serve(args, door) {
+//  the tree, no http-side variant, and no import cycle.
+function listen(args, door) {
   let port = PORT;
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--plain") continue;                 // no bytes to page: a no-op
     if (args[i] === "--port") { port = Number(args[++i]); continue; }
-    throw "serve: " + args[i] + " is not an option — try: lite serve [--port <n>]";
+    throw "http: " + args[i] + " is not an option — try: lite http [--port <n>]";
   }
   if (!(port > 0 && port < 65536 && port === Math.floor(port)))
-    throw "serve: --port wants a whole number from 1 to 65535";
+    throw "http: --port wants a whole number from 1 to 65535";
 
   //  The repo is found ONCE, and the cwd moves to its root: every URL is
   //  repo-relative, so the dir the verbs resolve against must be the root too.
@@ -425,14 +425,14 @@ function serve(args, door) {
       catch (e) {
         done = true;
         respond(sock, 400, "Bad Request", TEXT,
-                utf8.Encode("lite serve: that is not an HTTP request\n"), false);
+                utf8.Encode("lite http: that is not an HTTP request\n"), false);
         return;
       }
       if (req === null) {                                 // need more bytes
         if (buf.length > MAXHEAD) {
           done = true;
           respond(sock, 431, "Request Header Fields Too Large", TEXT,
-                  utf8.Encode("lite serve: that request head is too long\n"), false);
+                  utf8.Encode("lite http: that request head is too long\n"), false);
         }
         return;
       }
@@ -445,19 +445,19 @@ function serve(args, door) {
         code = "500";
         try {
           respond(sock, 500, "Internal Server Error", TEXT,
-                  utf8.Encode("lite serve: " + why(e) + "\n"), false);
+                  utf8.Encode("lite http: " + why(e) + "\n"), false);
         } catch (e2) { sock.destroy(); }
       }
       io.log(req.method + " " + req.uri + " " + code + "\n");
     });
   });
   srv.listen(port, HOST, function () {
-    io.log("lite serve: http://" + HOST + ":" + port + "/ browsing " + root + "\n");
+    io.log("lite http: http://" + HOST + ":" + port + "/ browsing " + root + "\n");
   });
   return srv;
 }
 
-module.exports = { serve: serve, routeOf: routeOf, urlOf: urlOf, argUrl: argUrl,
+module.exports = { http: listen, routeOf: routeOf, urlOf: urlOf, argUrl: argUrl,
                    escPath: escPath, repoRel: repoRel, anchorByte: anchorByte,
                    renderOf: renderOf, argPath: argPath, argRev: argRev,
                    pageHref: pageHref, extOf: extOf,

@@ -1,7 +1,7 @@
-//  lite/test/serve/url.js — LITE-034, the HEADLESS leg: the two pure halves of
-//  `lite serve` that need no socket at all —
+//  lite/test/http/url.js — LITE-034, the HEADLESS leg: the two pure halves of
+//  `lite http` that need no socket at all —
 //
-//    serve.js  routeOf(url) -> (verb, arg)   the URL table, one way
+//    http.js  routeOf(url) -> (verb, arg)   the URL table, one way
 //                    urlOf(root, pagerTarget)      the same table, the other way
 //    render/html.js    sgrCss / color256             render/theme.js -> CSS
 //                    hunkHtml(hunk, link)          tok tag -> <span>, `U` -> <a>
@@ -10,7 +10,7 @@
 //  must route back to the same (verb, arg), which is what keeps a click in the
 //  browser and a click in the pager the same click.  No repository is needed.
 "use strict";
-const srv = require("serve.js");
+const srv = require("http.js");
 const html = require("render/html.js");
 const theme = require("render/theme.js");
 const wrap = require("render/wrap.js");

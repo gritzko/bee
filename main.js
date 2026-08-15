@@ -88,13 +88,13 @@ function runHook(args) {
   if (note) writeStderr(note + "\n");
 }
 
-//  LITE-034: `lite serve [--port <n>]` — the repo browser over HTTP, the same
+//  LITE-034: `lite http [--port <n>]` — the repo browser over HTTP, the same
 //  views the pager shows.  A LONG-RUNNING verb: this returns once the listener
 //  is up and the pol loop takes over, until SIGINT.
 //  The whole DOOR is handed over — the verb table AND the reference resolution
-//  — so serve links through this file's code and owns no resolver of its own.
-function runServe(args) {
-  require("serve.js").serve(args, { verbs: door.VERBS, seatOf: door.seatOf,
+//  — so http links through this file's code and owns no resolver of its own.
+function runHttp(args) {
+  require("http.js").http(args, { verbs: door.VERBS, seatOf: door.seatOf,
                                           statOf: door.statOf,
                                           openPath: door.openPath });
 }
@@ -174,7 +174,7 @@ function pageHunks(hunks) {
 //  way), but they are still FLAGS and never a verb's argument.
 const SIDE = {
   index: runIndex, lindex: runLindex, merge: runMerge, install: runInstall,
-  hook: runHook, chat: runChat, serve: runServe, now: runNow,
+  hook: runHook, chat: runChat, http: runHttp, now: runNow,
 };
 
 function main(argv) {
