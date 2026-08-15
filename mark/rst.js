@@ -22,14 +22,31 @@ const Node = require("mark/node.js");
 //  field lists — DOG-038's cut, so the tokenizer and this parser agree.
 const ADORN = "!\"#$%&'()*+,-/;<=>?@[\\]^_`{|}~";
 const BULLET = /^([-*+•])(\s+|$)/;
-const ENUM = /^(\(?)(\d+|#)([.)])(\s+|$)/;
+const ENUM = /^(\(?)(\d+|#|[A-Za-z])([.)])(\s+|$)/;
 const GRID = /^\+[-=+]+\+\s*$/;
 const EXPLICIT = /^\.\.(\s|$)/;
+//  A field marker wants whitespace (or nothing) after the closing colon, which
+//  is what keeps a line-leading role (`:c:type:`x``) prose (LITE-039).
+const FIELD = /^:([^:\n]+):(?:\s+(.*))?$/;
+const LINEBLK = /^\|(?:[ \t]+(.*))?$/;
+//  An attribution paragraph: `--`, `---` or a dash, flush left (LITE-042).
+const ATTRIB = /^(?:-{2,3}|—|–)[ \t]*(\S.*)$/;
 
 function isBlank(l) { return /^[ \t]*$/.test(l); }
 
-//  A tab counts one, as it does in the DOG-038 machine — a v1 simplification.
-function indentOf(l) { let i = 0; while (l.charAt(i) === " " || l.charAt(i) === "\t") i++; return i; }
+function indentOf(l) { let i = 0; while (l.charAt(i) === " ") i++; return i; }
+
+//  LITE-039: a tab is an 8-column stop, docutils' input rule — expanded before
+//  any parsing, so no line past this point carries one.
+function detab(l) {
+  if (l.indexOf("\t") < 0) return l;
+  let out = "";
+  for (let i = 0; i < l.length; i++) {
+    const c = l.charAt(i);
+    out += c === "\t" ? "        ".slice(out.length % 8) : c;
+  }
+  return out;
+}
 
 //  A whole line of one adornment character, three or more -> that character.
 function adornOf(l) {
@@ -75,9 +92,15 @@ function blocks(lines, parent, ctx) {
     if (adornOf(lines[i])) { addNode(parent, "thematic_break"); i++; continue; }
     if (EXPLICIT.test(lines[i])) { i = explicitAt(lines, i, parent, ctx); continue; }
     if (GRID.test(lines[i])) { i = gridAt(lines, i, parent); continue; }
+    k = fieldAt(lines, i, parent, ctx);
+    if (k > i) { i = k; continue; }
+    k = lineBlockAt(lines, i, parent, ctx);
+    if (k > i) { i = k; continue; }
     k = listAt(lines, i, false, parent, ctx);
     if (k > i) { i = k; continue; }
     k = listAt(lines, i, true, parent, ctx);
+    if (k > i) { i = k; continue; }
+    k = defAt(lines, i, parent, ctx);
     if (k > i) { i = k; continue; }
     i = paraAt(lines, i, parent, ctx);
   }
@@ -99,7 +122,12 @@ function headingAt(lines, i, parent, ctx) {
   if (!ctx.levels.has(mark)) ctx.levels.set(mark, Math.min(ctx.levels.size + 1, 6));
   const h = addNode(parent, "heading");
   h.level = ctx.levels.get(mark);
-  ctx.raw.push({ node: h, text: lines[title].trim() });
+  const t = lines[title].trim();
+  //  LITE-038: a section title is an implicit target; the emitter slugs the
+  //  same text in the same order, so its anchor is knowable at parse time.
+  if (!ctx.secs.has(refName(t)))
+    ctx.secs.set(refName(t), "#" + require("mark/html.js").slugOf(t, ctx.slugs));
+  ctx.raw.push({ node: h, text: t });
   return end;
 }
 
@@ -109,8 +137,57 @@ function quoteAt(lines, i, parent, ctx) {
   let j = i;
   while (j < lines.length && (isBlank(lines[j]) || indentOf(lines[j]) >= base)) j++;
   while (j > i && isBlank(lines[j - 1])) j--;
-  blocks(dedent(lines.slice(i, j)), addNode(parent, "block_quote"), ctx);
+  quoteBody(dedent(lines.slice(i, j)), parent, ctx);
   return j;
+}
+
+//  LITE-042: an attribution (`-- author`, flush left) marks a REAL quotation
+//  and ENDS it — consecutive quotes split on attributions, the spec's rule.
+//  LITE-039: with no attribution, a quote holding nothing but lists is layout,
+//  not a quotation, and unwraps.
+function quoteBody(body, parent, ctx) {
+  let cut = -1, m = null;
+  for (let k = 0; k < body.length; k++) {
+    if (k > 0 && !isBlank(body[k - 1])) continue;
+    m = ATTRIB.exec(body[k]);
+    if (m !== null) { cut = k; break; }
+  }
+  const q = addNode(parent, "block_quote");
+  blocks(cut < 0 ? body : body.slice(0, cut), q, ctx);
+  if (cut < 0) {
+    let lists = q.firstChild !== null;
+    for (let n = q.firstChild; n; n = n.next) if (n.type !== "list") lists = false;
+    if (lists) {
+      let n;
+      while ((n = q.firstChild) !== null) parent.appendChild(n);
+      q.unlink();
+    }
+    return;
+  }
+  let e = cut + 1, text = m[1];
+  while (e < body.length && !isBlank(body[e])) { text += " " + body[e].trim(); e++; }
+  const a = addNode(q, "custom_block");
+  a.onEnter = '<p class="attribution">— '; a.onExit = "</p>\n";
+  ctx.raw.push({ node: a, text: text });
+  while (e < body.length && isBlank(body[e])) e++;
+  if (e < body.length) quoteBody(body.slice(e), parent, ctx);
+}
+
+//  LITE-042: a line block — `|`-headed lines keep their own breaks; a bare `|`
+//  is an empty line.  The docutils HTML shape, div.line-block over div.line.
+function lineBlockAt(lines, i, parent, ctx) {
+  if (indentOf(lines[i]) > 0 || !LINEBLK.test(lines[i])) return i;
+  const lb = addNode(parent, "custom_block");
+  lb.onEnter = '<div class="line-block">\n'; lb.onExit = "</div>\n";
+  while (i < lines.length && indentOf(lines[i]) === 0 && LINEBLK.test(lines[i])) {
+    const m = LINEBLK.exec(lines[i]);
+    const ln = addNode(lb, "custom_block");
+    if (m[1] === undefined || m[1] === "") ln.onEnter = '<div class="line"><br /></div>\n';
+    else { ln.onEnter = '<div class="line">'; ln.onExit = "</div>\n";
+           ctx.raw.push({ node: ln, text: m[1] }); }
+    i++;
+  }
+  return i;
 }
 
 //  A grid table degrades: its own art, verbatim, in a literal block.
@@ -146,14 +223,83 @@ function explicitAt(lines, i, parent, ctx) {
   return j;
 }
 
+//  A field list, `:Name: value` — one `Name: value` pair per line, the name
+//  bold, the value inline-parsed with its indented continuation folded in
+//  (LITE-039; overrides LITE-037's plain-paragraph degrade).
+function fieldAt(lines, i, parent, ctx) {
+  while (i < lines.length) {
+    const m = FIELD.exec(lines[i]);
+    if (m === null || indentOf(lines[i]) > 0) return i;
+    let val = m[2] || "";
+    i++;
+    while (i < lines.length && !isBlank(lines[i]) && indentOf(lines[i]) > 0 &&
+           !FIELD.exec(lines[i]))
+      { val += " " + lines[i].trim(); i++; }
+    const p = addNode(parent, "paragraph");
+    const b = addNode(p, "strong");
+    addNode(b, "text").literal = m[1] + ":";
+    if (val !== "") {
+      addNode(p, "text").literal = " ";
+      ctx.raw.push({ node: p, text: val });
+    }
+  }
+  return i;
+}
+
+//  LITE-041: a single term line directly over an indented body opens a reST
+//  DEFINITION list; a trailing `::` is the literal opener and stays prose.
+function defOpens(lines, i) {
+  if (isBlank(lines[i]) || indentOf(lines[i]) > 0) return false;
+  if (/::\s*$/.test(lines[i])) return false;
+  if (i + 1 >= lines.length || isBlank(lines[i + 1])) return false;
+  return indentOf(lines[i + 1]) > 0;
+}
+
+function defAt(lines, i, parent, ctx) {
+  if (!defOpens(lines, i)) return i;
+  const dl = addNode(parent, "custom_block");
+  dl.onEnter = "<dl>\n"; dl.onExit = "</dl>\n";
+  while (i < lines.length && defOpens(lines, i)) {
+    const dt = addNode(dl, "custom_block");
+    dt.onEnter = "<dt>"; dt.onExit = "</dt>\n";
+    ctx.raw.push({ node: dt, text: lines[i].trim() });
+    i++;
+    const base = indentOf(lines[i]);
+    let j = i;
+    while (j < lines.length && (isBlank(lines[j]) || indentOf(lines[j]) >= base)) j++;
+    while (j > i && isBlank(lines[j - 1])) j--;
+    const dd = addNode(dl, "custom_block");
+    dd.onEnter = "<dd>\n"; dd.onExit = "</dd>\n";
+    blocks(dedent(lines.slice(i, j)), dd, ctx);
+    i = j;
+    while (i < lines.length && isBlank(lines[i])) i++;
+  }
+  return i;
+}
+
 //  A list marker -> { len, kind, num }, or null.  `kind` is the marker STYLE —
 //  a change of style ends the list and opens the next one, as reST reads it.
 function markerOf(line, ordered) {
   const m = (ordered ? ENUM : BULLET).exec(line);
   if (!m) return null;
-  return ordered
-    ? { len: m[0].length, kind: m[1] + m[3], num: m[2] === "#" ? 1 : Number(m[2]) }
-    : { len: m[0].length, kind: m[1], num: 0 };
+  if (!ordered) return { len: m[0].length, kind: m[1], num: 0 };
+  //  LITE-040: a single letter enumerates too; its class keeps 1./a./A. apart.
+  const alpha = /^[A-Za-z]$/.test(m[2]) ? (m[2] === m[2].toLowerCase() ? "a" : "A") : "";
+  const num = m[2] === "#" ? 1
+            : alpha ? m[2].toLowerCase().charCodeAt(0) - 96 : Number(m[2]);
+  return { len: m[0].length, kind: m[1] + m[3] + alpha, num: num, alpha: alpha };
+}
+
+//  LITE-040: a single-letter enumerator opens a list only when its item shows
+//  a body or a sibling — "A. Smith went home." stays prose (docutils' guard).
+function enumOpens(lines, i) {
+  const m = markerOf(lines[i], true);
+  if (m === null) return false;
+  if (!m.alpha) return true;
+  if (i + 1 >= lines.length || isBlank(lines[i + 1])) return true;
+  if (indentOf(lines[i + 1]) > 0) return true;
+  const nx = markerOf(lines[i + 1], true);
+  return nx !== null && nx.kind === m.kind;
 }
 
 //  A bullet or enumerated list.  An item is its marker line with the marker
@@ -164,8 +310,10 @@ function listAt(lines, i, ordered, parent, ctx) {
   if (indentOf(lines[i]) > 0) return i;
   const first = markerOf(lines[i], ordered);
   if (first === null) return i;
+  if (ordered && !enumOpens(lines, i)) return i;
   const list = addNode(parent, "list");
   list.listType = ordered ? "ordered" : "bullet";
+  if (ordered && first.alpha) list.enumType = first.alpha;
   let tight = true;
   while (i < lines.length && !isBlank(lines[i]) && indentOf(lines[i]) === 0) {
     const m = markerOf(lines[i], ordered);
@@ -183,7 +331,9 @@ function listAt(lines, i, ordered, parent, ctx) {
     }
     while (buf.length && isBlank(buf[buf.length - 1])) buf.pop();
     const item = addNode(list, "item");
-    blocks(dedent(buf), item, ctx);
+    //  LITE-039: the body dedents on the CONTINUATION lines' own indent, the
+    //  marker-line text folded in front — a deeper body is no block quote.
+    blocks(buf.slice(0, 1).concat(dedent(buf.slice(1))), item, ctx);
     if (item.firstChild !== item.lastChild) tight = false;
     const nx = i < lines.length && !isBlank(lines[i]) ? markerOf(lines[i], ordered) : null;
     if (blanks && nx !== null && nx.kind === first.kind) tight = false;
@@ -201,7 +351,8 @@ function paraAt(lines, i, parent, ctx) {
   while (i < lines.length && !isBlank(lines[i])) {
     if (buf.length && (adornOf(lines[i]) || indentOf(lines[i]) > 0 ||
                        EXPLICIT.test(lines[i]) || GRID.test(lines[i]) ||
-                       BULLET.test(lines[i]) || ENUM.test(lines[i]) ||
+                       BULLET.test(lines[i]) || enumOpens(lines, i) ||
+                       LINEBLK.test(lines[i]) ||
                        (i + 1 < lines.length && adornOf(lines[i + 1])))) break;
     buf.push(lines[i].replace(/\s+$/, ""));
     i++;
@@ -236,11 +387,18 @@ function paraAt(lines, i, parent, ctx) {
 const OPEN_BEFORE = " \t\n-:/'\"<([{";
 const CLOSE_AFTER = " \t\n-.,:;!?\\/'\")]}>";
 
-function startOk(s, i) { return i === 0 || OPEN_BEFORE.indexOf(s.charAt(i - 1)) >= 0; }
+//  LITE-042: the spec admits "similar non-ASCII punctuation" on both sides —
+//  ｀，｀ fullwidth stops, curly quotes; any >7F char passes (CJK prose too).
+function startOk(s, i) {
+  if (i === 0) return true;
+  const c = s.charAt(i - 1);
+  return OPEN_BEFORE.indexOf(c) >= 0 || c.charCodeAt(0) > 127;
+}
 function afterOk(s, k, extra) {
   if (k >= s.length) return true;
   const c = s.charAt(k);
-  return CLOSE_AFTER.indexOf(c) >= 0 || (extra && extra.indexOf(c) >= 0);
+  return CLOSE_AFTER.indexOf(c) >= 0 || (extra && extra.indexOf(c) >= 0) ||
+         c.charCodeAt(0) > 127;
 }
 function isWord(c) { return /[A-Za-z0-9]/.test(c); }
 
@@ -326,7 +484,7 @@ function markupAt(s, i, parent, ctx, depth, buf) {
   }
   //  :role:`text` degrades to an inline literal — the role itself is not run.
   if (c === ":" && startOk(s, i)) {
-    const m = /^:[\w.+-]+:`([^`]*)`/.exec(s.slice(i));
+    const m = /^:[\w.+-]+(?::[\w.+-]+)*:`([^`]*)`/.exec(s.slice(i));
     if (m) {
       flush();
       addNode(parent, "code").literal = m[1];
@@ -382,18 +540,21 @@ function phraseAt(s, i, e, parent, ctx, depth) {
   return end;
 }
 
-//  `__` takes the anonymous targets in document order; `_` looks the name up.
+//  `__` takes the anonymous targets in document order; `_` looks the name up —
+//  an explicit target first, then a section title's anchor (LITE-038).
 function destOf(kind, name, ctx) {
   if (kind === "__") return ctx.anonAt < ctx.anon.length ? ctx.anon[ctx.anonAt++] : "";
   const d = ctx.targets.get(refName(name));
-  return typeof d === "string" ? d : "";
+  if (typeof d === "string") return d;
+  return ctx.secs.get(refName(name)) || "";
 }
 
 //  --- the whole trip ---------------------------------------------------------
 function parse(src) {
   const doc = new Node("document");
-  const ctx = { targets: new Map(), anon: [], anonAt: 0, levels: new Map(), raw: [] };
-  blocks(String(src).replace(/\r\n?/g, "\n").split("\n"), doc, ctx);
+  const ctx = { targets: new Map(), anon: [], anonAt: 0, levels: new Map(),
+                raw: [], secs: new Map(), slugs: new Map() };
+  blocks(String(src).replace(/\r\n?/g, "\n").split("\n").map(detab), doc, ctx);
   for (const r of ctx.raw) inlineInto(r.node, r.text, ctx, 0);
   return doc;
 }

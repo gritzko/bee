@@ -130,6 +130,45 @@ rst 'a spaced :: opener leaves no colon' \
 rst 'a :: paragraph of its own vanishes' \
     '::\n\n    x\n' \
     '<pre><code>x\n</code></pre>\n'
+rst 'a tab-indented sub-list stays inside its item (LITE-039)' \
+    ' 1. One.\n\n\t- a\n\t- b\n\n 2. Two.\n' \
+    '<ol>\n<li>\n<p>One.</p>\n<ul>\n<li>a</li>\n<li>b</li>\n</ul>\n</li>\n<li>\n<p>Two.</p>\n</li>\n</ol>\n'
+rst 'an item body deeper than its marker is no block quote (LITE-039)' \
+    ' 1. Objects.\n\n     Body text.\n\n\t- Tasks\n\n     Tail text.\n' \
+    '<ol>\n<li>\n<p>Objects.</p>\n<p>Body text.</p>\n<ul>\n<li>Tasks</li>\n</ul>\n<p>Tail text.</p>\n</li>\n</ol>\n'
+rst 'an alpha-enumerated list is a list, not quoted prose (LITE-040)' \
+    'a. One:\n\n   body a\n\nb. Two.\n' \
+    '<ol type="a">\n<li>\n<p>One:</p>\n<p>body a</p>\n</li>\n<li>\n<p>Two.</p>\n</li>\n</ol>\n'
+rst 'uppercase enumerators ride type=A, tight' \
+    'A) First\nB) Second\n' \
+    '<ol type="A">\n<li>First</li>\n<li>Second</li>\n</ol>\n'
+rst 'an initial opens no list — A. Smith stays prose (LITE-040)' \
+    'A. Smith went home.\nHe was tired.\n' \
+    '<p>A. Smith went home.\nHe was tired.</p>\n'
+rst 'CJK punctuation opens and closes inline markup (LITE-042)' \
+    '文，``budget`` 是。**强**文\n' \
+    '<p>文，<code>budget</code> 是。<strong>强</strong>文</p>\n'
+rst 'a line block renders as lines, not a paragraph (LITE-042)' \
+    '| line one\n| line two\n|\n| line three\n' \
+    '<div class="line-block">\n<div class="line">line one</div>\n<div class="line">line two</div>\n<div class="line"><br /></div>\n<div class="line">line three</div>\n</div>\n'
+rst 'an attribution marks a real quotation, kept and dashed (LITE-042)' \
+    'Intro:\n\n   "Quote text."\n\n   -- Sherlock\n' \
+    '<p>Intro:</p>\n<blockquote>\n<p>&quot;Quote text.&quot;</p>\n<p class="attribution">— Sherlock</p>\n</blockquote>\n'
+rst 'a term over an indented body is a definition list (LITE-041)' \
+    'dev_pm_opp_add\n   Add a new OPP.\n\n   Second para.\n' \
+    '<dl>\n<dt>dev_pm_opp_add</dt>\n<dd>\n<p>Add a new OPP.</p>\n<p>Second para.</p>\n</dd>\n</dl>\n'
+rst 'definition items chain into one dl' \
+    'term one\n   def one\n\nterm two\n   def two\n' \
+    '<dl>\n<dt>term one</dt>\n<dd>\n<p>def one</p>\n</dd>\n<dt>term two</dt>\n<dd>\n<p>def two</p>\n</dd>\n</dl>\n'
+rst 'a literal opener is no term' \
+    'Example::\n\n   code here\n' \
+    '<p>Example:</p>\n<pre><code>code here\n</code></pre>\n'
+rst 'an indented LIST is layout, not a quotation — no border bar (LITE-039)' \
+    'Choose:\n\n  - a\n  - b\n' \
+    '<p>Choose:</p>\n<ul>\n<li>a</li>\n<li>b</li>\n</ul>\n'
+rst 'indented prose among an indented list still quotes' \
+    'Says:\n\n  - a\n\n  who said it\n' \
+    '<p>Says:</p>\n<blockquote>\n<ul>\n<li>a</li>\n</ul>\n<p>who said it</p>\n</blockquote>\n'
 rst 'an indented block on its own is a block quote' \
     'A lead.\n\n    quoted words\n\nafter\n' \
     '<p>A lead.</p>\n<blockquote>\n<p>quoted words</p>\n</blockquote>\n<p>after</p>\n'
@@ -179,6 +218,15 @@ rst 'a section title takes inline markup, and its slug takes the text' \
 rst 'a single-backtick title reference reads as a citation' \
     'See `Some Book` today.\n' \
     '<p>See <em>Some Book</em> today.</p>\n'
+rst 'a phrase reference resolves to a section title anchor (LITE-038)' \
+    'Intro Part\n==========\n\nSee `Intro Part`_.\n' \
+    '<h1 id="intro-part">Intro Part</h1>\n<p>See <a href="#intro-part">Intro Part</a>.</p>\n'
+rst 'a simple reference reaches a section title too' \
+    'Intro\n=====\n\nSee Intro_.\n' \
+    '<h1 id="intro">Intro</h1>\n<p>See <a href="#intro">Intro</a>.</p>\n'
+rst 'an explicit target outranks a section title of the same name' \
+    'Both\n====\n\nSee Both_.\n\n.. _both: https://e.org/b\n' \
+    '<h1 id="both">Both</h1>\n<p>See <a href="https://e.org/b">Both</a>.</p>\n'
 
 # ==========================================================================
 # leg 4 — the DEGRADES, and safety
@@ -201,9 +249,18 @@ rst 'a grid table degrades to literal text, its art intact' \
 rst 'a role degrades to literal, a footnote ref and a substitution to plain' \
     'A :ref:`thing`, a note [1]_ and a |sub| here.\n' \
     '<p>A <code>thing</code>, a note [1]_ and a |sub| here.</p>\n'
-rst 'a field list degrades to plain paragraph text' \
+rst 'a two-part Sphinx role degrades to a literal the same way (LITE-038)' \
+    'In :c:type:`struct cred <cred>` and :c:func:`kmalloc`.\n' \
+    '<p>In <code>struct cred &lt;cred&gt;</code> and <code>kmalloc</code>.</p>\n'
+rst 'a field list reads as Name: value pairs, a line each (LITE-039)' \
     ':Author: Someone\n:Version: 2\n' \
-    '<p>:Author: Someone\n:Version: 2</p>\n'
+    '<p><strong>Author:</strong> Someone</p>\n<p><strong>Version:</strong> 2</p>\n'
+rst 'a field value takes its indented continuation' \
+    ':Note: one\n   and two\n' \
+    '<p><strong>Note:</strong> one and two</p>\n'
+rst 'a role at line start is no field' \
+    ':c:type:`x` leads.\n' \
+    '<p><code>x</code> leads.</p>\n'
 rst 'source markup is TEXT — an .rst page never carries the document`s HTML' \
     'A <script>alert(1)</script> and a <b>tag</b>.\n' \
     '<p>A &lt;script&gt;alert(1)&lt;/script&gt; and a &lt;b&gt;tag&lt;/b&gt;.</p>\n'
@@ -261,6 +318,8 @@ Doc *title*
 
 A `file <sub/x.txt>`_, a `page <sub/other.rst>`_, a `dir <sub>`_,
 a `miss <nosuch.rst>`_, a `bad <javascript:alert(1)>`_, an out_.
+
+A bare sub/x.txt in prose, and a missing nosuch.xyz:9 too.
 
 Head two
 --------
@@ -320,6 +379,10 @@ has   "a section underline becomes the next level" '<h2 id="head-two">Head two</
 has   "a bullet list rides the rendered page"      '<li>a bullet</li>'
 has   "an enumerated list rides it too"            '<li>first</li>'
 has   "the literal block is a pre, flat inside"    '<pre><code>literal *not emph* stays flat'
+has   "a bare prose ref autolinks per wiki/Link.mkd (LITE-043)" ">sub/x.txt</a>"
+if grep -q '<a href="[^"]*nosuch.xyz' "$WORK/page.html"
+then bad "an unresolved bare ref must stay plain" "$WORK/page.html"
+else ok  "an unresolved bare ref stays plain"; fi
 has   "the transition is a rule"                   '<hr />'
 has   "a relative link carries the RESOLVED href"  '<a href="/cat/sub/x.txt">file</a>'
 has   "an .rst target links to its RENDERED page"  '<a href="/cat/sub/other.rst">page</a>'

@@ -45,9 +45,10 @@ bad() {
 # The tracks list is $HOME/.config/be/tracks, so the runtime runs under a
 # PLANTED home; the jsrc pack cache stays on the real one (XDG_CACHE_HOME).
 FAKEHOME="$WORK/home"; mkdir -p "$FAKEHOME"
+ln -sf "$LITE" "$WORK/jsrc"                      # unpacked-runtime require climb
 : "${XDG_CACHE_HOME:=${HOME}/.cache}"
 export XDG_CACHE_HOME
-rt() { ( cd "$LITE" && HOME="$FAKEHOME" "$RT" "$@" ); }
+rt() { ( cd "$WORK" && HOME="$FAKEHOME" "$RT" "$@" ); }
 
 # --- the fixture repo -----------------------------------------------------
 #   c0  a.txt=1  dir/b.txt=B1          (root)
@@ -118,7 +119,6 @@ else bad "second run is a no-op, tracks dedups (rc $RC)" "$WORK/o2" "$WORK/e2" "
 # `log` discovers the repo by climbing from the CWD, so these run INSIDE it;
 # the $WORK/jsrc plant keeps an unpacked runtime's require climb satisfied.
 # ==========================================================================
-ln -sf "$LITE" "$WORK/jsrc"
 rtin() { D=$1; shift; ( cd "$D" && HOME="$FAKEHOME" "$RT" "$@" ); }
 
 # An unindexed side commit: `log <that hex>` must refuse in plain words, since

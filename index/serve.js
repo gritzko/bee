@@ -21,6 +21,7 @@ const bro = require("view/bro.js");
 const html = require("view/html.js");
 const mark = require("mark/html.js");
 const rst = require("mark/rst.js");
+const hk = require("index/hook.js");
 
 const PORT = 8034;                  // the fixed default; --port overrides
 const HOST = "127.0.0.1";           // localhost only — no flag opens this up
@@ -263,6 +264,27 @@ function pageHref(pg, dir, dest, isImage) {
   return url + "#" + u.fragment;
 }
 
+//  LITE-043: bare wiki/Link.mkd refs in RENDERED prose become <a> — the
+//  tokenizer's F tokens (hook.fTokens, the ONE scanner) through the SAME door
+//  a painted click rides (refUrl); a miss stays plain text.
+function autoSegs(pg, text) {
+  const bytes = utf8.Encode(text);
+  const fs = hk.fTokens(bytes, "txt");
+  if (fs.length === 0) return null;
+  const segs = [];
+  let at = 0;
+  for (const f of fs) {
+    const url = refUrl(pg, f.text);
+    if (url === "") continue;
+    if (f.lo > at) segs.push({ text: utf8.Decode(bytes.slice(at, f.lo)) });
+    segs.push({ text: f.text, href: url });
+    at = f.hi;
+  }
+  if (segs.length === 0) return null;
+  if (at < bytes.length) segs.push({ text: utf8.Decode(bytes.slice(at)) });
+  return segs;
+}
+
 //  The page: the toggle bar, then the emitted body.  `toHtml` is the dialect's
 //  own parser plus the ONE emitter; links resolve against the document's OWN
 //  directory, the way a reader reads them.
@@ -271,7 +293,8 @@ function pageBody(pg, rel, arg, hunks, toHtml) {
   const cut = rel.lastIndexOf("/");
   const dir = cut < 0 ? "" : rel.slice(0, cut + 1);
   const body = toHtml(src, {
-    href: function (d, isImage) { return pageHref(pg, dir, d, isImage); }
+    href: function (d, isImage) { return pageHref(pg, dir, d, isImage); },
+    autolink: function (t) { return autoSegs(pg, t); }
   });
   return html.viewBar("cat " + rel, "source", argUrl(pg.root, "raw", arg)) +
          html.markBody(body);

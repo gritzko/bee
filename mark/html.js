@@ -78,7 +78,7 @@ function slugOf(text, used) {
 function render(doc, opts) {
   opts = opts || {};
   const out = [], used = new Map(), open = [];
-  let tail = "\n";                       // a leading cr() must not fire
+  let tail = "\n", inA = 0;              // a leading cr() must not fire
   const put = function (s) { if (s) { out.push(s); tail = s.charAt(s.length - 1); } };
   const cr = function () { if (tail !== "\n") put("\n"); };
 
@@ -99,7 +99,16 @@ function render(doc, opts) {
     const node = ev.node, ent = ev.entering, t = node.type;
     switch (t) {
       //  ---- inlines -------------------------------------------------------
-      case "text": put(esc(node.literal)); break;
+      //  LITE-043: opts.autolink may split a text run into plain and linked
+      //  segments (wiki/Link.mkd refs); never inside an already-open <a>.
+      case "text": {
+        const segs = inA === 0 && opts.autolink ? opts.autolink(node.literal) : null;
+        if (!segs) { put(esc(node.literal)); break; }
+        for (const g of segs)
+          put(g.href ? '<a href="' + esc(g.href) + '">' + esc(g.text) + "</a>"
+                     : esc(g.text));
+        break;
+      }
       case "softbreak": put("\n"); break;
       case "linebreak": put("<br />\n"); break;
       case "code": put("<code>" + esc(node.literal) + "</code>"); break;
@@ -108,13 +117,18 @@ function render(doc, opts) {
       case "strikethrough": put(ent ? "<del>" : "</del>"); break;
       //  SAFE: the source bytes, visible as text — never markup of its own.
       case "html_inline": put(esc(node.literal)); break;
-      case "custom_inline": case "custom_block": break;
+      //  LITE-041: a custom node carries its own tags — emitted raw, and only
+      //  the rst parser mints them (dl/dt/dd), never document text.
+      case "custom_inline": case "custom_block":
+        if (ent) { cr(); if (node.onEnter) put(node.onEnter); }
+        else if (node.onExit) put(node.onExit);
+        break;
       case "link": {
         if (ent) {
           const h = hrefOf(node.destination, false);
           open.push(h);                  // the exit must match the enter
-          if (h !== null) put('<a href="' + h + '"' + titleOf(node) + ">");
-        } else if (open.pop() !== null) put("</a>");
+          if (h !== null) { put('<a href="' + h + '"' + titleOf(node) + ">"); inA++; }
+        } else if (open.pop() !== null) { put("</a>"); inA--; }
         break;
       }
       case "image": {
@@ -149,9 +163,12 @@ function render(doc, opts) {
         if (ent) {
           cr();
           const st = node.listStart;
+          //  LITE-040: reST alpha enumerators ride a type attribute; commonmark
+          //  sets no enumType, so a .md list is untouched.
+          const ty = node.enumType ? ' type="' + node.enumType + '"' : "";
           put(node.listType === "bullet" ? "<ul>\n"
-              : st === 1 || st === null || st === undefined ? "<ol>\n"
-              : '<ol start="' + st + '">\n');
+              : st === 1 || st === null || st === undefined ? "<ol" + ty + ">\n"
+              : "<ol" + ty + ' start="' + st + '">\n');
         } else put(node.listType === "bullet" ? "</ul>\n" : "</ol>\n");
         break;
       }
