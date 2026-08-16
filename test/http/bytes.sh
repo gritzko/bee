@@ -100,7 +100,7 @@ else BIG=0; echo "bytes: no dd — skipping the over-cap leg" >&2; fi
 SRVPID=$!
 N=0
 while [ "$N" -lt 100 ]; do
-    curl -s -o /dev/null "$BASE/" && break
+    curl -s -o /dev/null "$BASE/repo/" && break
     grep -qi "in use" "$WORK/srv.log" && break
     N=$((N + 1)); sleep 0.1
 done
@@ -128,7 +128,7 @@ nohdr() { if grep -qiF "$2" "$WORK/hdr"; then bad "$1 — '$2' is there" "$WORK/
 # leg 1 — the allowlist, one file per extension, typed off the NAME
 # ==========================================================================
 ctype() {   # ctype <file> <want-type>
-    page "typed off the name" "/bytes/$1" 200
+    page "typed off the name" "/repo/bytes/$1" 200
     hdr "$1 is $2" "Content-Type: $2"
     hdr "$1 is marked nosniff" "X-Content-Type-Options: nosniff"
 }
@@ -145,7 +145,7 @@ ctype notes.txt "application/octet-stream"
 ctype sub/x.txt "application/octet-stream"
 
 # An SVG is TEXT THAT CAN SCRIPT: it never gets the image type that would run it.
-page  "an svg ships as bytes" "/bytes/draw.svg" 200
+page  "an svg ships as bytes" "/repo/bytes/draw.svg" 200
 hdr   "the svg is octet-stream" "Content-Type: application/octet-stream"
 nohdr "and NEVER image/svg+xml" "image/svg"
 hdr   "the svg is marked nosniff" "X-Content-Type-Options: nosniff"
@@ -154,13 +154,13 @@ has   "its bytes ride verbatim, un-run" "<script>alert(1)</script>"
 # ==========================================================================
 # leg 2 — the bytes are the FILE's bytes, and `?<rev>` picks the era
 # ==========================================================================
-curl -s -o "$WORK/img" "$BASE/bytes/logo.png"
+curl -s -o "$WORK/img" "$BASE/repo/bytes/logo.png"
 if cmp -s "$WORK/img" "$REPO/logo.png"
 then ok "the served png is byte-identical to the worktree file"
 else bad "the served png differs from $REPO/logo.png"; fi
 LEN=$(grep -i '^Content-Length:' "$WORK/hdr" | tr -dc '0-9')
 
-curl -s -D "$WORK/hdr" -o "$WORK/old" "$BASE/bytes/logo.png?$C08"
+curl -s -D "$WORK/hdr" -o "$WORK/old" "$BASE/repo/bytes/logo.png?$C08"
 if cmp -s "$WORK/old" "$WORK/logo.v0"
 then ok "?<rev> serves that rev's own bytes"
 else bad "the rev's png is not C0's" "$WORK/hdr"; fi
@@ -169,7 +169,7 @@ then bad "the rev's png is the TIP's bytes"; else ok "and not the tip's"; fi
 hdr "the rev's answer is typed too" "Content-Type: image/png"
 
 # HEAD answers the same head, length included, and sends no body.
-curl -s -I -D "$WORK/hdr" -o /dev/null "$BASE/bytes/logo.png"
+curl -s -I -D "$WORK/hdr" -o /dev/null "$BASE/repo/bytes/logo.png"
 HL=$(grep -i '^Content-Length:' "$WORK/hdr" | tr -dc '0-9')
 if [ -n "$HL" ] && [ "$HL" = "$(wc -c < "$WORK/img" | tr -dc '0-9')" ]
 then ok "HEAD answers GET's own length ($HL) with no body"
@@ -178,42 +178,47 @@ else bad "HEAD length '$HL' vs GET's $LEN" "$WORK/hdr"; fi
 # ==========================================================================
 # leg 3 — the refusals: a miss, the directory forms, the cap
 # ==========================================================================
-page "no such file" "/bytes/nope.png" 404
+page "no such file" "/repo/bytes/nope.png" 404
 has  "the verb's own plain words" "cat: there is no nope.png in the worktree"
-page "no such file at that rev" "/bytes/logo.png?deadbeef" 404
-page "a directory is not a page" "/bytes/sub/" 404
-page "and the root is not one either" "/bytes/" 404
-page "nothing outside the repo" "/bytes/../../etc/passwd" 404
+page "no such file at that rev" "/repo/bytes/logo.png?deadbeef" 404
+page "a directory is not a page" "/repo/bytes/sub/" 404
+page "and the root is not one either" "/repo/bytes/" 404
+# curl normalises the `..` before it sends, so the server sees a repo-less URL
+# and 301s it home; the confinement is the VERB's, and it still refuses.
+curl -s -L -D "$WORK/hdr" -o "$WORK/body" "$BASE/repo/bytes/../../etc/passwd"
+if grep -q "^HTTP/1.1 404" "$WORK/hdr"
+then ok "nothing outside the repo"
+else bad "a climb out of the repo must 404" "$WORK/hdr"; fi
 hasnt "and no bytes of it leak" "root:"
 
 if [ "$BIG" = 1 ]; then
-    page "over the source cap" "/bytes/huge.png" 413
+    page "over the source cap" "/repo/bytes/huge.png" 413
     has  "it refuses in plain words" "is too big to serve (over 4 MB)"
 fi
 
 # ==========================================================================
 # leg 4 — the rendered page: an IMAGE goes to /bytes/, a LINK stays on /cat/
 # ==========================================================================
-page  "the rendered page" "/cat/page.md" 200
-has   "the image src points at the bytes route" '<img src="/bytes/logo.png"'
+page  "the rendered page" "/repo/cat/page.md" 200
+has   "the image src points at the bytes route" '<img src="/repo/bytes/logo.png"'
 has   "the alt text rides along" 'alt="the logo"'
-has   "an ordinary link keeps its painted view" '<a href="/cat/logo.png">'
-hasnt "and no link goes to the bytes route" '<a href="/bytes/'
-has   "an svg image points at the bytes route too" '<img src="/bytes/draw.svg"'
-hasnt "an image resolving to nothing is NOT an img" '<img src="/bytes/nope.png"'
+has   "an ordinary link keeps its painted view" '<a href="/repo/logo.png">'
+hasnt "and no link goes to the bytes route" '<a href="/repo/bytes/'
+has   "an svg image points at the bytes route too" '<img src="/repo/bytes/draw.svg"'
+hasnt "an image resolving to nothing is NOT an img" '<img src="/repo/bytes/nope.png"'
 has   "and its alt text is still there" "missing"
 
 # The page at a REV shows that era's picture: the src carries the rev.
-page "the page at a rev" "/cat/page.md?$C08" 200
-has  "the image src carries the page's rev" '<img src="/bytes/logo.png?'"$C08"'"'
+page "the page at a rev" "/repo/cat/page.md?$C08" 200
+has  "the image src carries the page's rev" '<img src="/repo/bytes/logo.png?'"$C08"'"'
 
 # It survived all of that, and logged a line per request.
 if kill -0 "$SRVPID" 2>/dev/null
 then ok "the server is still up after every leg"
 else bad "the server died" "$WORK/srv.log"; fi
-if grep -q "GET /bytes/logo.png 200" "$WORK/srv.log"
+if grep -q "GET /repo/bytes/logo.png 200" "$WORK/srv.log"
 then ok "it logs a line per request to the message stream"
-else bad "no access line for /bytes/logo.png" "$WORK/srv.log"; fi
+else bad "no access line for /repo/bytes/logo.png" "$WORK/srv.log"; fi
 
 kill "$SRVPID" 2>/dev/null; SRVPID=""
 

@@ -15,6 +15,10 @@
 #   5. the wire — a `.rst` URL answers rendered HTML, the toggle serves the
 #      painted source, and a relative link carries the RESOLVED href.
 #
+#  BEE-003: every URL of leg 5 carries its REPO — the fixture is `$WORK/repo`,
+#  so the prefix is `/repo/`; a verb page is `/repo/<verb>/<path>` and a
+#  RESOLVED reference the verb-less `/repo/<path>`.
+#
 #  THE SUBSET is the ticket's, and the parser is HAND-WRITTEN: docutils is
 #  Python and there is no JS reST parser to vendor.  What is NOT in it degrades
 #  and is pinned by leg 4 — it must never crash and never emit source markup.
@@ -370,9 +374,9 @@ has()   { if grep -qF "$2" "$WORK/page.html"
 hasnt() { if grep -qF "$2" "$WORK/page.html"
           then bad "$1 (present: $2)" "$WORK/page.html"; else ok "$1"; fi; }
 
-R=$(get /cat/doc.rst)
+R=$(get /repo/cat/doc.rst)
 [ "$R" = "200 text/html; charset=utf-8" ] && ok "a .rst URL answers 200 text/html" \
-  || bad "GET /cat/doc.rst -> '$R'" "$WORK/page.html"
+  || bad "GET /repo/cat/doc.rst -> '$R'" "$WORK/page.html"
 has   "the .rst URL is RENDERED by default"        '<h1 id="doc-title">Doc <em>title</em></h1>'
 hasnt "the rendered page carries no painted spans" 'class="tok-'
 has   "a section underline becomes the next level" '<h2 id="head-two">Head two</h2>'
@@ -384,9 +388,9 @@ if grep -q '<a href="[^"]*nosuch.xyz' "$WORK/page.html"
 then bad "an unresolved bare ref must stay plain" "$WORK/page.html"
 else ok  "an unresolved bare ref stays plain"; fi
 has   "the transition is a rule"                   '<hr />'
-has   "a relative link carries the RESOLVED href"  '<a href="/cat/sub/x.txt">file</a>'
-has   "an .rst target links to its RENDERED page"  '<a href="/cat/sub/other.rst">page</a>'
-has   "a directory target links to the list view"  '<a href="/list/sub/">dir</a>'
+has   "a relative link carries the RESOLVED href"  '<a href="/repo/sub/x.txt">file</a>'
+has   "an .rst target links to its RENDERED page"  '<a href="/repo/sub/other.rst">page</a>'
+has   "a directory target links to the list view"  '<a href="/repo/sub/">dir</a>'
 has   "a named target resolves its absolute url"   '<a href="https://e.org/a?b=1&amp;c=2">out</a>'
 hasnt "an unresolvable target is NOT a link"       '>miss</a>'
 has   "an unresolvable target stays plain text"    'a miss,'
@@ -396,20 +400,20 @@ has   "source markup reaches it as visible text"   '&lt;script&gt;alert(1)&lt;/s
 has   "a directive degrades on the served page"    '.. note::'
 hasnt "a comment is dropped on the served page"    'a comment that is dropped'
 has   "a role degrades to a literal"               '<code>role</code>'
-has   "the page offers the source toggle"          '<a href="/raw/doc.rst">source</a>'
+has   "the page offers the source toggle"          '<a href="/repo/raw/doc.rst">source</a>'
 has   "the LITE-034 shell wraps the fragment"      '<link rel="stylesheet" href="/style.css">'
 
-R=$(get /raw/doc.rst)
+R=$(get /repo/raw/doc.rst)
 [ "$R" = "200 text/html; charset=utf-8" ] && ok "the toggle URL answers 200 text/html" \
-  || bad "GET /raw/doc.rst -> '$R'" "$WORK/page.html"
+  || bad "GET /repo/raw/doc.rst -> '$R'" "$WORK/page.html"
 has   "the toggle serves the PAINTED source"       'class="tok-'
 hasnt "the painted source renders no heading"      '<h1 id='
-has   "the painted view links back to rendered"    '<a href="/cat/doc.rst">rendered</a>'
+has   "the painted view links back to rendered"    '<a href="/repo/cat/doc.rst">rendered</a>'
 
-get /cat/sub/other.rst > /dev/null
-has   "a link out of a subdir resolves against ITS dir" '<a href="/cat/doc.rst">the doc</a>'
+get /repo/cat/sub/other.rst > /dev/null
+has   "a link out of a subdir resolves against ITS dir" '<a href="/repo/doc.rst">the doc</a>'
 
-get /cat/doc.mkd > /dev/null
+get /repo/cat/doc.mkd > /dev/null
 has   "a .mkd is still painted source (LITE-034)"  'class="tok-'
 hasnt "a .mkd is not rendered"                     '<h1 id='
 

@@ -98,3 +98,44 @@ if [ "$RC" != 0 ]; then
     exit 1
 fi
 echo "PASS [lite/refs] runtime $RT"
+
+# --- BEE-008: the ticket-code fixture -------------------------------------
+# One repo laid out the [/meta/todo] way, carrying every spelling a ticket
+# takes plus the shapes that must NOT resolve: a thin `.mkd` `.md` `.txt`, a
+# bare code file, a fat `TKT-005/README.mkd`, two spellings of ONE code (the
+# preference order) and two files of the SAME spelling (the chooser).
+TKTREPO="$WORK/tickets"
+mkdir -p "$TKTREPO"
+(
+  cd "$TKTREPO" || exit 1
+  git init -q -b master . && git config user.email t@t && git config user.name T || exit 1
+  export GIT_AUTHOR_NAME=T GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=T GIT_COMMITTER_EMAIL=t@t
+  mkdir -p todo/TKT/TKT-005 todo/TKT/TKT-009 todo/OTH
+  printf '#   TKT-001: the thin one\n\nl2\nl3\nl4\nl5 THINMARK\n' > todo/TKT/TKT-001.mkd
+  printf '#   TKT-002: the .md one\n'                             > todo/TKT/TKT-002.md
+  printf 'TKT-003: the .txt one\n'                                > todo/TKT/TKT-003.txt
+  printf 'TKT-004: no extension at all\n'                         > todo/TKT/TKT-004
+  printf 'TKT-004: the .mkd the bare file must beat\n'            > todo/TKT/TKT-004.mkd
+  printf '#   TKT-005: the fat one\n\nFATMARK\n'                  > todo/TKT/TKT-005/README.mkd
+  printf 'an attached page\n'                                     > todo/TKT/TKT-005/notes.mkd
+  printf '#   TKT-006: the .mkd that wins\n'                      > todo/TKT/TKT-006.mkd
+  printf '#   TKT-006: the .md that loses\n'                      > todo/TKT/TKT-006.md
+  printf '#   TKT-007: one of two\n'                              > todo/TKT/TKT-007.mkd
+  printf '#   TKT-007: the other\n'                               > todo/OTH/TKT-007.mkd
+  printf '#   TKT-009: a README.md ticket\n'                      > todo/TKT/TKT-009/README.md
+  git add -A
+  GIT_AUTHOR_DATE="2020-03-01T00:00:00Z" GIT_COMMITTER_DATE="2020-03-01T00:00:00Z" \
+    git commit -q -m "t0 every spelling a ticket takes" || exit 1
+) || { echo "ticket: cannot build the fixture repo" >&2; exit 2; }
+
+( cd "$TKTREPO" && HOME="$FAKEHOME" \
+  "$RT" --eval "require('$CASE/ticket.js')" ) > "$WORK/t.out" 2>"$WORK/t.err"
+RC=$?
+cat "$WORK/t.out"
+if [ "$RC" != 0 ]; then
+    FAILED=1
+    echo "--- stderr ---"; cat "$WORK/t.err"
+    echo "FAIL [bee/ticket]" >&2
+    exit 1
+fi
+echo "PASS [bee/ticket] runtime $RT"

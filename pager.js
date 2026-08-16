@@ -142,10 +142,13 @@ Pager.prototype.setHunks = function (hunks, path) {
 //  JAB-030: PUSH a fresh view, stacking the current one (a follow / a typed path
 //  descends); popView restores the previous one (the back key).
 //  LITE-023: a NEW push clears the forward stack — the branch just taken wins.
-Pager.prototype.pushView = function (hunks, path) {
+Pager.prototype.pushView = function (hunks, path, from) {
   if (this.view) this.stack.push(this.view);
   this.fwd.length = 0;
   this.setHunks(hunks, path);
+  //  BEE-003: the stack entry carries the repo it was opened FROM, so backing
+  //  out of a cross-tree hop refreshes in the tree it came from.
+  if (this.view) this.view.from = from;
 };
 Pager.prototype.popView = function () {
   if (!this.stack.length) { this.message = "(no prev view)"; return false; }
@@ -401,13 +404,16 @@ Pager.prototype._fit = function (s, cols) {
 //  ---- open / follow / refresh ----------------------------------------------
 //  The ONE fs door: hand `path` to opts.open and PUSH what it yields; a null/empty
 //  result (unreadable, empty dir) is a plain-words bar message.
-Pager.prototype._openPush = function (path) {
+//  BEE-003: `from` is the AMBIENT — the dir of the file this view is reading —
+//  so the door resolves a reference where it was WRITTEN and a cross-repo hop
+//  is an ordinary push (the stack then holds the repo with the path).
+Pager.prototype._openPush = function (path, from) {
   if (!this.open) { this.message = "(no opener)"; return; }
   let hunks;
-  try { hunks = this.open(path); }
+  try { hunks = this.open(path, from); }
   catch (e) { this.message = "cannot open " + path + ": " + String(e); return; }
   if (!hunks || hunks.length === 0) { this.message = "cannot open " + path; return; }
-  this.pushView(hunks, path);
+  this.pushView(hunks, path, from);
   //  LITE-045: the landing is a field of the FIRST hunk the door opened.
   const land = hunks[0].land;
   if (land) this._land(land);
@@ -488,9 +494,14 @@ Pager.prototype._seatCur = function (rows, span) {
 //  rows are relative to the dir it lists).
 //  LITE-015: in any other hunk an `F` token IS a file reference — its BYTES go
 //  to the door verbatim, which is the one place that resolves anything.
+//  BEE-003: in any other hunk the DIR of the file being read rides along, which
+//  is the first leg of the door's resolution order — a ref written next to its
+//  target resolves there before any repo is scanned.
 Pager.prototype._follow = function (hunk, name) {
   if (!hunk) { this.message = "(nothing to follow)"; return; }
-  this._openPush(hunk.kind === "dir" ? resolvePath(hunk.uri || "", name) : name);
+  if (hunk.kind === "dir") { this._openPush(resolvePath(hunk.uri || "", name)); return; }
+  const dir = this._viewDir();
+  this._openPush(name, dir ? dir + "/" : undefined);
 };
 
 //  FOLLOW the entry at display-row `ri` (Enter at the cursor, or a click's row).
@@ -570,7 +581,7 @@ Pager.prototype._refresh = function () {
   if (!v || !v.path || !this.open) { this.message = "(nothing to refresh)"; return; }
   const scroll = v.scroll;
   let hunks;
-  try { hunks = this.open(v.path); }
+  try { hunks = this.open(v.path, v.from); }
   catch (e) { this.message = "cannot open " + v.path + ": " + String(e); return; }
   if (!hunks || hunks.length === 0) { this.message = "cannot open " + v.path; return; }
   v.hunks = hunks; v.rows = null; v.scroll = scroll;   // re-index, keep the pos

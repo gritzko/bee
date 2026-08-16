@@ -52,6 +52,30 @@ check("an unknown head names no verb", srv.routeOf("/nope/x").verb === undefined
       srv.routeOf("/nope/x").verb);
 check("style.css names no verb either", srv.routeOf("/style.css").verb === undefined,
       srv.routeOf("/style.css").verb);
+//  BEE-003 (ruling 2): the FIRST segment names the REPO when the registry knows
+//  it, and the same table follows it — so one URL carries repo, view and path.
+const NAMES = ["repo", "quick"];
+const RREPO = [
+  ["/repo/",                  "repo",  "list",   ""],
+  ["/repo/list/sub/",         "repo",  "list",   "sub/"],
+  ["/repo/cat/sub/x.txt",     "repo",  "cat",    "sub/x.txt"],
+  ["/quick/commit/78d15e48",  "quick", "commit", "78d15e48"],
+  //  no verb after the repo: the rest IS the path, the file itself
+  ["/quick/dog/abc/TCP.c",    "quick", "path",   "dog/abc/TCP.c"],
+  ["/repo/a%20b.txt",         "repo",  "path",   "a b.txt"],
+];
+for (const r of RREPO) {
+  const g = srv.routeOf(r[0], NAMES);
+  check("route " + r[0] + " -> " + r[1] + " " + r[2] + " '" + r[3] + "'",
+        g.repo === r[1] && g.verb === r[2] && g.arg === r[3],
+        g.repo + " " + g.verb + " '" + g.arg + "'");
+}
+//  A repo-less URL names no repo at all — the server 301s it to the prefixed
+//  form rather than serving one tree quietly.
+check("a repo-less URL names no repo", srv.routeOf("/cat/x.txt", NAMES).repo === "",
+      srv.routeOf("/cat/x.txt", NAMES).repo);
+check("...and it keeps the raw path for the Location",
+      srv.routeOf("/cat/x.txt", NAMES).raw === "/cat/x.txt");
 //  A percent-escaped segment comes back as the byte it stands for (abc/URI).
 check("a %20 segment decodes", srv.routeOf("/cat/a%20b.txt").arg === "a b.txt",
       srv.routeOf("/cat/a%20b.txt").arg);
@@ -61,25 +85,28 @@ check("a %20 segment decodes", srv.routeOf("/cat/a%20b.txt").arg === "a b.txt",
 //  through, and the per-page cache/budget.  There is no repository under this
 //  headless leg, so `door` is a STUB and every branch of the resolution is
 //  driven from here; the wire leg (run.sh) drives the real door.
+//  BEE-003: `name` is the mount the page is served under and `prefix` the path
+//  it sits at, so every URL this page builds carries its repo.
 const ROOT = "/w/repo";
 function mkpg(door, left) {
-  return { root: ROOT, door: door || null, refs: new Map(), hunks: new Map(),
+  return { root: ROOT, name: "repo", prefix: "", door: door || null,
+           refs: new Map(), hunks: new Map(),
            left: left === undefined ? 0 : left };
 }
 const TARGETS = [
-  ["list /w/repo/sub/",       "/list/sub/"],
-  ["list /w/repo/",           "/list/"],
-  ["cat /w/repo/sub/x.txt",   "/cat/sub/x.txt"],
-  ["commit 78d15e48",         "/commit/78d15e48"],
-  ["tree /w/repo/sub/",       "/tree/sub/"],
-  ["tree 92ac9c80",           "/tree/92ac9c80"],
-  ["blob 92ac9c80",           "/blob/92ac9c80"],
-  ["log 78d15e48",            "/log/78d15e48"],
-  ["diff sub/x.txt",          "/diff/sub/x.txt"],
+  ["list /w/repo/sub/",       "/repo/list/sub/"],
+  ["list /w/repo/",           "/repo/list/"],
+  ["cat /w/repo/sub/x.txt",   "/repo/cat/sub/x.txt"],
+  ["commit 78d15e48",         "/repo/commit/78d15e48"],
+  ["tree /w/repo/sub/",       "/repo/tree/sub/"],
+  ["tree 92ac9c80",           "/repo/tree/92ac9c80"],
+  ["blob 92ac9c80",           "/repo/blob/92ac9c80"],
+  ["log 78d15e48",            "/repo/log/78d15e48"],
+  ["diff sub/x.txt",          "/repo/diff/sub/x.txt"],
   //  a `?<rev>` rides across as the URL's query, which is where it belongs
-  ["cat /w/repo/sub/x.txt?da0bd2c", "/cat/sub/x.txt?da0bd2c"],
+  ["cat /w/repo/sub/x.txt?da0bd2c", "/repo/cat/sub/x.txt?da0bd2c"],
   //  a space in a path is escaped per SEGMENT, so the separators survive
-  ["cat /w/repo/a b/c.txt",   "/cat/a%20b/c.txt"],
+  ["cat /w/repo/a b/c.txt",   "/repo/cat/a%20b/c.txt"],
 ];
 for (const t of TARGETS) {
   const g = srv.urlOf(mkpg(), t[0]);
@@ -95,9 +122,9 @@ const TRIPS = [
   ["cat /w/repo/a b/c.txt",         "cat",  "a b/c.txt"],
 ];
 for (const t of TRIPS) {
-  const g = srv.routeOf(srv.urlOf(mkpg(), t[0]));
-  check("round trip " + t[0], g.verb === t[1] && g.arg === t[2],
-        g.verb + " '" + g.arg + "'");
+  const g = srv.routeOf(srv.urlOf(mkpg(), t[0]), NAMES);
+  check("round trip " + t[0], g.repo === "repo" && g.verb === t[1] && g.arg === t[2],
+        g.repo + " " + g.verb + " '" + g.arg + "'");
 }
 
 //  --- a REFERENCE is resolved, never spelled raw ---------------------------
@@ -128,20 +155,20 @@ const TGT = hunkOf("int a;\nint b;\nint c;\n",
 //  a plain `file:line` ref anchors on the LINE'S FIRST token (line 2 starts at 7)
 check("a file:line ref anchors on the line's first token",
       srv.urlOf(mkpg(doorOf({ full: ROOT + "/t.c", line: 2, col: 0 }, "reg", TGT), 8),
-                "t.c:2") === "/cat/t.c#b7",
+                "t.c:2") === "/repo/t.c#b7",
       srv.urlOf(mkpg(doorOf({ full: ROOT + "/t.c", line: 2, col: 0 }, "reg", TGT), 8), "t.c:2"));
 //  a `file:line:col` ref anchors on the token the COLUMN sits in (col 5 -> byte 11)
 check("a file:line:col ref anchors on the column's token",
       srv.urlOf(mkpg(doorOf({ full: ROOT + "/t.c", line: 2, col: 5 }, "reg", TGT), 8),
-                "t.c:2:5") === "/cat/t.c#b11");
+                "t.c:2:5") === "/repo/t.c#b11");
 //  a PERMALINK hands the resolver's OWN token bytes over — no re-derivation
 check("a permalink anchors on the resolver's own token",
       srv.urlOf(mkpg(doorOf({ full: ROOT + "/t.c", line: 3, col: 1, lo: 14, hi: 17 },
-                            "reg", TGT), 8), "t.c:E:AbCd") === "/cat/t.c#b14");
+                            "reg", TGT), 8), "t.c:E:AbCd") === "/repo/t.c#b14");
 //  a reference naming a DIRECTORY opens the browser, not cat
 check("a dir reference opens in list",
       srv.urlOf(mkpg(doorOf({ full: ROOT + "/sub", line: 0, col: 0 }, "dir", null), 8),
-                "sub") === "/list/sub/");
+                "sub") === "/repo/sub/");
 //  NOTHING answers -> no href; the painter leaves plain text
 check("an unresolvable reference gets NO url",
       srv.urlOf(mkpg(doorOf(null, null, null), 8), "nosuch.c:3") === "");
@@ -158,7 +185,7 @@ check("an untokenised target links without an anchor",
       srv.urlOf(mkpg(doorOf({ full: ROOT + "/t.txt", line: 1, col: 0 }, "reg",
                             { uri: "x", text: utf8.Encode("hi\n"),
                               toks: new Uint32Array(0), kind: "cat" }), 8),
-                "t.txt:1") === "/cat/t.txt");
+                "t.txt:1") === "/repo/t.txt");
 //  the per-page BUDGET: past it a reference paints plain rather than stalling
 //  the one loop, and a repeat costs nothing (the cache answers).
 {
@@ -168,7 +195,7 @@ check("an untokenised target links without an anchor",
               openPath: function () { return [TGT]; } };
   const pg = mkpg(d, 1);
   const a = srv.urlOf(pg, "t.c:1"), b = srv.urlOf(pg, "t.c:1"), c = srv.urlOf(pg, "u.c:1");
-  check("a repeated reference is followed once", a === b && a === "/cat/t.c#b0" && calls === 1,
+  check("a repeated reference is followed once", a === b && a === "/repo/t.c#b0" && calls === 1,
         a + " " + b + " calls " + calls);
   check("past the budget a reference paints plain", c === "", c);
 }
@@ -236,7 +263,7 @@ check("the banner is the hunk uri", out.indexOf('<div class="banner">list</div>'
 check("a tag becomes a class", out.indexOf('<span class="tok-Q" id="b0">dir </span>') >= 0, out);
 check("the hidden U bytes are NOT painted", out.indexOf("cat /w/repo") < 0, out);
 check("the U target becomes the href",
-      out.indexOf('<a href="/cat/a.txt"><span class="tok-F" id="b4">a.txt</span></a>') >= 0, out);
+      out.indexOf('<a href="/repo/cat/a.txt"><span class="tok-F" id="b4">a.txt</span></a>') >= 0, out);
 check("the body is a pre", out.indexOf('<pre class="body">') >= 0, out);
 //  LITE-034: every token span is anchorable by its START BYTE, and a page's
 //  later hunks carry the ordinal so `#b<off>` always names the first.
@@ -265,7 +292,7 @@ check("and it is still painted", html.hunkHtml(F, link).indexOf('class="tok-F" i
     return srv.urlOf(mkpg(doorOf({ full: ROOT + "/sub/x.txt", line: 0, col: 0 }, "reg", TGT), 8), t);
   };
   check("a resolvable F token becomes the resolved href",
-        html.hunkHtml(F, lk).indexOf('<a href="/cat/sub/x.txt">') >= 0, html.hunkHtml(F, lk));
+        html.hunkHtml(F, lk).indexOf('<a href="/repo/sub/x.txt">') >= 0, html.hunkHtml(F, lk));
 }
 
 //  A hunk with NO toks at all (a blob, an unknown extension) still paints its

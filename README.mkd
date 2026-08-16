@@ -13,7 +13,12 @@ jab-shared API suite) as submodules:
 Layout: `index/` reads the index and the ODB, `view/` turns an arg into hunks
 (one module per verb), `render/` turns hunks into bytes (`plain` `ansi` `html`
 over `wrap` + `theme`), `door.js` turns a target into a view, and `main.js`
-`pager.js` `http.js` `merge.js` `chat.js` are the apps.
+`pager.js` `http.js` `merge.js` `chat.js` are the apps.  The REPO is an axis of
+the target, not the cwd: `index/mount.js` reads `~/.config/bee/repos` as the
+mount table and carries the ambient `{repo, path, anchor}` a view reads in.  A
+TICKET CODE is a target like any other — `door.js` tries `ABC-123`, then
+`.mkd` `.md` `.txt`, then `ABC-123/README.mkd` `README.md`, first hit wins —
+so a code clicks through to its ticket in any registered repo.
 
 Usage — a terminal with no flag pages coloured hunks; otherwise one mode flag
 picks the sink, `--plain` (also what a pipe defaults to), `--color`, `--html`:
@@ -44,11 +49,13 @@ picks the sink, `--plain` (also what a pipe defaults to), `--color`, `--html`:
  -  `bee cat <path>[?<rev>]` — the file's own bytes, syntax-painted
  -  `bee tree [<hex>|<path>][?<rev>]` — raw git-tree rows, `..` row when descended
  -  `bee blob <hexlet>` — a blob by object name
- -  `bee http [--port <n>]` — the same views over HTTP on localhost:8034, read-only
-     1. a `.md` URL renders as a page, links resolved; `.mkd` stays painted
+ -  `bee http [--port <n>]` — the same views over HTTP on localhost:8034, read-only, EVERY registered repo
+     1. `/<repo>/<path>` is the file itself, `/<repo>/<verb>/<path>` a named view; a repo-less URL 301s to the prefixed form
+     2. a `.md` URL renders as a page, links resolved; `.mkd` stays painted
     1. an `.rst` URL renders the reST subset; directives and tables show literal
-     2. `/raw/<path>` is the painted source, and each view links to the other
-     3. `/bytes/<path>[?<rev>]` ships the file's raw bytes; a rendered image points there
+     3. `/<repo>/raw/<path>` is the painted source, and each view links to the other
+     4. `/<repo>/bytes/<path>[?<rev>]` ships the file's raw bytes; a rendered image points there
+     5. a SUBMODULE is served through its parent (`/quickjab/dog/abc/TCP.c`), never under a name of its own
  -  `bee install [<repo>]` — wire bee as the repo's git merge driver and pre-commit hook, list it in `~/.config/bee/repos`, index it
      1. a LINKED WORKTREE is refused: a repo is known by its path
      2. a SUBMODULE is an ordinary repo: each initialised one is registered, indexed and lindexed too

@@ -15,7 +15,11 @@
 #   * ONE stylesheet, generated off view/theme.js, linked by every page.
 #
 # The headless half (the URL table both ways, theme -> CSS, the painter over
-# hand-built hunks) is test/http/url.js, run last.
+# hand-built hunks) is test/http/url.js, run last; BEE-003's cross-repo half is
+# test/http/repo.sh, run after it with its own fixtures and its own port.
+#
+# BEE-003: every URL here carries its REPO — the fixture is `$WORK/repo`, so the
+# prefix is `/repo/`; a reference resolves to the verb-less `/repo/<path>`.
 #
 # Standalone: `sh lite/test/http/run.sh` from anywhere (it cds itself).
 # $LITEJAB picks the runtime (default `jab`), built from THIS tree.
@@ -170,20 +174,20 @@ hdr()   { if grep -qiF "$2" "$WORK/hdr"; then ok "$1"; else bad "$1 — no '$2'"
 # ==========================================================================
 # leg 1 — `/` is the root list, and its rows carry the pager's own targets
 # ==========================================================================
-page "the root list" "/" 200
+page "the root list" "/repo/" 200
 hdr  "it is html" "Content-Type: text/html; charset=utf-8"
 hdr  "with a length" "Content-Length:"
 has  "the banner names the view" '<div class="banner">list</div>'
 has  "the ONE stylesheet is linked" '<link rel="stylesheet" href="/style.css">'
-has  "a file row links to its cat page" '<a href="/cat/a.txt">'
-has  "a dir row links to its list page" '<a href="/list/sub/">'
+has  "a file row links to its cat page" '<a href="/repo/cat/a.txt">'
+has  "a dir row links to its list page" '<a href="/repo/list/sub/">'
 has  "the wt marker slot is painted" 'class="tok-E"'
 has  "the wt marker column is there" '>mod </span>'
 has  "the name is painted" 'class="tok-F"'
 has  "every span is anchorable by its start byte" 'class="tok-D" id="b0">'
 has  "the last-commit column is painted" '>C0 seed</span>'
 hasnt "the hidden U bytes never reach the page" "cat $REPO"
-has  "a SPACED name escapes per segment" '<a href="/cat/a%20b.txt">'
+has  "a SPACED name escapes per segment" '<a href="/repo/cat/a%20b.txt">'
 
 # ==========================================================================
 # leg 2 — the ONE generated stylesheet, straight off view/theme.js
@@ -199,49 +203,49 @@ has  "the columns are preserved" "white-space:pre"
 # ==========================================================================
 # leg 3 — the per-verb pages
 # ==========================================================================
-page "a subdir list" "/list/sub/" 200
-has  "it lists the subdir's file" '<a href="/cat/sub/x.txt">'
+page "a subdir list" "/repo/list/sub/" 200
+has  "it lists the subdir's file" '<a href="/repo/cat/sub/x.txt">'
 
-page "the log" "/log/" 200
-has  "a log row links its commit" '<a href="/commit/'
+page "the log" "/repo/log/" 200
+has  "a log row links its commit" '<a href="/repo/commit/'
 has  "the sha8 is painted" ">$TIP8</span>"
-page "a file's log" "/log/sub/x.txt" 200
-has  "the file log carries rows too" '<a href="/commit/'
+page "a file's log" "/repo/log/sub/x.txt" 200
+has  "the file log carries rows too" '<a href="/repo/commit/'
 
-page "one commit" "/commit/$TIP8" 200
+page "one commit" "/repo/commit/$TIP8" 200
 has  "the commit header is painted" 'class="tok-R" id="b0">commit </span>'
 has  "its sha is spelled whole" "$TIP"
-has  "the tree header links the tree" '<a href="/tree/'
+has  "the tree header links the tree" '<a href="/repo/tree/'
 has  "the parent header links the parent" "/commit/$C1"
 
-page "the worktree diff" "/diff/" 200
+page "the worktree diff" "/repo/diff/" 200
 has  "the diff banner names the file" '<div class="banner">a.txt#L1</div>'
-page "one commit's diff" "/diff/$C18" 200
+page "one commit's diff" "/repo/diff/$C18" 200
 has  "the to-side washes in" 'side-in" id="b0">X1'
 has  "the from-side washes out" 'side-rm" id="b2">X0'
 
-page "a file" "/cat/doc.mkd" 200
+page "a file" "/repo/cat/doc.mkd" 200
 has  "the source is painted" '<span class="tok-'
-has  "a path reference links, resolved" '<a href="/cat/sub/x.txt">'
+has  "a path reference links, resolved" '<a href="/repo/sub/x.txt">'
 # A ticket code names no file in this repo, so it resolves to NOTHING — and an
 # unresolvable reference is plain painted text, never a link that 404s.
-hasnt "a ticket code naming no file is NOT a link" '<a href="/cat/LITE-034'
+hasnt "a ticket code naming no file is NOT a link" '<a href="/repo/LITE-034'
 has  "and the ticket code is still painted" '>LITE-034</span>'
 hasnt "NO CommonMark render — no heading element" "<h1"
 hasnt "NO CommonMark render — no paragraph element" "<p>"
 has  "the markdown source is served verbatim" "Doc"
 
-page "a file at a rev" "/cat/sub/x.txt?$C08" 200
+page "a file at a rev" "/repo/cat/sub/x.txt?$C08" 200
 has  "the rev's bytes, not the tip's" ">X0<"
 hasnt "and not the tip's bytes" ">X1<"
 
-page "the root tree" "/tree/" 200
-has  "a tree row links its blob" '<a href="/blob/'
+page "the root tree" "/repo/tree/" 200
+has  "a tree row links its blob" '<a href="/repo/blob/'
 has  "the mode/type/sha prefix is painted" 'class="tok-D" id="b0">100644 blob   '
-page "a subdir tree" "/tree/sub/" 200
-has  "the .. row climbs" '<a href="/tree/">'
+page "a subdir tree" "/repo/tree/sub/" 200
+has  "the .. row climbs" '<a href="/repo/tree/">'
 
-page "a blob by name" "/blob/$XBLOB" 200
+page "a blob by name" "/repo/blob/$XBLOB" 200
 has  "the blob's bytes" "X1"
 
 # ==========================================================================
@@ -250,16 +254,16 @@ has  "the blob's bytes" "X1"
 # door followed the reference, so it names the landed FILE and, as `#b<byte>`,
 # the landed TOKEN.  Nothing resolvable carries no href at all.
 # ==========================================================================
-page "a page of references" "/cat/ref.c" 200
-has  "a file:line ref lands on that line's first token" 'href="/cat/target.c#b63"'
-has  "a MOVED permalink lands where its token sits TODAY" 'href="/cat/target.c#b54"'
-has  "a DEAD permalink lands where its token STOOD" 'href="/cat/target.c#b37"'
-hasnt "a reference that answers nothing is NOT a link" 'href="/cat/nosuch'
+page "a page of references" "/repo/cat/ref.c" 200
+has  "a file:line ref lands on that line's first token" 'href="/repo/target.c#b63"'
+has  "a MOVED permalink lands where its token sits TODAY" 'href="/repo/target.c#b54"'
+has  "a DEAD permalink lands where its token STOOD" 'href="/repo/target.c#b37"'
+hasnt "a reference that answers nothing is NOT a link" 'href="/repo/nosuch'
 has  "and it is still painted as source" '>nosuch.c:3</span>'
 # The bug this leg exists for: no raw `file:OFF:HASHLET` may reach a URL.
-hasnt "no raw reference reaches a url" 'href="/cat/target.c:'
+hasnt "no raw reference reaches a url" 'href="/repo/target.c:'
 hasnt "no raw permalink reaches a url" '%3A'
-if [ "$(grep -c 'href="/cat/target.c#b' "$WORK/body")" = 3 ]; then
+if [ "$(grep -c 'href="/repo/target.c#b' "$WORK/body")" = 3 ]; then
     ok "exactly the three resolvable references linked"
 else
     bad "wrong number of resolved links" "$WORK/body"
@@ -267,7 +271,7 @@ fi
 
 # Each anchor names a REAL token of the page it points into — the offsets are
 # the fixture's own arithmetic, and the ids are the painter's.
-page "the reference target" "/cat/target.c" 200
+page "the reference target" "/repo/cat/target.c" 200
 has  "the moved permalink's anchor IS the anchored identifier" 'id="b54">MARK004</span>'
 has  "the dead permalink's anchor is the line it stood on" 'id="b37">int</span>'
 has  "the file:line anchor is that line's first token" 'id="b63">int</span>'
@@ -275,11 +279,11 @@ has  "the file:line anchor is that line's first token" 'id="b63">int</span>'
 # ==========================================================================
 # leg 4 — the refusals over the wire, and NO write endpoint of any kind
 # ==========================================================================
-page "no such page" "/nope/x" 404
-has  "it says so in plain words" "there is no /nope page here"
-page "no such file" "/cat/missing.txt" 404
+page "no such page" "/repo/nope/x" 404
+has  "it says so in plain words" "there is no nope/x in the worktree"
+page "no such file" "/repo/cat/missing.txt" 404
 has  "the verb's own plain words" "cat: there is no missing.txt in the worktree"
-page "no such commit" "/commit/deadbeef" 404
+page "no such commit" "/repo/commit/deadbeef" 404
 
 method() {   # method <label> <verb> <want-status>
     curl -s -X "$2" -D "$WORK/hdr" -o "$WORK/body" "$BASE/"
@@ -331,6 +335,20 @@ if [ "$RC" = 0 ] && grep -q '^DONE' "$WORK/j.out" && ! grep -q '^FAIL' "$WORK/j.
 else
     cat "$WORK/j.out"; head -5 "$WORK/j.err"
     bad "router/painter leg (rc $RC)" "$WORK/j.out"
+fi
+
+# ==========================================================================
+# leg 6 — BEE-003: the REPO axis, its own fixtures and its own server
+# ==========================================================================
+LITEJAB="$RT" LITEPORT=$((PORT + 4)) sh "$CASE/repo.sh" > "$WORK/repo.out" 2>&1
+RC=$?
+N=$(grep -c '^ok' "$WORK/repo.out")
+if [ "$RC" = 0 ] && grep -q '^PASS' "$WORK/repo.out"; then
+    CHECKS=$((CHECKS + N))
+    ok "cross-repo leg: $N checks (the repo axis — test/http/repo.sh)"
+else
+    grep -E '^(FAIL|repo:)' "$WORK/repo.out" | head -20
+    bad "cross-repo leg (rc $RC)" "$WORK/repo.out"
 fi
 
 if [ "$FAILED" != 0 ]; then

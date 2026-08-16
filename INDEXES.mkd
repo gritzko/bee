@@ -73,6 +73,9 @@ Each query is a scan of ONE key prefix; no ODB ancestry walk happens at query ti
  -  A PARTIAL path (`abc/TCP.c`, bare `TCP.c`) resolves via one FSEG scan plus
     a pruned descent of a commit's tree (`index/resolve.js`): the tree entries
     carry the real names, so the answer is TEXT and ambiguity is a list.
+    [BEE-003] FANS that over the registry — the dir of the file being read, the
+    ambient repo, then every registered repo — never the REV lane, whose
+    `path_hl` hashes the WHOLE path and so answers no suffix.
  -  A DIFF is a projection of ONE weave per path ([BEE-005], `index/dag.js` +
     `index/weave.js weaveDiff`): `repsOf` reads the rev a commit's view stands
     on (its own, else its nearest ancestor's over `CPAR` — a merge that touched
@@ -87,6 +90,9 @@ Each query is a scan of ONE key prefix; no ODB ancestry walk happens at query ti
     keeps the reserved ids (an empty side, the worktree layer) off that space.
  -  EVERY read here rides the SEEK cursor: `range`/`prefix` have been seen to
     answer NOTHING for a key a `seek` finds (index.js's own KNOWN TRAP).
+    [BEE-003] FANS that over the registry — the dir of the file being read, the
+    ambient repo, then every registered repo — never the REV lane, whose
+    `path_hl` hashes the WHOLE path and so answers no suffix.
  -  "Who links to this?" is TWO exact-key seeks per index — `fn|0` for a
     bare-filename ref, `fn|par` for one that named the parent — over EVERY repo
     in `$HOME/.config/bee/repos` ([BEE-002]): the vals are the carriers'
@@ -168,6 +174,8 @@ The gaps, stated so a reader does not go looking for them.
 
 [BEE-001]: /todo/BEE/BEE-001.mkd
 [BEE-002]: /todo/BEE/BEE-002.mkd
+[BEE-003]: /todo/BEE/BEE-003.mkd
+[BEE-003]: /todo/BEE/BEE-003.mkd
 [BEE-005]: /todo/BEE/BEE-005.mkd
 [BEE-007]: /todo/BEE/BEE-007.mkd
 [LITE-006]: /todo/LITE/LITE-006.mkd

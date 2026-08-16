@@ -68,11 +68,13 @@ function buildDirHunk(arg, path) {
 //  visible repo-relative text, then the openable path under a hidden `U` span.
 //  LITE-024: `tail` is the ref's `:line(:col)?` — the hidden target keeps it, so
 //  the chosen row re-enters the door suffixed and lands on the line.
+//  BEE-003: a row NAMES ITS REPO (ruling 4) when the resolver crossed repos —
+//  `quickjab/dog/abc/TCP.c` — since a bare relative path names no tree.
 function buildChooserHunk(arg, rows, tail) {
   let text = "";
   const tagAt = [];
   for (const r of rows) {
-    text += r.rel;
+    text += (r.repo ? r.repo + "/" : "") + r.rel;
     tagAt.push(["F", utf8.Encode(text).length]);
     text += r.full + (tail || "");              // the click target, no column
     tagAt.push(["U", utf8.Encode(text).length]);
