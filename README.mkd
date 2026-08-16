@@ -7,7 +7,7 @@ That carries dog/ (libdog), dog/abc/ (libabc) and test/ (the
 jab-shared API suite) as submodules:
 
     cmake -S <quickjab> -B build -GNinja \
-        -DJAB_JSRC=<this tree> -DQUICKJAB_JSRC_PACK=ON
+        -DJAB_JSRC=<js bundle tree> -DQUICKJAB_JSRC_PACK=ON
     ninja -C build quickjab
 
 Layout: `index/` reads the index and the ODB, `view/` turns an arg into hunks

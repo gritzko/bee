@@ -82,12 +82,21 @@ if [ "$RC" = 0 ] && [ "$(grep -c 'AAAMARK' "$WORK/s1")" = 5 ] &&
 then ok "a line ref prints the landed line and TWO of context each way"
 else bad "see src/A.c:20 (rc $RC)" "$WORK/s1" "$WORK/s1e"; fi
 
-# The band names the LANDING, and it is itself a reference.  seatOf spells a
-# landing in the AMBIENT repo relative and one anywhere else absolute, which is
-# the distinction a reader wants: a bare path means here, a full path elsewhere.
-if grep -qx "hunk src/A.c:20" "$WORK/s1"
-then ok "...under a band naming where it landed, clickable as a ref"
-else bad "the band is not the landing" "$WORK/s1"; fi
+# The band is the REF WITH ITS PATH EXPANDED — one token, still a reference, so
+# it re-reads through `see`.  `pwd -P` because mktemp under $HOME may sit behind
+# a symlink and the band is realpath'd, so the test must be too.
+RREPO=$(cd "$REPO" && pwd -P)
+if grep -qx "hunk $RREPO/src/A.c:20" "$WORK/s1"
+then ok "...banded with the ref, its path expanded to where it landed"
+else bad "the band is not the expanded ref" "$WORK/s1"; fi
+
+# And a LINE-anchored band round-trips: feed it back, get the same bytes.
+# The PERMALINK-anchored band does NOT yet — an absolute path carrying a hashlet
+# resolves nowhere ([BEE-018]); that check belongs to that ticket, not here.
+rtin "$REPO" see --plain "$RREPO/src/A.c:20" > "$WORK/s1b" 2>"$WORK/s1be"; RC=$?
+if [ "$RC" = 0 ] && cmp -s "$WORK/s1" "$WORK/s1b"
+then ok "...and a line-anchored band READS BACK through see, byte for byte"
+else bad "the band does not round-trip (rc $RC)" "$WORK/s1b" "$WORK/s1be"; fi
 
 # --- a batch: one hunk per ref, in the order given -------------------------
 rtin "$REPO" see --plain src/A.c:5 src/A.c:30 > "$WORK/s2" 2>"$WORK/s2e"; RC=$?
@@ -137,6 +146,12 @@ if [ "$RC" = 0 ] && [ -n "$PERMA" ] && grep -q 'AAAMARK020' "$WORK/s7" &&
 then ok "a PERMALINK reads back from the CLI — the whole point ($PERMA)"
 else bad "permalink (rc $RC) perma='$PERMA'" "$WORK/s7" "$WORK/s7e" "$WORK/m1"; fi
 
+# ...and the band KEEPS THE PERMALINK ANCHOR, only the path is substituted: the
+# `off:hashlet` is never re-spelled as a line, so the band is still a permalink.
+if grep -qx "hunk $RREPO/src/A.c:${PERMA#src/A.c:}" "$WORK/s7"
+then ok "...banded as the full path carrying the permalink's own anchor"
+else bad "the permalink band lost its anchor" "$WORK/s7"; fi
+
 # --- ANOTHER REGISTERED REPO answers, and says so in the band --------------
 # The fan-out is the door's ([BEE-003]) and `see` inherits it whole; the band
 # goes ABSOLUTE, which is how a reader tells a landing next door from one here.
@@ -162,8 +177,8 @@ rtin "$OTHER" install > "$WORK/i2" 2>"$WORK/i2e" || true
 rtin "$REPO" see --plain OTH-001:20 > "$WORK/sx" 2>"$WORK/sxe"; RC=$?
 if [ "$RC" = 0 ] && grep -q 'OTHMARK020' "$WORK/sx" &&
    [ "$(grep -c 'OTHMARK' "$WORK/sx")" = 5 ] &&
-   grep -qx "hunk $OTHER/todo/OTH/OTH-001.mkd:20" "$WORK/sx"
-then ok "a ref into ANOTHER registered repo answers, banded with its full path"
+   grep -qx "hunk $(cd "$OTHER" && pwd -P)/todo/OTH/OTH-001.mkd:20" "$WORK/sx"
+then ok "a ref into ANOTHER registered repo answers, its full path in the band"
 else bad "cross-repo (rc $RC)" "$WORK/sx" "$WORK/sxe"; fi
 
 # --- a miss gets BEE-003's words, and never stops the batch ----------------

@@ -62,11 +62,10 @@ const hs = sv.see("src/A.c:20").hunks;
 check("one ref, one hunk", hs.length === 1, hs.length);
 const h = hs[0];
 check("...an EXCERPT, so it wears the band", h.bare === false, h.bare);
-//  Absolute only when a view is given `opts.from`, which door.js's `vopts` fills
-//  in for every CLI and http call; a bare module call resolves against the cwd.
-//  The shell leg pins the absolute form the door produces — this pins the tail.
-check("...banded with WHERE IT LANDED, itself a reference",
-      ends(h.uri, "src/A.c:20"), h.uri);
+//  The band is the ref with its PATH EXPANDED and its tail kept — one token,
+//  still a reference, so it re-reads through `see` and clicks in the pager.
+check("...banded with the ref, its path expanded to the landing",
+      h.uri.charAt(0) === "/" && ends(h.uri, "/src/A.c:20"), h.uri);
 check("...carrying the five lines and nothing else",
       lines(h.text).length === 5 && line1(h.text, "AAAMARK018") &&
       lines(h.text)[4] === "int AAAMARK022;", dec(h.text));

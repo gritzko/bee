@@ -1,23 +1,11 @@
-//  view/see.js — BEE-017: `bee see [-C<n>] <ref>...`, the chunk a reference
-//  names.  `door.js` seatOf has resolved every reference shape there is since
-//  LITE-034:h0:MfTf — permalink, path, FSEG partial, ticket code, pocket page, another
-//  registered repo — but only a pager click and http ever reached it, so from
-//  argv a permalink fell through to the fs leg and answered `cannot open`.
-//  Minting permalinks (BEE-016:34) with no way to read one back is half a feature.
-//
-//  ONE HUNK PER REF, in the order given: `see` answers what it was asked, and a
-//  batch of refs is a batch of hunks — two refs landing three lines apart print
-//  two overlapping chunks rather than one merged window, so the ref-to-hunk map
-//  stays one-to-one.  Context is TWO lines each way, not diff's three: a diff
-//  hunk frames a CHANGE and needs room for its shape, `see` frames ONE LINE
-//  somebody pointed at.  `-C<n>` moves it; the view parses that itself, since
-//  main.js's `modeOf` knows three mode flags and hands every other word on.
-//
-//  NO SECOND RESOLVER (the LITE-034:h0:MfTf ruling) and no new hunk shape: seatOf
-//  answers, index/read.js `textHunk` carries it, and `bare: false` is the
-//  "excerpt wears the band" case render/plain.js already spells out.  A miss
-//  gets BEE-003's words, an ambiguity the door's own chooser, and neither ends
-//  the batch — the rest of the refs still answer.
+//  view/see.js as per BEE-017: `bee see [-C<n>] <ref>...`, the chunk a reference
+//  names — the CLI's way to read a permalink back (BEE-017:9), since only a
+//  pager click and http ever reached `door.js seatOf`.  ONE HUNK PER REF, in the
+//  order given, never merged (BEE-017:42); context 2 lines each way, not diff's 3
+//  (BEE-017:43), `-C<n>` parsed by the view (BEE-017:48).  NO SECOND RESOLVER
+//  (LITE-034:h0:MfTf), no new hunk shape: seatOf answers, index/read.js `textHunk`
+//  carries it with `bare: false`, the excerpt-wears-the-band case (BEE-017:35).
+//  A miss says BEE-003's words, an ambiguity the door's chooser; the batch goes on.
 "use strict";
 
 const fs = require("view/fs.js");
@@ -27,9 +15,9 @@ const rd = require("index/read.js");
 const CONTEXT = 2;                                 //  lines each way, by default
 
 //  --- the arg ----------------------------------------------------------------
-//  `see` is the ONE view whose arg is a LIST — main.js fuses a verb's words, and
-//  a reference never carries a space, so the join is lossless and the split is
-//  the whole parse.  `-C<n>` and `-C <n>` both read.
+//  `see` is the ONE view whose arg is a LIST: main.js fuses a verb's words and a
+//  reference never carries a space, so the split is the whole parse.  `-C<n>`
+//  and `-C <n>` both read (BEE-017:48).
 function parse(arg) {
   const words = String(arg === undefined ? "" : arg).split(/\s+/).filter(Boolean);
   const refs = [];
@@ -50,9 +38,8 @@ function num(s, dflt) {
 }
 
 //  --- the window -------------------------------------------------------------
-//  Lines `line-ctx .. line+ctx`, clamped at both ends of the file.  `byteAt` is
-//  the ONE line->offset reader (index/perma.js, the mint's own), so no second
-//  line scanner is added here either.
+//  Lines `line-ctx .. line+ctx`, clamped at both ends of the file; `byteAt` is
+//  the ONE line->offset reader (index/perma.js), so no second line scanner.
 //  -> { lo, hi, from } over `bytes`, or null when the file has no such line.
 function window(bytes, line, ctx) {
   const from = line - ctx < 1 ? 1 : line - ctx;
@@ -64,6 +51,12 @@ function window(bytes, line, ctx) {
     if (hi < bytes.length) hi++;                   //  the newline belongs to the line
   }
   return { lo: lo, hi: hi, from: from };
+}
+
+//  BEE-017:46: seatOf spells an ambient landing relative, a foreign one absolute;
+//  the band wants the FULL path either way, so it says which repo answered.
+function abs(full) {
+  try { return io.realpath(full); } catch (e) { return full; }
 }
 
 //  A hunk of plain words — a miss, or a landing the file can no longer show.
@@ -92,13 +85,15 @@ function chunk(ref, ctx) {
   const w = window(bytes, line, ctx);
   if (w === null) return noteHunk(ref, seat.full + " has no line " + line);
 
-  const uri = seat.full + ":" + line;
+  //  BEE-017:44: THE BAND IS THE REF WITH ITS PATH EXPANDED, the anchor verbatim —
+  //  ONE token, still a reference, so it clicks and re-reads (BEE-017:45).
+  const uri = abs(seat.full) + door.splitRef(ref).tail;
   const body = bytes.slice(w.lo, w.hi);
-  //  The window is tokenized AS A WINDOW: a chunk cut out of a block comment may
-  //  paint oddly, and folding whole files to colour five lines is the worse deal.
+  //  BEE-017:47: tokenized AS A WINDOW — a chunk out of a block comment may paint
+  //  oddly, but folding whole files to colour five lines is the worse deal.
   const h = rd.textHunk(uri, body, fs.pathExt(seat.full), "see");
   h.bare = false;                                  //  an EXCERPT wears the band
-  //  LITE-029:YS:nBc4 the landing rides the hunk, so the pager selects the line — and
+  //  LITE-029:YS:nBc4 the landing rides the hunk: the pager selects the line, and
   //  the token itself when the resolver named one.
   h.land = { line: line - w.from + 1, col: seat.col || 1 };
   if (seat.hi > seat.lo) { h.land.lo = seat.lo - w.lo; h.land.hi = seat.hi - w.lo; }
@@ -107,8 +102,8 @@ function chunk(ref, ctx) {
 }
 
 //  --- the verb ---------------------------------------------------------------
-//  see(arg, opts) -> { hunks } — the one view shape (LITE-045:p4:t2ME), so the pager,
-//  the three renderers and http all take it without knowing a verb was added.
+//  see(arg, opts) -> { hunks } — the one view shape (LITE-045:p4:t2ME), so the
+//  pager, the renderers and http all take it without knowing a verb was added.
 function see(arg, opts) {
   opts = opts || {};
   const p = parse(arg);
