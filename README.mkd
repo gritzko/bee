@@ -12,7 +12,9 @@ jab-shared API suite) as submodules:
 
 Layout: `index/` reads the index and the ODB, `view/` turns an arg into hunks
 (one module per verb), `render/` turns hunks into bytes (`plain` `ansi` `html`
-over `wrap` + `theme`), `door.js` turns a target into a view, and `main.js`
+over `wrap` + `theme`), `blob/` holds the site's static bytes (`style.css`, the
+frame `render/html.js` themes; `favicon.ico`), `door.js` turns a target into a
+view, and `main.js`
 `pager.js` `http.js` `merge.js` `chat.js` are the apps.  The REPO is an axis of
 the target, not the cwd: `index/mount.js` reads `~/.config/bee/repos` as the
 mount table and carries the ambient `{repo, path, anchor}` a view reads in — a

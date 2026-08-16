@@ -65,36 +65,28 @@ function sgrCss(params) {
 //  --- the ONE stylesheet -----------------------------------------------------
 //  The frame (geometry only — no colour is chosen here) plus one rule per theme
 //  slot, plus the two diff wash slots.  Served whole at /style.css.
+//  The frame is a FILE, blob/style.css, read from beside the code (which is
+//  where jsrcpack packs it, so a bundled binary carries it too) — CSS is
+//  written as CSS, not spelled as a JS array.  Read on FIRST PAINT and kept:
+//  only an HTML page wants it, so a missing file refuses `bee http`, not `bee
+//  log` — a renderer's asset is no verb's startup cost.
+let FRAME = null;
+function frame() {
+  if (FRAME === null)
+    FRAME = utf8.Decode(io.mmap(__dirname + "/../blob/style.css", "r").data());
+  return FRAME;
+}
+
 //  The page's own ground is the TERMINAL DEFAULT pair (what ESC[39m/ESC[49m
-//  return to), spelled through the same xterm table — no slot of its own.
-const FRAME = [
-  "body{margin:0;background:" + XTERM16[15] + ";color:" + XTERM16[0] +
-    ";font:13px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}",
-  ".hunk{margin:0 0 1.2em}",
-  ".banner{padding:2px 8px;font-weight:bold}",
-  //  A browser is not a terminal: a long line SOFT-WRAPS instead of running off
-  //  the page, and an unbreakable atom (a URL, a long path) breaks rather than scrolls.
-  "pre.body{margin:0;padding:4px 8px;overflow-x:auto;white-space:pre-wrap;" +
-    "overflow-wrap:anywhere}",
-  "pre.note{margin:0;padding:4px 8px;font-style:italic}",
-  "a{color:inherit;text-decoration:none;border-bottom:1px dotted currentColor}",
-  "a:hover{border-bottom-style:solid}",
-  //  LITE-035: the rendered Markdown body — geometry and currentColor only, so
-  //  the theme still owns every colour on the page.
-  ".mark{padding:4px 12px;max-width:64em}",
-  ".mark pre{overflow-x:auto;padding:4px 8px;border:1px solid currentColor;" +
-    "white-space:pre-wrap;overflow-wrap:anywhere}",
-  ".mark table{border-collapse:collapse}",
-  ".mark th,.mark td{border:1px solid currentColor;padding:1px 6px}",
-  ".mark blockquote{margin:0 0 1em;padding-left:8px;border-left:3px solid currentColor}",
-  ".mark img{max-width:100%}"
-].join("\n");
+//  return to), spelled through the same xterm table — no slot of its own, and
+//  the one colour the frame file cannot carry.
+const GROUND = "body{background:" + XTERM16[15] + ";color:" + XTERM16[0] + "}";
 
 //  stylesheet(thm) -> the CSS text.  `thm` defaults to theme.select(), so
 //  $BRO_THEME picks the browser's palette exactly as it picks the pager's.
 function stylesheet(thm) {
   thm = thm || theme.select();
-  const out = [FRAME, ".banner{" + sgrCss(thm.banner) + "}"];
+  const out = [frame(), GROUND, ".banner{" + sgrCss(thm.banner) + "}"];
   for (const tag in thm.slots) {
     const css = sgrCss(thm.slots[tag]);
     if (css) out.push(".tok-" + tag + "{" + css + "}");
@@ -189,7 +181,8 @@ function page(title, body) {
   return '<!DOCTYPE html>\n<html><head><meta charset="utf-8">' +
          '<meta name="viewport" content="width=device-width,initial-scale=1">' +
          "<title>" + esc(title) + "</title>" +
-         '<link rel="stylesheet" href="/style.css"></head><body>' +
+         '<link rel="stylesheet" href="/style.css">' +
+         '<link rel="icon" href="/favicon.ico"></head><body>' +
          body + "</body></html>\n";
 }
 

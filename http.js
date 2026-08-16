@@ -29,6 +29,8 @@ const HOST = "127.0.0.1";           // localhost only — no flag opens this up
 const MAXHEAD = 64 << 10;           // a head bigger than this is not a browser
 const REF_CAP = 512;                // distinct references resolved per page
 const HTML = "text/html; charset=utf-8";
+const CSS = "text/css; charset=utf-8";
+const ICO = "image/vnd.microsoft.icon";
 const TEXT = "text/plain; charset=utf-8";
 const OCTET = "application/octet-stream";
 const MAXBYTES = wv.MAX_SOURCE_SIZE;    // LITE-036: the shared source cap, 4 MB
@@ -453,8 +455,14 @@ function handle(req, sock, st) {
   const names = [];
   for (const x of table) if (x.prefix === "" && !x.dup) names.push(x.name);
   const r = routeOf(req.uri, names);
+  //  The two SITE files, repo-less and served off blob/: the one sheet and the
+  //  one icon.  Both are read at startup, so a request is bytes and no syscall.
   if (r.repo === "" && r.head === "style.css") {
-    respond(sock, 200, "OK", "text/css; charset=utf-8", st.css, only);
+    respond(sock, 200, "OK", CSS, st.css, only);
+    return "200";
+  }
+  if (r.repo === "" && r.head === "favicon.ico") {
+    respond(sock, 200, "OK", ICO, st.icon, only);
     return "200";
   }
   if (r.repo === "") {
@@ -571,7 +579,8 @@ function listen(args, door) {
                  top: root, dup: false };
 
   const st = { door: door, root: root, home: home,
-               css: utf8.Encode(html.stylesheet()) };
+               css: utf8.Encode(html.stylesheet()),
+               icon: io.mmap(__dirname + "/blob/favicon.ico", "r").data() };
 
   const srv = net.createServer(function (sock) {
     let buf = new Uint8Array(0), done = false;
