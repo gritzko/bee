@@ -2,7 +2,7 @@
 //  REGISTERED REPO mints, and follows back.  [BEE-008]'s ladder taught the
 //  minter what a code SPELLS; this is the other half — WHERE it may look.  The
 //  door has fanned out over the mount table since [BEE-003] and the minter
-//  never did, so every `BEE-006:gt:3Bxd` written in `///bee` (60 of them) stayed a
+//  never did, so every `BEE-006:42:3B` written in `///bee` (60 of them) stayed a
 //  transient anchor because its page sits in `///bee-journal`.
 //  Run AFTER a real `git commit` in the CARRIER repo whose staged text names
 //  files in the TARGET repo: two shapes that must mint, one that must not.
@@ -20,14 +20,12 @@ function check(name, cond, got) {
 }
 const ends = (s, tail) => typeof s === "string" && s.slice(-tail.length) === tail;
 
-//  the oracle, as in ticket.js: arithmetic over 16-byte lines and `git
-//  rev-parse`, so the expected permalink is stated without asking the code.
-function ron64(v) { const s = ron.encode(BigInt(v)); return s === "" ? "0" : s; }
-function pair(hex3) { return ron.encode(BigInt(parseInt(hex3, 16))).padStart(2, "0"); }
+//  the oracle, as in ticket.js: the line as typed, and the sha1's top 6k bits,
+//  so the expected permalink is stated without asking the code.
+function top(sha, bits) { return BigInt("0x" + sha.slice(0, 16)) >> BigInt(64 - bits); }
 function mint(sha) {
-  for (let pairs = 2; pairs <= 5; pairs++) {
-    let h = "";
-    for (let i = 0; i < pairs; i++) h += pair(sha.slice(i * 3, i * 3 + 3));
+  for (let k = 2; k <= 10; k++) {
+    const h = ron.encode(top(sha, 6 * k)).padStart(k, "0");
     for (const c of h) if (c < "0" || c > "9") return h;
   }
   return "";
@@ -35,10 +33,10 @@ function mint(sha) {
 
 const CARRIER = io.getenv("LITE_CARRIER");
 const B_CODE = io.getenv("LITE_BCODE"), B_PATH = io.getenv("LITE_BPATH");
-//  Line 20 of a file of 16-byte lines, column 1.  The PATH IS KEPT AS WRITTEN —
-//  the code stays a code, the path stays a path; only the anchor segments move.
-const P_CODE = "XRT-001:" + ron64(19 * 16) + ":" + mint(B_CODE);
-const P_PATH = "far/deep/note.mkd:" + ron64(19 * 16) + ":" + mint(B_PATH);
+//  Line 20.  The PATH IS KEPT AS WRITTEN — the code stays a code, the path
+//  stays a path; only the anchor segments move.
+const P_CODE = "XRT-001:20:" + mint(B_CODE);
+const P_PATH = "far/deep/note.mkd:20:" + mint(B_PATH);
 
 const src = utf8.Decode(io.mmap(CARRIER + "/doc/refs.mkd", "r").data());
 

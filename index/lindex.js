@@ -1,11 +1,11 @@
 //  index/lindex.js as per LITE-033 + BEE-002: the BACKLINK round of the one index
-//  — "who links to this page", answered as SUSPECTS, NOT PROOF (LITE-033:HV:PS~9), so
+//  — "who links to this page", answered as SUSPECTS, NOT PROOF (LITE-033:18:PS), so
 //  rows are never deleted and re-puts write nothing.  RECORD LINK, kind 7:
-//  BEE-002:il:qexI — every slot a TEXT hashlet of the target's own segments, minted
-//  from the ref text alone (BEE-002:nZ:qexI) with no dst repo id (BEE-002:sz:qexI), so
+//  BEE-002:46:qe — every slot a TEXT hashlet of the target's own segments, minted
+//  from the ref text alone (BEE-002:50:qe) with no dst repo id (BEE-002:55:qe), so
 //  indexing order cannot change a key.  Lazy, tip-only, new blobs, mark row LAST
-//  (LITE-033:Jh:PS~9, LITE-033:Sr:PS~9); the query fans out READ-ONLY over the registry
-//  (BEE-002:yL:qexI, BEE-002:135:qexI).  `bee index` runs the scan too (BEE-007:X2:BNEy).
+//  (LITE-033:20:PS, LITE-033:32:PS); the query fans out READ-ONLY over the registry
+//  (BEE-002:60:qe, BEE-002:65:qe).  `bee index` runs the scan too (BEE-007:42:BN).
 "use strict";
 
 const idx = require("./index.js");
@@ -13,9 +13,9 @@ const hk = require("./hook.js");
 const rs = require("./resolve.js");
 const wv = require("./weave.js");
 
-//  Nibble 7: LITE-006:Kk:RcNe spends 1..5 and F, LITE-011:Rn:a9GC took 6.
+//  Nibble 7: LITE-006:17:Rc spends 1..5 and F, LITE-011:26:a9 took 6.
 const K_LINK = 0x7n;
-//  The RESERVED ref name the incremental mark hangs on (LITE-033:Sr:PS~9) — not a
+//  The RESERVED ref name the incremental mark hangs on (LITE-033:32:PS) — not a
 //  ref, so it can never collide with a real one's LITE-006 watermark.
 const LINDEX_REF = "lindex";
 
@@ -30,7 +30,7 @@ function linkSrc(v) { return v >> 24n; }
 function linkGpar(v) { return (v >> 4n) & GPAR_MASK; }
 
 //  --- the target's own segments ---------------------------------------------
-//  BEE-002:nZ:qexI: ONE text -> the three ruled slots, hashed by index.js's LITE-011
+//  BEE-002:50:qe: ONE text -> the three ruled slots, hashed by index.js's LITE-011
 //  helpers.  Nothing is resolved: a path, a partial one and a ticket code all go
 //  down the same three lines, which is what makes the mint order-free.
 function slots(text) {
@@ -45,7 +45,7 @@ function slots(text) {
 }
 
 //  --- the way back to TEXT ---------------------------------------------------
-//  LITE-033:10S:PS~9: `path_hl` is one-way and the index hands back no name, so the
+//  LITE-033:78:PS: `path_hl` is one-way and the index hands back no name, so the
 //  suspects are named the LITE-011 way — the index narrows, a REAL TREE answers:
 //  one descent of the TIP tree keeps the paths the rows asked for.  No sidecar;
 //  a suspect gone from the tip simply does not print (it carries no link now).
@@ -139,7 +139,7 @@ function scan(ctx, ix) {
     rec.files++;
     for (const t of hk.fTokens(bytes, wv.extOf(c.path))) {
       //  The anchor is shed through main.js's ONE `splitRef` — the row names a
-      //  FILE, not a place, so `:12:24` and `:k4:d8K3` alike drop here.
+      //  FILE, not a place, so `:12:24` and `:58:mJ` alike drop here.
       const sp = splitRef(t.text);
       if (sp.path === "") continue;
       if (sp.path === c.path) continue;           // a self-link mints no row
@@ -166,7 +166,7 @@ function scan(ctx, ix) {
 }
 
 //  --- the query --------------------------------------------------------------
-//  BEE-002:yL:qexI: ONE index's carriers of `q`.  Two EXACT-key seeks — `fn|0` for a
+//  BEE-002:60:qe: ONE index's carriers of `q`.  Two EXACT-key seeks — `fn|0` for a
 //  bare-filename ref, `fn|par` for one naming the parent — and a `gpar` row is
 //  kept only when it is the target's.  Deeper spellings key like a 3-segment
 //  ref, so depth costs false suspects, never a wider probe.
@@ -195,7 +195,7 @@ function nameIn(r, treeSha, want) {
   return uniq;
 }
 
-//  BEE-002:135:qexI: ONE registered repo's answer, repo-qualified.  Its index is opened
+//  BEE-002:65:qe: ONE registered repo's answer, repo-qualified.  Its index is opened
 //  READ-ONLY and never brought up — a stale foreign index answers with fewer
 //  suspects, never a wrong one — and anything unopenable is skipped in silence.
 function foreign(path, q) {
@@ -220,7 +220,7 @@ function foreign(path, q) {
 }
 
 //  suspects(ctx, ix, target, opts) -> the paths that MAY link to `target`,
-//  repo-qualified, the LOCAL repo first, registered ones after (BEE-002:16W:qexI).
+//  repo-qualified, the LOCAL repo first, registered ones after (BEE-002:68:qe).
 //  The target's full path is resolved LOCALLY (the one descent a query keeps);
 //  several files answering is an ambiguity the caller settles, in plain words.
 function suspects(ctx, ix, target, opts) {

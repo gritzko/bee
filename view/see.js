@@ -3,7 +3,7 @@
 //  pager click and http ever reached `door.js seatOf`.  ONE HUNK PER REF, in the
 //  order given, never merged (BEE-017:42); context 2 lines each way, not diff's 3
 //  (BEE-017:43), `-C<n>` parsed by the view (BEE-017:48).  NO SECOND RESOLVER
-//  (LITE-034:h0:MfTf), no new hunk shape: seatOf answers, index/read.js `textHunk`
+//  (LITE-034:40:Mf), no new hunk shape: seatOf answers, index/read.js `textHunk`
 //  carries it with `bare: false`, the excerpt-wears-the-band case (BEE-017:35).
 //  A miss says BEE-003's words, an ambiguity the door's chooser; the batch goes on.
 "use strict";
@@ -93,7 +93,7 @@ function chunk(ref, ctx) {
   //  oddly, but folding whole files to colour five lines is the worse deal.
   const h = rd.textHunk(uri, body, fs.pathExt(seat.full), "see");
   h.bare = false;                                  //  an EXCERPT wears the band
-  //  LITE-029:YS:nBc4 the landing rides the hunk: the pager selects the line, and
+  //  LITE-029:39:nB the landing rides the hunk: the pager selects the line, and
   //  the token itself when the resolver named one.
   h.land = { line: line - w.from + 1, col: seat.col || 1 };
   if (seat.hi > seat.lo) { h.land.lo = seat.lo - w.lo; h.land.hi = seat.hi - w.lo; }
@@ -102,7 +102,7 @@ function chunk(ref, ctx) {
 }
 
 //  --- the verb ---------------------------------------------------------------
-//  see(arg, opts) -> { hunks } — the one view shape (LITE-045:p4:t2ME), so the
+//  see(arg, opts) -> { hunks } — the one view shape (LITE-045:42:t2), so the
 //  pager, the renderers and http all take it without knowing a verb was added.
 function see(arg, opts) {
   opts = opts || {};

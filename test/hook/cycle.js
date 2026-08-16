@@ -26,19 +26,16 @@ function check(name, cond, got) {
   if (got !== undefined) w1("     got: " + String(got) + "\n");
 }
 
-function ron64(v) { const s = ron.encode(BigInt(v)); return s === "" ? "0" : s; }
-function pair(hex3) { return ron.encode(BigInt(parseInt(hex3, 16))).padStart(2, "0"); }
+function top(sha, bits) { return BigInt("0x" + sha.slice(0, 16)) >> BigInt(64 - bits); }
 function mint(sha, others) {
-  for (let pairs = 2; pairs <= 5; pairs++) {
-    const hexn = pairs * 3;
-    let h = "";
-    for (let i = 0; i < pairs; i++) h += pair(sha.slice(i * 3, i * 3 + 3));
+  for (let k = 2; k <= 10; k++) {
+    const bits = 6 * k, h = ron.encode(top(sha, bits)).padStart(k, "0");
     let nondigit = false;
     for (const c of h) if (c < "0" || c > "9") nondigit = true;
     if (!nondigit) continue;
     let clash = false;
     for (const o of others || [])
-      if (o !== sha && o.slice(0, hexn) === sha.slice(0, hexn)) clash = true;
+      if (o !== sha && top(o, bits) === top(sha, bits)) clash = true;
     if (!clash) return h;
   }
   return "";
@@ -47,11 +44,10 @@ function mint(sha, others) {
 const FIX = io.getenv("LITE_FIX");
 const B_D = io.getenv("LITE_BD"), B_Y0 = io.getenv("LITE_BY0"),
       B_Y1 = io.getenv("LITE_BY1");
-const LINE = 16;                                   // every data/D.c line is 16 bytes
 const H_D = mint(B_D, []);                         // one blob of that path, ever
-const P_D5 = "data/D.c:" + ron64(4 * LINE) + ":" + H_D;
-const P_D7 = "data/D.c:" + ron64(6 * LINE) + ":" + H_D;
-const P_D9 = "data/D.c:" + ron64(8 * LINE) + ":" + H_D;
+const P_D5 = "data/D.c:5:" + H_D;
+const P_D7 = "data/D.c:7:" + H_D;
+const P_D9 = "data/D.c:9:" + H_D;
 
 function committed(rel) {
   const ctx = idx.openRepo(FIX, true);
@@ -81,12 +77,11 @@ check("the BYSTANDER's ref mints — one cycle no longer abandons the commit",
 const Y = (committed("cyc/Y.mkd") || "").split("\n");
 const X = (committed("cyc/X.mkd") || "").split("\n");
 check("a chained target mints first", Y[1] === "yref " + P_D9 + " here", Y[1]);
-//  line 3 of the COMMITTED Y — the rewrite of line 2 moved it, and X must have
-//  been minted after that move, never before.
-const off3 = (Y[0] + "\n" + Y[1] + "\n").length;
-const P_Y3 = "cyc/Y.mkd:" + ron64(off3) + ":" + mint(B_Y1, [B_Y0]);
+//  line 3 of the COMMITTED Y — the rewrite of line 2 no longer moves a LINE
+//  (BEE-019:57), but it does move Y's BLOB ID, so X still needs Y minted first.
+const P_Y3 = "cyc/Y.mkd:3:" + mint(B_Y1, [B_Y0]);
 w1("#    minted " + P_D5 + "  " + P_Y3 + "\n");
-check("...and the ref naming it takes the offset of the REWRITTEN target",
+check("...and the ref naming it takes the hashlet of the REWRITTEN target",
       X[1] === "xref " + P_Y3 + " there", X[1]);
 
 const at = entry.openTarget(P_Y3);

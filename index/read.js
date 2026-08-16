@@ -1,9 +1,9 @@
 //  index/read.js as per LITE-017: what the four READ views (cat / blob / tree /
-//  list) share, so no two own a copy (LITE-017:yV:CvZh) — the repo-relative path
+//  list) share, so no two own a copy (LITE-017:44:Cv) — the repo-relative path
 //  gate, the `?<rev>` resolution, the tree descent and the bytes->hunk builder.
 //  The arg is a URI slot split through `uri._parse`, never a hand-rolled scan
-//  (LITE-017:12s:CvZh); the path is CONFINED to the repository, a climb above the root
-//  refused in plain words (LITE-017:16J:CvZh, LITE-017:1nD:CvZh) — the bare `bee <path>`
+//  (LITE-017:45:Cv); the path is CONFINED to the repository, a climb above the root
+//  refused in plain words (LITE-017:46:Cv, LITE-017:59:Cv) — the bare `bee <path>`
 //  pager is a filesystem view and confines nothing.
 "use strict";
 
@@ -94,7 +94,7 @@ function textHunk(uriStr, bytes, ext, kind) {
   let toks;
   try { toks = ext ? tok.parse(bytes, ext) : new Uint32Array(0); }
   catch (e) { toks = new Uint32Array(0); }
-  //  LITE-045:Sa:t2ME: a `cat`/`blob` hunk IS the file — on a pipe it writes those
+  //  LITE-045:28:t2: a `cat`/`blob` hunk IS the file — on a pipe it writes those
   //  bytes and nothing else, so `bee cat x | diff -` sees the source; no `plain` twin.
   return { uri: uriStr, verb: "hunk", text: bytes, toks: toks, kind: kind,
            bare: true };

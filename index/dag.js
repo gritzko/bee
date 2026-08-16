@@ -1,10 +1,10 @@
 //  index/dag.js as per BEE-005: the INDEX read as two graphs — the COMMIT dag
 //  (CPAR rows) and, per path, the CONDENSED path-dag the REV rows already are
-//  (BEE-005:cU:mJpI), so be's `pathdag.of` is NOT ported (BEE-005:1_Y:mJpI): the floor is
+//  (BEE-005:24:mJ), so be's `pathdag.of` is NOT ported (BEE-005:73:mJ): the floor is
 //  found INSIDE the index, in 20-bit rev space, and a commit that did not touch
-//  the path stands on its parents' revs (BEE-005:1eL:mJpI).  Everything here is a KEYED
-//  read (BEE-005:15J:mJpI): no tree walked, no commit parsed; the one ODB read, blob
-//  bytes, lives in index/weave.js.  Walks are capped (BEE-005:19o:mJpI).
+//  the path stands on its parents' revs (BEE-005:77:mJ).  Everything here is a KEYED
+//  read (BEE-005:43:mJ): no tree walked, no commit parsed; the one ODB read, blob
+//  bytes, lives in index/weave.js.  Walks are capped (BEE-005:45:mJ).
 "use strict";
 
 const idx = require("./index.js");
@@ -67,7 +67,7 @@ function mergeBase(ix, a, b) {
 
 //  --- the path index (REV-*) -------------------------------------------------
 //  ONE path's rev rows off the key span its `path_hl` owns (index.js loadPath's
-//  read, LITE-028:hz:~1EZ), filtered by KIND, never cut short by one.  Returns
+//  read, LITE-028:41:~1), filtered by KIND, never cut short by one.  Returns
 //  { phl, revs: Map(rev -> { rev, blob, commit, pars[] }), order: [rev asc],
 //    byCommit: Map(commit_hl -> rev) }.
 function pathRevs(ix, path) {
@@ -105,7 +105,7 @@ function pathRevs(ix, path) {
   return { phl: phl, revs: revs, order: order, byCommit: byCommit };
 }
 
-//  BEE-005:1eL:mJpI: the revs a COMMIT's view of the path stands on — its own rev when
+//  BEE-005:77:mJ: the revs a COMMIT's view of the path stands on — its own rev when
 //  it changed the path, else the nearest rev up EVERY parent, so a merge that
 //  took one side stands on that side's rev, a merge of two changed views on both.
 function repsOf(ix, index, chl, cap) {
@@ -132,7 +132,7 @@ function revAncestors(index, revs) {
   return seen;
 }
 
-//  BEE-005:1_Y:mJpI: the FLOOR, the LCA of the revs INSIDE the index.  Revs are minted
+//  BEE-005:73:mJ: the FLOOR, the LCA of the revs INSIDE the index.  Revs are minted
 //  oldest-first, so rev order IS topological and the HIGHEST common rev is
 //  maximal.  -> { floor, above } — `above` is every rev reachable from `reps`
 //  and NOT at or below the floor, rev-ordered: exactly what folds over the seed.

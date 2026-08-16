@@ -1,10 +1,10 @@
 //  index/weave.js as per LITE-014: the CRDT 3-way weave MERGE ported from
-//  be/shared/weave.js over the `abc.ram("CFOLD")` container (LITE-014:14u:ELgi), plus
+//  be/shared/weave.js over the `abc.ram("CFOLD")` container (LITE-014:47:EL), plus
 //  BEE-005's file weave RECONSTRUCTION off the REV index — one weave per path,
-//  seeded at the LCA floor, every rev above folded once (BEE-005:1Jz:mJpI, BEE-005:1_Y:mJpI).
+//  seeded at the LCA floor, every rev above folded once (BEE-005:58:mJ, BEE-005:73:mJ).
 //  Also THE source-size policy home and the one "can we weave it" gate: over the
-//  cap or binary => the caller falls back LOUDLY, never silent-ours (LITE-014:ta:ELgi,
-//  LITE-014:1BB:ELgi).  Conflicts render MARKERLESS with spans (PATCH-025:XS:_wAC).
+//  cap or binary => the caller falls back LOUDLY, never silent-ours (LITE-014:30:EL,
+//  LITE-014:48:EL).  Conflicts render MARKERLESS with spans (PATCH-025:26:_w).
 "use strict";
 
 //  A source larger than this is a BLOB: not tokenised, not woven.  One place
@@ -56,7 +56,7 @@ function merge(base, hash, ancestors) {
   return w;
 }
 
-//  PATCH-025:XS:_wAC (DIS-080): the MARKERLESS merged render — the RGA reading of the
+//  PATCH-025:26:_w (DIS-080): the MARKERLESS merged render — the RGA reading of the
 //  weave at `rev`, no fences; `groupIds` one hashlet-id array per side.
 //  -> { bytes, spans }, spans the conflicting [from,to) byte ranges: a run of
 //  non-shared tokens conflicts iff two membership masks (by BLAME) are disjoint.
@@ -125,7 +125,7 @@ function mergedLive(wm, rev, groupIds) {
 //  GET-056b:29: the 3-blob weave merge — base, then ours and theirs as
 //  CONCURRENT folds on it, then a contentless merge over all three, so disjoint
 //  edits coexist and a divergent region reads back markerless with spans.
-//  null = unweavable (binary, over cap): the caller falls back LOUDLY (LITE-014:ta:ELgi).
+//  null = unweavable (binary, over cap): the caller falls back LOUDLY (LITE-014:30:EL).
 const _W3_BASE = "0000000000000001", _W3_OURS = "0000000000000002",
       _W3_THRS = "0000000000000003", _W3_MRG = "0000000000000004";
 function weave3(base, ours, theirs, ext) {
@@ -150,9 +150,9 @@ function weave3(base, ours, theirs, ext) {
 }
 
 //  --- BEE-005: the file weave RECONSTRUCTION ----------------------------------
-//  be/shared/weave.js `buildDag` over bee's REV index (BEE-005:NK:mJpI, BEE-005:1_Y:mJpI):
+//  be/shared/weave.js `buildDag` over bee's REV index (BEE-005:19:mJ, BEE-005:73:mJ):
 //  ONE weave per path, the blob at the LCA FLOOR folded first as the floor's own
-//  commit (BEE-005:1Jz:mJpI), then every rev above it once, in rev order, with its
+//  commit (BEE-005:58:mJ), then every rev above it once, in rev order, with its
 //  ancestor closure — shared history is folded ONCE for every tip.
 const ln = require("./dag.js");
 const idx = require("./index.js");
@@ -161,7 +161,7 @@ const idx = require("./index.js");
 //  bits of the commit sha, so the id is that hashlet SHIFTED — the low nibble
 //  is always 0, which is what keeps the reserved ids below off the commit space.
 function layerId(chl) { return idx.hexOfHl(chl) + "0"; }
-//  BEE-005:1QN:mJpI: the seed when the tips have NO common rev (an addition on one
+//  BEE-005:64:mJ: the seed when the tips have NO common rev (an addition on one
 //  side) — an EMPTY first layer, so the first real rev reads as a plain insert.
 const LAYER_NIL = "0000000000000005";
 //  BE-010: the worktree's on-disk edit rides as a FINAL synthetic layer.
@@ -183,7 +183,7 @@ function blobOf(r, bhl) {
 //  weaveDiff(r, ix, path, tips, ext) -> the ONE weave and one READING per tip:
 //  be's `build` shape — `weave`, `views[i] -> { rev, ids }`, `idToHl` (blame).
 //  `tips` are `{ chl, blob }`, FROM first; an absent tip (blob undefined) gets an
-//  EMPTY layer, so add/delete are plain insert/removal (BEE-005:1QN:mJpI).
+//  EMPTY layer, so add/delete are plain insert/removal (BEE-005:64:mJ).
 function weaveDiff(r, ix, path, tips, ext) {
   const pr = ln.pathRevs(ix, path);
   const reps = new Map();

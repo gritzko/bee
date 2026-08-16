@@ -1,8 +1,9 @@
 //  lite/test/perma/pty.js — LITE-025: a PERMALINK follows to the anchored line.
-//  `src/abc/FSW.c:4p:0dK2` is ONE `F` token (DOG-034 fuses both ron64 segments);
-//  segment 1 is a BYTE OFFSET into the anchored BLOB, segment 2 that BLOB's
-//  hashlet — a blob id prefix and nothing else.  Later commits move that line — the follow still lands on
-//  it, and a line later DELETED lands where it stood, with the bar saying so.
+//  `src/abc/FSW.c:20:0d` is ONE `F` token (DOG-043 fuses both segments); segment
+//  1 is the LINE in the anchored BLOB, segment 2 that BLOB's hashlet — a bit
+//  prefix of its id and nothing else (BEE-019:33).  Later commits move that line
+//  — the follow still lands on it, and a line later DELETED lands where it
+//  stood, with the bar saying so.
 //
 //  The REAL UI path: a hunk painted on a `tty.openpty()` slave by the shipped
 //  Pager, a real SGR press written to the master, the pushed view's FRAME and
@@ -31,38 +32,32 @@ const tag = (t) => String.fromCharCode(65 + ((t >>> 27) & 0x1f));
 const ends = (s, tail) => typeof s === "string" && s.slice(-tail.length) === tail;
 
 //  ---- the anchors ----------------------------------------------------------
-//  ron64 of a number, and the hashlet: the sha1 hex packed 12 bits per PAIR of
-//  ron64 chars (3 hex digits a pair, big-endian), extended by 2 until it holds
-//  a non-digit — which is what makes segment 2 read as a hashlet, not a column.
-function ron64(v) { const s = ron.encode(BigInt(v)); return s === "" ? "0" : s; }
-function pair(hex3) { return ron.encode(BigInt(parseInt(hex3, 16))).padStart(2, "0"); }
+//  The hashlet oracle, re-derived here: k ron64 chars ARE the sha1's top 6k
+//  BITS, grown ONE char at a time until it holds a non-digit — which is what
+//  makes segment 2 read as a hashlet, not a column (BEE-019:33).
+function top(sha, bits) { return BigInt("0x" + sha.slice(0, 16)) >> BigInt(64 - bits); }
 function mint(sha) {
-  let h = "";
-  for (let i = 0; i < 5; i++) {
-    h += pair(sha.slice(i * 3, i * 3 + 3));
-    if (h.length < 4) continue;
-    let nondigit = false;
-    for (const c of h) if (c < "0" || c > "9") nondigit = true;
-    if (nondigit) return h;
+  for (let k = 2; k <= 10; k++) {
+    const h = ron.encode(top(sha, 6 * k)).padStart(k, "0");
+    for (const c of h) if (c < "0" || c > "9") return h;
   }
-  return h;
+  return "";
 }
 const R0 = io.getenv("LITE_R0"), R2 = io.getenv("LITE_R2");
 const B0 = io.getenv("LITE_B0"), BT = io.getenv("LITE_BT"), BW = io.getenv("LITE_BW");
 const H0 = mint(B0), HT = mint(BT);
-const LINE = 16;                                   // every fixture line is 16 bytes
-//  line 20 col 5 of r0's blob, and line 7 col 5 — the one r2 deletes.
-const OFF20 = 19 * LINE + 4, OFF7 = 6 * LINE + 4;
-const ANCHOR = ":" + ron64(OFF20) + ":" + H0;
-const TANCHOR = ":" + ron64(OFF20) + ":" + HT;
+//  line 20 of r0's blob, and line 7 — the one r2 deletes.
+const ANCHOR = ":20:" + H0;
+const TANCHOR = ":20:" + HT;
 const PERMA20 = "src/abc/FSW.c" + ANCHOR;
-const PERMA7  = "src/abc/FSW.c:" + ron64(OFF7)  + ":" + H0;
+const PERMA7  = "src/abc/FSW.c:7:" + H0;
 const PERMAMANY = "TCP.c" + TANCHOR;             // two files carry that blob
-const PERMABAD = "src/abc/FSW.c:" + ron64(OFF20) + ":~~~~";   // no blob carries it
+const PERMABAD = "src/abc/FSW.c:20:~~~~";        // no blob carries it
 w1("#    anchors " + PERMA20 + "  " + PERMA7 + "\n");
 
 //  ---- the parse forms ------------------------------------------------------
-//  The split is the ONE point (LITE-024's `splitRef`); segment 2 decides.
+//  The split is the ONE point (LITE-024's `splitRef`): segment 1 must be a
+//  LINE and segment 2 a HASHLET, or the ref is line:col as it always was.
 const S = entry.splitRef;
 const f1 = S("a/b.c:123");
 check("`:123` is a LINE", f1.path === "a/b.c" && f1.line === 123 && f1.col === 0 && !f1.hash,
@@ -70,10 +65,10 @@ check("`:123` is a LINE", f1.path === "a/b.c" && f1.line === 123 && f1.col === 0
 const f2 = S("a/b.c:123:45");
 check("`:123:45` is line:col", f2.path === "a/b.c" && f2.line === 123 && f2.col === 45 && !f2.hash,
       JSON.stringify(f2));
-const f3 = S("a/b.c:k4:d8K3");
-check("`:k4:d8K3` is a PERMALINK", f3.path === "a/b.c" && f3.off === "k4" &&
-      f3.hash === "d8K3" && f3.line === 0, JSON.stringify(f3));
-check("...and it keeps the whole tail for the chooser", f3.tail === ":k4:d8K3", f3.tail);
+const f3 = S("a/b.c:58:mJ");
+check("`:58:mJ` is a PERMALINK", f3.path === "a/b.c" && f3.line === 58 &&
+      f3.hash === "mJ" && f3.col === 0, JSON.stringify(f3));
+check("...and it keeps the whole tail for the chooser", f3.tail === ":58:mJ", f3.tail);
 const f4 = S("a/b.c:0123:4567");
 check("an ALL-DIGIT segment 2 stays line:col", f4.line === 123 && f4.col === 4567 && !f4.hash,
       JSON.stringify(f4));
@@ -81,11 +76,19 @@ const f5 = S("a/b.c:");
 check("a lone trailing colon is no anchor at all", f5.path === "a/b.c:" && !f5.line && !f5.hash,
       JSON.stringify(f5));
 const f6 = S("a/b.c:k4");
-check("ONE non-digit segment is no anchor (a hashlet needs an offset)",
+check("ONE non-digit segment is no anchor (a hashlet needs a line before it)",
       f6.path === "a/b.c:k4" && !f6.line && !f6.hash, JSON.stringify(f6));
-const f7 = S("a/b.c:12:ab");
-check("an ODD-length segment 2 is no hashlet", f7.path === "a/b.c:12:ab" && !f7.hash,
-      JSON.stringify(f7));
+//  BEE-019:33: 6 bits a char, so an ODD hashlet means something and 3 chars are
+//  a hashlet like any other; ONE char is below the floor and anchors nothing.
+const f7 = S("a/b.c:12:m7Q");
+check("an ODD-length segment 2 IS a hashlet", f7.path === "a/b.c" && f7.line === 12 &&
+      f7.hash === "m7Q", JSON.stringify(f7));
+const f8 = S("a/b.c:12:m");
+check("a ONE-char segment 2 is no hashlet", f8.path === "a/b.c:12:m" && !f8.hash,
+      JSON.stringify(f8));
+const f9 = S("a/b.c:1Jz:mJpI");
+check("the OLD ron64-OFFSET form is no anchor at all now",
+      f9.path === "a/b.c:1Jz:mJpI" && !f9.hash && !f9.line, JSON.stringify(f9));
 
 //  the earliest-match rule: two commits sharing a hashlet resolve to the OLDER,
 //  so a link minted long ago never re-points at a newer namesake.
@@ -103,7 +106,7 @@ check("...the one the FSEG descent named, anchor SHED",
 //  r1 prepended 5 lines and r2 deleted one above it: the line anchored at r0 as
 //  line 20 is line 24 today.
 check("...LANDED on the line the later commits MOVED",
-      at !== null && at[0].land && at[0].land.line === 24 && at[0].land.col === 5,
+      at !== null && at[0].land && at[0].land.line === 24 && at[0].land.col === 1,
       at === null ? "null" : JSON.stringify(at[0].land || null));
 check("...with no note — the line is alive", at !== null && at[0].land && !at[0].land.note,
       at === null ? "null" : String(at[0].land && at[0].land.note));
@@ -119,13 +122,13 @@ check("...and saying, in plain words, which commit deleted it",
       tomb !== null && tomb[0].land && tomb[0].land.note === "deleted in " + R2.slice(0, 8),
       tomb === null ? "null" : String(tomb[0].land && tomb[0].land.note));
 
-//  a hashlet no commit carries, and an offset past the blob: quiet misses.
+//  a hashlet no commit carries, and a line past the blob: quiet misses.
 check("a hashlet no version of the file carries is a quiet miss",
       entry.openTarget(PERMABAD) === null, "opened");
-check("an offset past the anchored blob is a quiet miss",
-      entry.openTarget("src/abc/FSW.c:" + ron64(99999) + ":" + H0) === null, "opened");
+check("a LINE past the anchored blob is a quiet miss",
+      entry.openTarget("src/abc/FSW.c:9999:" + H0) === null, "opened");
 check("a permalink on a path nothing names is a quiet miss",
-      entry.openTarget("nosuch/gone.c:" + ron64(OFF20) + ":" + H0) === null, "opened");
+      entry.openTarget("nosuch/gone.c:20:" + H0) === null, "opened");
 
 //  a bare `:line` on the SAME file is untouched by any of this.
 const plain = entry.openTarget("src/abc/FSW.c:24");
@@ -138,19 +141,19 @@ check("a plain `:line` ref still lands as LITE-024 left it",
 //  blob id lives in no commit at all — it resolves against the working version.
 check("lite spells a git blob id the way git does",
       pm.blobIdOf(io.mmap(io.getenv("LITE_FIX") + "/net/TCP.c", "r").data()) === BW, BW);
-const WORK20 = "net/TCP.c:" + ron64(OFF20) + ":" + mint(BW);
+const WORK20 = "net/TCP.c:20:" + mint(BW);
 const work = entry.openTarget(WORK20);
 check("a WORKTREE-only blob anchor opens the file", work !== null && work.length === 1,
       work === null ? "null" : "hunks " + work.length);
 check("...landing on the working version directly",
-      work !== null && work[0].land && work[0].land.line === 20 && work[0].land.col === 5,
+      work !== null && work[0].land && work[0].land.line === 20 && work[0].land.col === 1,
       work === null ? "null" : JSON.stringify(work[0].land || null));
 
 //  EARLIEST-MATCH, for real: src/abc/TCP.c left its r0 blob at r3 and came back
 //  to it at r4, so ONE blob id answers at two points of the path's history.
 function seatOf(link) {
   const r = S(link);
-  return pm.follow(r.path, r.off, r.hash, io.getenv("LITE_FIX"));
+  return pm.follow(r.path, r.line, r.hash, io.getenv("LITE_FIX"));
 }
 const twice = seatOf("src/abc/TCP.c" + TANCHOR);
 check("a blob the path carries TWICE anchors at the EARLIER commit",
@@ -198,7 +201,7 @@ const lex = (function () {
   }
   return out;
 })();
-check("the lexer fuses `path:off:hashlet` into ONE F token",
+check("the lexer fuses `path:line:hashlet` into ONE F token",
       lex.length === 1 && lex[0] === PERMA20, lex.join(" "));
 
 //  ---- the REAL click ------------------------------------------------------

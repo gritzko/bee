@@ -68,7 +68,7 @@ function seatOf(target) {
   if (ref.hash) {
     let seat;
     //  BEE-003: a permalink follows in the AMBIENT repo, like every other ref.
-    try { seat = require("index/perma.js").follow(ref.path, ref.off, ref.hash, mnt.at()); }
+    try { seat = require("index/perma.js").follow(ref.path, ref.line, ref.hash, mnt.at()); }
     catch (e) { return null; }
     if (seat === null) return null;
     if (seat.rels) return { rels: seat.rels, arg: ref.path + ref.tail, tail: ref.tail };
@@ -413,23 +413,25 @@ function digitTail(s) {
   return i;
 }
 
-//  dog/tok/LINK.rl:77 the byte before a `:off:hashlet` permalink anchor, or -1.
+//  dog/tok/LINK.rl:94 the byte before a `:line:hashlet` permalink anchor, or -1.
+//  BEE-019:58: segment 1 is DIGITS now, so an old `:1Jz:mJpI` is no anchor and
+//  the ref lands on the file — the corpus is migrated, not read both ways.
 function permaTail(s) {
   const i = s.lastIndexOf(":");
   if (i <= 0 || i === s.length - 1) return -1;
   const j = s.lastIndexOf(":", i - 1);
   if (j <= 0 || j === i - 1) return -1;
   const pm = require("index/perma.js");
-  return pm.isHashlet(s.slice(i + 1)) && pm.isOffset(s.slice(j + 1, i)) ? j : -1;
+  return pm.isHashlet(s.slice(i + 1)) && pm.isLine(s.slice(j + 1, i)) ? j : -1;
 }
 
-//  core/Link.mkd:9 split a ref into path + anchor (line/col or off/hash).
+//  core/Link.mkd:9 split a ref into path + anchor (line/col or line/hash).
 function splitRef(target) {
   const p = permaTail(target);
   if (p >= 0) {
     const k = target.indexOf(":", p + 1);
-    return { path: target.slice(0, p), tail: target.slice(p), line: 0, col: 0,
-             off: target.slice(p + 1, k), hash: target.slice(k + 1) };
+    return { path: target.slice(0, p), tail: target.slice(p), col: 0,
+             line: Number(target.slice(p + 1, k)), hash: target.slice(k + 1) };
   }
   const i = digitTail(target);
   if (i < 0) return { path: target, tail: "", line: 0, col: 0 };

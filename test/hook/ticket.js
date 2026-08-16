@@ -20,14 +20,12 @@ function check(name, cond, got) {
 }
 const ends = (s, tail) => typeof s === "string" && s.slice(-tail.length) === tail;
 
-//  the oracle, as in hook.js/first.js: arithmetic over 16-byte lines and
-//  `git rev-parse`, so the expected permalink is stated without asking the code.
-function ron64(v) { const s = ron.encode(BigInt(v)); return s === "" ? "0" : s; }
-function pair(hex3) { return ron.encode(BigInt(parseInt(hex3, 16))).padStart(2, "0"); }
+//  the oracle, as in hook.js/first.js: the line as typed, and the sha1's top 6k
+//  bits, so the expected permalink is stated without asking the code.
+function top(sha, bits) { return BigInt("0x" + sha.slice(0, 16)) >> BigInt(64 - bits); }
 function mint(sha) {
-  for (let pairs = 2; pairs <= 5; pairs++) {
-    let h = "";
-    for (let i = 0; i < pairs; i++) h += pair(sha.slice(i * 3, i * 3 + 3));
+  for (let k = 2; k <= 10; k++) {
+    const h = ron.encode(top(sha, 6 * k)).padStart(k, "0");
     for (const c of h) if (c < "0" || c > "9") return h;
   }
   return "";
@@ -35,10 +33,10 @@ function mint(sha) {
 
 const FIX = io.getenv("LITE_FIX");
 const B_TKT = io.getenv("LITE_BTKT"), B_FAT = io.getenv("LITE_BFAT");
-//  Line 20 of a file of 16-byte lines, column 1.  The PATH IS KEPT AS WRITTEN:
-//  the code stays a code, only the anchor segments change.
-const P_TKT = "TKT-001:" + ron64(19 * 16) + ":" + mint(B_TKT);
-const P_FAT = "TKT-005:" + ron64(19 * 16) + ":" + mint(B_FAT);
+//  Line 20.  The PATH IS KEPT AS WRITTEN: the code stays a code, only the
+//  anchor segments change.
+const P_TKT = "TKT-001:20:" + mint(B_TKT);
+const P_FAT = "TKT-005:20:" + mint(B_FAT);
 w1("#    minted " + P_TKT + " and " + P_FAT + "\n");
 
 function committed(rel) {

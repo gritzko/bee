@@ -102,15 +102,15 @@ C0=$(g rev-parse HEAD~2); C08=$(echo "$C0" | cut -c1-8)
 XBLOB=$(g rev-parse "HEAD:sub/x.txt")
 
 # The two permalinks, minted the way index/hook.js mints one: the ANCHORED blob
-# is C0's target.c, the offsets are the arithmetic above.  `ron.encode` and the
-# hashlet packing are index/perma.js's own, so this test mints no format itself.
+# is C0's target.c, the LINES are the arithmetic above (BEE-019).  The hashlet
+# is index/perma.js's own, so this test mints no format itself.
 B0=$(g rev-parse "$C0:target.c"); B2=$(g rev-parse "HEAD:target.c")
 PM=$( cd "$REPO" && HOME="$FAKEHOME" LITE_B0="$B0" LITE_B2="$B2" "$RT" --eval '
   const p = require("index/perma.js");
   const h = p.mintHashlet(io.getenv("LITE_B0"), [io.getenv("LITE_B2")]);
-  io.log(p.packOffset(43) + ":" + h + " " + p.packOffset(17) + ":" + h + "\n");' 2>&1 )
-PMOVED=$(echo "$PM" | cut -d' ' -f1)             # MARK004: moved down two lines
-PGONE=$(echo "$PM" | cut -d' ' -f2)              # MARK002: deleted at C2
+  io.log("4:" + h + " 2:" + h + "\n");' 2>&1 )
+PMOVED=$(echo "$PM" | cut -d' ' -f1)             # line 4: moved down two lines
+PGONE=$(echo "$PM" | cut -d' ' -f2)              # line 2: deleted at C2
 case "$PMOVED" in
     *:*) ok "the fixture minted permalinks: $PMOVED $PGONE" ;;
     *)   bad "cannot mint the fixture permalinks: '$PM'"; exit 1 ;;
@@ -256,11 +256,11 @@ has  "the blob's bytes" "X1"
 # ==========================================================================
 page "a page of references" "/repo/cat/ref.c" 200
 has  "a file:line ref lands on that line's first token" 'href="/repo/target.c#b63"'
-has  "a MOVED permalink lands where its token sits TODAY" 'href="/repo/target.c#b54"'
+has  "a MOVED permalink lands where its token sits TODAY" 'href="/repo/target.c#b50"'
 has  "a DEAD permalink lands where its token STOOD" 'href="/repo/target.c#b37"'
 hasnt "a reference that answers nothing is NOT a link" 'href="/repo/nosuch'
 has  "and it is still painted as source" '>nosuch.c:3</span>'
-# The bug this leg exists for: no raw `file:OFF:HASHLET` may reach a URL.
+# The bug this leg exists for: no raw `file:LINE:HASHLET` may reach a URL.
 hasnt "no raw reference reaches a url" 'href="/repo/target.c:'
 hasnt "no raw permalink reaches a url" '%3A'
 if [ "$(grep -c 'href="/repo/target.c#b' "$WORK/body")" = 3 ]; then
@@ -272,7 +272,7 @@ fi
 # Each anchor names a REAL token of the page it points into — the offsets are
 # the fixture's own arithmetic, and the ids are the painter's.
 page "the reference target" "/repo/cat/target.c" 200
-has  "the moved permalink's anchor IS the anchored identifier" 'id="b54">MARK004</span>'
+has  "the moved permalink's anchor is its LINE's first token" 'id="b50">int</span>'
 has  "the dead permalink's anchor is the line it stood on" 'id="b37">int</span>'
 has  "the file:line anchor is that line's first token" 'id="b63">int</span>'
 

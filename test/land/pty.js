@@ -32,33 +32,30 @@ function check(name, cond, got) {
 const LINE = 16;
 const L25 = 24 * LINE;                             // line 25 starts here
 const TOK_LO = L25 + 4, TOK_HI = L25 + 14;         // `FSWMARK020`
-const OFF20 = 19 * LINE + 6;                       // r0 line 20, col 7 — INSIDE it
+//  BEE-019:33: a permalink names the LINE, so its byte is the line's FIRST —
+//  the token the resolver hands back is that line's `int`, not its name.
+const INT_LO = L25, INT_HI = L25 + 3;
 //  the wide line: 20 x `int WIDE001; ` (13 bytes each) as line 46.
 const L46 = 45 * LINE, WIDE_LO = L46 + 8 * 13 + 4;
 const B0 = io.getenv("LITE_B0");
 
-//  ron64 of a number, and the hashlet: the sha1 hex packed 12 bits per PAIR of
-//  ron64 chars, extended by 2 until it holds a non-digit (which is what makes
-//  segment 2 read as a hashlet and not a column) — LITE-025's own mint.
-function ron64(v) { const s = ron.encode(BigInt(v)); return s === "" ? "0" : s; }
-function pair(hex3) { return ron.encode(BigInt(parseInt(hex3, 16))).padStart(2, "0"); }
+//  the hashlet: k ron64 chars ARE the blob sha1's top 6k bits, grown one char
+//  at a time until it holds a non-digit (which is what makes segment 2 read as
+//  a hashlet and not a column) — BEE-019's own mint.
+function top(sha, bits) { return BigInt("0x" + sha.slice(0, 16)) >> BigInt(64 - bits); }
 function mint(sha) {
-  let h = "";
-  for (let i = 0; i < 5; i++) {
-    h += pair(sha.slice(i * 3, i * 3 + 3));
-    if (h.length < 4) continue;
-    let nondigit = false;
-    for (const c of h) if (c < "0" || c > "9") nondigit = true;
-    if (nondigit) return h;
+  for (let k = 2; k <= 10; k++) {
+    const h = ron.encode(top(sha, 6 * k)).padStart(k, "0");
+    for (const c of h) if (c < "0" || c > "9") return h;
   }
-  return h;
+  return "";
 }
 const FILE = "src/abc/FSW.c";
 const MID = FILE + ":25:7";                        // inside `FSWMARK020`
 const GAP = FILE + ":25:4";                        // the space after `int`
 const PAST = FILE + ":25:80";                      // past the line end
 const BARE = FILE + ":25";                         // a line, no column
-const PERMA = FILE + ":" + ron64(OFF20) + ":" + mint(B0);
+const PERMA = FILE + ":20:" + mint(B0);
 const WIDE = FILE + ":46:109";                     // `WIDE009`, off-screen at 100 cols
 const NOTE = "src/note.c:1:10";                    // inside note.c's OWN ref token
 const NOTEREF = FILE + ":25:7";                    // ...which is the ref it carries
@@ -80,13 +77,13 @@ check("a bare `:line` still lands with no column",
 const per = entry.openTarget(PERMA);
 check("a permalink opens the file it names", per !== null && per.length === 1,
       per === null ? "null" : "hunks " + per.length);
-check("...on the line the later commit MOVED, column and all",
-      per !== null && per[0].land && per[0].land.line === 25 && per[0].land.col === 7,
+check("...on the line the later commit MOVED, at its first token",
+      per !== null && per[0].land && per[0].land.line === 25 && per[0].land.col === 1,
       per === null ? "null" : JSON.stringify(per[0].land || null));
 //  the resolver walked to the token itself; its BYTES ride the door, so the
 //  pager selects what the resolver named instead of re-deriving from the col.
 check("...and the RESOLVER's own token comes through the door",
-      per !== null && per[0].land && per[0].land.lo === TOK_LO && per[0].land.hi === TOK_HI,
+      per !== null && per[0].land && per[0].land.lo === INT_LO && per[0].land.hi === INT_HI,
       per === null ? "null" : JSON.stringify(per[0].land || null));
 
 //  ---- the pty: a real click on each ref form -------------------------------
@@ -234,9 +231,9 @@ check("...over the active-line wash, which still spans the row",
 //  ---- a permalink — the resolver's own token is what gets selected ---------
 check("a click on a permalink pushed a view", R.permaPushed, "stack depth");
 check("...the cursor on the moved line", R.perma.row === 25, "cur.row " + R.perma.row);
-check("...holding the token the RESOLVER named", R.perma.lo === TOK_LO && R.perma.hi === TOK_HI,
+check("...holding the token the RESOLVER named", R.perma.lo === INT_LO && R.perma.hi === INT_HI,
       R.perma.lo + ".." + R.perma.hi);
-check("...washed on that token", washed(R.perma.at, TOK_BG) === "FSWMARK020", R.perma.at);
+check("...washed on that token", washed(R.perma.at, TOK_BG) === "int", R.perma.at);
 
 //  ---- the `:` bar leg is identical ----------------------------------------
 check("a ref TYPED on the `:` bar selects the same token",

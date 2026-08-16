@@ -1,10 +1,10 @@
 //  index/resolve.js as per LITE-011: turn a PARTIAL path (`abc/TCP.c`, a bare
 //  `TCP.c`) into the full repo-relative path(s) it names IN A GIVEN COMMIT
-//  (LITE-011:12M:a9GC).  The index is hash-only and hands back no text, so it only
+//  (LITE-011:51:a9).  The index is hash-only and hands back no text, so it only
 //  NARROWS and a real tree object answers: FSEG rows keyed by the filename hash
-//  carry the ancestor segment hashes that prune the descent (LITE-011:17d:a9GC),
-//  iterative and batched, a LINE almost always (LITE-011:1IV:a9GC, LITE-011:1No:a9GC).
-//  AMBIGUITY IS THE ANSWER, NOT AN ERROR (LITE-011:1Rh:a9GC): a hash collision costs
+//  carry the ancestor segment hashes that prune the descent (LITE-011:52:a9),
+//  iterative and batched, a LINE almost always (LITE-011:58:a9, LITE-011:59:a9).
+//  AMBIGUITY IS THE ANSWER, NOT AN ERROR (LITE-011:60:a9): a hash collision costs
 //  one tree read, never a wrong path, since the bottom verifies real names.
 "use strict";
 
@@ -22,7 +22,7 @@ function split(partial) {
            prnt: segs.length > 1 ? idx.segHl(segs[segs.length - 2], 20n) : null };
 }
 
-//  LITE-011:18V:a9GC, the candidate rows.  The index is unkeyed and a crash can leave
+//  LITE-011:53:a9, the candidate rows.  The index is unkeyed and a crash can leave
 //  a byte-identical duplicate, so rows are deduped on (key, val).
 function candidates(ix, q) {
   const out = [], seen = new Set();
@@ -47,7 +47,7 @@ function candidates(ix, q) {
   return out;
 }
 
-//  LITE-011:1ES:a9GC, the text leg: the recovered path must END with the partial as
+//  LITE-011:56:a9, the text leg: the recovered path must END with the partial as
 //  typed, segment for segment — what makes a hash collision cost a tree read
 //  and never a wrong answer.
 function tailMatches(path, segs) {

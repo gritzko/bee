@@ -3,7 +3,7 @@
 //  the ~75 refs of [BEE-015] are actually in — and the verb was then pointed at
 //  three of the files.  Run AFTER the mint, in the fixture's own worktree.
 //
-//  The oracle is arithmetic over 16-byte lines plus `git rev-parse`, exactly as
+//  The oracle is the line as typed plus the blob sha1's top 6k bits, exactly as
 //  test/hook/*.js does it: the expected permalink is STATED, never asked for.
 "use strict";
 const entry = require("door.js");        // LITE-045: the door, not the CLI
@@ -20,12 +20,10 @@ function check(name, cond, got) {
 }
 const ends = (s, tail) => typeof s === "string" && s.slice(-tail.length) === tail;
 
-function ron64(v) { const s = ron.encode(BigInt(v)); return s === "" ? "0" : s; }
-function pair(hex3) { return ron.encode(BigInt(parseInt(hex3, 16))).padStart(2, "0"); }
+function top(sha, bits) { return BigInt("0x" + sha.slice(0, 16)) >> BigInt(64 - bits); }
 function mint(sha) {
-  for (let pairs = 2; pairs <= 5; pairs++) {
-    let h = "";
-    for (let i = 0; i < pairs; i++) h += pair(sha.slice(i * 3, i * 3 + 3));
+  for (let k = 2; k <= 10; k++) {
+    const h = ron.encode(top(sha, 6 * k)).padStart(k, "0");
     for (const c of h) if (c < "0" || c > "9") return h;
   }
   return "";
@@ -37,10 +35,10 @@ function read(rel) {
   return utf8.Decode(m.data ? m.data() : m).split("\n");
 }
 
-//  Line 20 col 1, line 20 col 5 and line 9 col 1 of a file of 16-byte lines.
-const P_20  = "src/A.c:" + ron64(19 * 16) + ":" + mint(B_A);
-const P_20C = "src/A.c:" + ron64(19 * 16 + 4) + ":" + mint(B_A);
-const P_9   = "src/A.c:" + ron64(8 * 16) + ":" + mint(B_A);
+//  BEE-019:54: the anchor is the LINE, so `:20` and `:20:5` mint the same link.
+const P_20  = "src/A.c:20:" + mint(B_A);
+const P_20C = P_20;
+const P_9   = "src/A.c:9:" + mint(B_A);
 w1("#    minted " + P_20 + "\n");
 
 const P = read("doc/page.mkd");
@@ -48,7 +46,7 @@ const P = read("doc/page.mkd");
 //  ---- the two that must mint ------------------------------------------------
 check("a TRANSIENT ref committed long ago is upgraded in the working file",
       P[1] === "see " + P_20 + " for the anchor", P[1]);
-check("...and one carrying a COLUMN keeps the column's own byte",
+check("...and one carrying a COLUMN mints the same link, column dropped",
       P[2] === "col " + P_20C + " with a column", P[2]);
 
 //  ---- everything the hook refuses to guess through, the verb refuses too -----
@@ -69,14 +67,14 @@ check("a ref into a DIRTY file the mint was not given is refused",
       P[7] === "dirt src/B.c:10 has uncommitted edits", P[7]);
 
 //  ---- the chain: a listed file may anchor into another listed file ----------
-//  y's own rewrite MOVES the line x names, so x's offset is right only if y
-//  minted first — the LITE-027 sink-first order, inherited whole.
+//  y's own rewrite moves y's BLOB ID, so x's hashlet is right only if y minted
+//  first — the LITE-027 sink-first order, inherited whole (BEE-019:57).
 const Y = read("doc/y.mkd"), X = read("doc/x.mkd");
 check("a listed file mints its own ref against the target's HEAD blob",
       Y[1] === "yref " + P_9 + " here", Y[1]);
 const xref = (X[1] || "").split(" ")[1] || "";
 check("...and the file naming IT mints too, against the post-mint image",
-      xref !== "doc/y.mkd:3" && xref.indexOf("doc/y.mkd:") === 0 &&
+      xref !== "doc/y.mkd:3" && xref.indexOf("doc/y.mkd:3:") === 0 &&
       xref.split(":").length === 3, X[1]);
 
 //  ---- and the minted links FOLLOW back --------------------------------------

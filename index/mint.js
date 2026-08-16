@@ -74,7 +74,7 @@ function relOf(ctx, arg, errs) {
 
 //  --- the dirt gate ----------------------------------------------------------
 //  Does this path's working copy differ from the one HEAD carries?  bee never
-//  reads `.git/index` (view/diff.js's own stance, `index/perma.js:216:vS~I`), so
+//  reads `.git/index` (view/diff.js's own stance, `index/perma.js:171:mU`), so
 //  working-vs-HEAD is the honest question — and the only one that matters here,
 //  since a hashlet can only name a blob the ODB will hold.
 function dirty(ctx, rel) {
@@ -98,7 +98,7 @@ function whyLeft(ctx, images, ref, cyclic) {
   const bytes = images.has(dst) ? images.get(dst)
               : hk.blobOf(ctx, (hk.headEntry(ctx, dst) || {}).sha);
   if (bytes === null || bytes === undefined) return dst + " has no readable blob";
-  if (pm.byteAt(bytes, ref.line, ref.col) < 0) return dst + " has no line " + ref.line;
+  if (pm.byteAt(bytes, ref.line, 1) < 0) return dst + " has no line " + ref.line;
   return "no hashlet names " + dst + "'s blob";
 }
 

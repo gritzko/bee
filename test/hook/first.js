@@ -20,21 +20,19 @@ function check(name, cond, got) {
 }
 const ends = (s, tail) => typeof s === "string" && s.slice(-tail.length) === tail;
 
-//  the oracle, as in hook.js: arithmetic over 16-byte lines and `git rev-parse`.
-function ron64(v) { const s = ron.encode(BigInt(v)); return s === "" ? "0" : s; }
-function pair(hex3) { return ron.encode(BigInt(parseInt(hex3, 16))).padStart(2, "0"); }
+//  the oracle, as in hook.js: the line as typed, and the sha1's top 6k bits.
+function top(sha, bits) { return BigInt("0x" + sha.slice(0, 16)) >> BigInt(64 - bits); }
 function mint(sha) {
-  for (let pairs = 2; pairs <= 5; pairs++) {
-    let h = "";
-    for (let i = 0; i < pairs; i++) h += pair(sha.slice(i * 3, i * 3 + 3));
+  for (let k = 2; k <= 10; k++) {
+    const h = ron.encode(top(sha, 6 * k)).padStart(k, "0");
     for (const c of h) if (c < "0" || c > "9") return h;
   }
   return "";
 }
 
 const FIX = io.getenv("LITE_FIX"), B_A = io.getenv("LITE_BA");
-//  `src/A.c:5` is line 5 column 1 of a file of 16-byte lines.
-const P_A5 = "src/A.c:" + ron64(4 * 16) + ":" + mint(B_A);
+//  `src/A.c:5` is line 5, and the line IS the anchor now (BEE-019:33).
+const P_A5 = "src/A.c:5:" + mint(B_A);
 w1("#    minted " + P_A5 + "\n");
 
 function committed(rel) {
@@ -55,8 +53,8 @@ check("...a SELF-link is still left exactly as typed",
       N[1] === "self n.mkd:1 stays", N[1]);
 check("...and a path nothing answers too", N[2] === "gone no/such.c:2 nothing", N[2]);
 //  the hashlet degenerates to the minimum: one blob in scope, nothing to extend
-//  against, so four characters name it.
-check("one blob in scope mints the SHORTEST hashlet", mint(B_A).length === 4, mint(B_A));
+//  against, so TWO characters name it — unless those two are both digits.
+check("one blob in scope mints the SHORTEST hashlet", mint(B_A).length === 2, mint(B_A));
 
 //  and now that the root commit exists, the LITE-025 resolver has a history to
 //  walk: the minted link follows to the line the author meant.

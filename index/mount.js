@@ -1,8 +1,8 @@
 //  index/mount.js as per BEE-003: the REPO is an axis of the TARGET, never
-//  process state (BEE-003:he:xS9Y).  THE MOUNT TABLE is the BEE-001:QC:PoS7 registry read
-//  as `<name> -> <worktree root>`, the basename being the URL prefix (BEE-003:nZ:xS9Y);
-//  a SUBMODULE is addressed THROUGH its parent (BEE-003:121:xS9Y), its own line only
-//  redirects; a `git worktree` family folds to ONE mount (BEE-009:1BN:28Oq).  THE
+//  process state (BEE-003:45:xS).  THE MOUNT TABLE is the BEE-001:25:Po registry read
+//  as `<name> -> <worktree root>`, the basename being the URL prefix (BEE-003:50:xS);
+//  a SUBMODULE is addressed THROUGH its parent (BEE-003:64:xS), its own line only
+//  redirects; a `git worktree` family folds to ONE mount (BEE-009:50:28O).  THE
 //  AMBIENT `{repo, path, anchor}` is where a run/request/view stands, the cwd
 //  only the CLI's default.  Lines are re-read per call; the tip-tree submodule
 //  walk is memoized per process, since only the FSEG fan-out pays for it.
@@ -28,7 +28,7 @@ function under(outer, inner) {
 //  Does `root` HOLD the path `p` (itself included)?
 function holds(root, p) { return p === root || under(root, p); }
 
-//  BEE-009:12c:28Oq: a legacy line naming a LINKED WORKTREE must stop competing in the
+//  BEE-009:50:28O: a legacy line naming a LINKED WORKTREE must stop competing in the
 //  fan-out — a family folds to ONE, and the user's file is never rewritten.
 function fold(lines) {
   const here = at();
@@ -46,9 +46,9 @@ function fold(lines) {
   return out;
 }
 
-//  BEE-003:nZ:xS9Y: the registry as a mount table.  Lines are realpath'd (a symlinked
-//  line and its target are ONE repo, BEE-003:1hv:xS9Y) and deduped; a line inside
-//  another becomes that one's SUB mount, addressed through it (BEE-003:121:xS9Y).
+//  BEE-003:50:xS: the registry as a mount table.  Lines are realpath'd (a symlinked
+//  line and its target are ONE repo, BEE-003:106:xS) and deduped; a line inside
+//  another becomes that one's SUB mount, addressed through it (BEE-003:64:xS).
 //  -> [{ name, root, prefix, own, top, dup }], registry order.
 function list(home) {
   const lines = [], seen = new Set();
@@ -72,7 +72,7 @@ function list(home) {
       ? { name: fam[i].name, root: root, prefix: "", own: own, top: root, dup: false }
       : { name: topName, root: root, prefix: root.slice(top.length + 1),
           own: own, top: top, dup: false };
-    //  BEE-003:183:xS9Y, open: the basename IS the name.  A second line claiming
+    //  BEE-003:69:xS, open: the basename IS the name.  A second line claiming
     //  a taken name is not reachable by it — no disambiguator is invented here.
     if (m.prefix === "") {
       if (named.has(m.name)) m.dup = true; else named.add(m.name);
@@ -91,7 +91,7 @@ function named(name, home) {
 
 //  BEE-003: an absolute path -> its CANONICAL address `{ mount, rel }` — the
 //  OUTERMOST registered root holding it, so a submodule file is addressed
-//  through its parent (BEE-003:121:xS9Y).  null = no registered repo holds it.
+//  through its parent (BEE-003:64:xS).  null = no registered repo holds it.
 function canon(abs, home) {
   let best = null;
   for (const m of list(home)) {
@@ -110,7 +110,7 @@ function deepest(abs) { return idx.discover(abs); }
 //  --- the fan-out's mounts ---------------------------------------------------
 //  BEE-003: every worktree a partial may resolve in — the registry's own lines
 //  plus the submodules a registered parent carries WITHOUT a line of their own
-//  (BEE-006:mw:3Bxd installs them, an older registry has none).  The tip-tree walk is
+//  (BEE-006:49:3B installs them, an older registry has none).  The tip-tree walk is
 //  the one costly step here, so it is memoized per root for the process.
 const SUBS = new Map();
 
@@ -169,7 +169,7 @@ function pos() { return POS; }
 //  The repo the ambient sits in — the cwd when nothing set a position.
 function at() { return POS !== null && POS.repo ? POS.repo : io.cwd(); }
 
-//  The DIR OF THE FILE BEING READ (BEE-003:su:xS9Y, the first leg), or the repo root
+//  The DIR OF THE FILE BEING READ (BEE-003:55:xS, the first leg), or the repo root
 //  when the position names no path.  null = no ambient at all.
 function dir() {
   if (POS === null || !POS.repo) return null;

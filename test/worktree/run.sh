@@ -5,7 +5,7 @@
 # a bare `bee` run inside a `git worktree` checkout listed THAT path too.  One
 # repository then stood in the registry twice, every ordinary filename in a
 # cross-repo reference resolved twice, `door.seatOf` answered the {rels}
-# chooser, and `http.js:2Yp:7s1h` dropped it to plain painted text — no link at all.
+# chooser, and `http.js:228:7s` dropped it to plain painted text — no link at all.
 #
 # The fixture is that shape: a main worktree, a `git worktree add` checkout of
 # it, and a third repo whose page names a file of the family.

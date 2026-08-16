@@ -1,10 +1,10 @@
-//  index/perma.js as per LITE-025: FOLLOW a permalink `file.c:k4:d8K3` — a ron64
-//  BYTE OFFSET into the anchored blob plus a BLOB HASHLET, blob-only (LITE-025:3L:zcD_;
-//  blob offset over weave offset LITE-025:yU:zcD_).  Scope is ONE file's blob history,
-//  EARLIEST match wins (LITE-025:SA:zcD_, LITE-025:UT:zcD_); the walk is one CFOLD pair,
+//  index/perma.js as per LITE-025: FOLLOW a permalink `file.c:58:mJ` — the LINE in
+//  the anchored blob plus that BLOB's HASHLET, blob-only (LITE-025:11:zc; the line
+//  over the byte offset BEE-019:33).  Scope is ONE file's blob history, EARLIEST
+//  match wins (LITE-025:21:zc, LITE-025:22:zc); the walk is one CFOLD pair,
 //  anchored blob then today's bytes, token identity carrying the byte across
-//  (LITE-025:1Gw:zcD_).  The MINT half lives here too so one file owns the ron64 packing
-//  both ways (LITE-026:1cG:xoo4).  A stem path takes the door's ladder and the follow
+//  (LITE-025:69:zc).  The MINT half lives here too so one file owns the ron64 packing
+//  both ways (LITE-026:102:xo).  A stem path takes the door's ladder and the follow
 //  fans out over the mount table like the minter (BEE-014:44, BEE-014:51).
 "use strict";
 
@@ -43,59 +43,44 @@ function allDigits(s) {
   return true;
 }
 
-//  Is this pair of segments a permalink?  SEGMENT 2 DECIDES (the ruling): a
-//  hashlet is even, at least 4 chars, and carries a non-digit — an all-digit
-//  segment 2 is a COLUMN and the ref stays LITE-024's line:col.
+//  Is this pair of segments a permalink?  BEE-019:33: segment 1 is the LINE, in
+//  decimal as typed, and segment 2 a HASHLET — 2..10 ron64 chars carrying a
+//  non-digit; an all-digit segment 2 is a COLUMN and the ref stays line:col.
 function isHashlet(s) {
-  return isRon64(s) && s.length >= 4 && s.length <= 10 && (s.length & 1) === 0 &&
-         !allDigits(s);
+  return isRon64(s) && s.length >= 2 && s.length <= 10 && !allDigits(s);
 }
-function isOffset(s) { return isRon64(s) && s.length <= 10; }
+//  dog/tok/LINK.rl:96 caps an anchor segment at 10 chars; so does this.
+function isLine(s) { return allDigits(s) && s.length <= 10; }
 
-//  The hashlet -> the hex prefix a matching sha1 carries.  Each PAIR of ron64
-//  chars is one 12-bit chunk (`ron.decode` of the pair IS that chunk), spelled
-//  back as three hex digits, big-endian.
-function hashletHex(h) {
+//  The hashlet -> the sha1 BIT PREFIX it names: 6 bits a ron64 char, so k chars
+//  are the top 6k bits and an ODD length means something (BEE-019:55).
+function hashletBits(h) {
   if (!isHashlet(h)) return null;
-  let out = "";
-  for (let i = 0; i < h.length; i += 2) {
-    let v;
-    try { v = Number(ron.decode(h.slice(i, i + 2))); } catch (e) { return null; }
-    if (!(v >= 0 && v < 4096)) return null;
-    out += v.toString(16).padStart(3, "0");
-  }
-  return out;
+  let v;
+  try { v = BigInt(ron.decode(h)); } catch (e) { return null; }
+  return { bits: 6 * h.length, val: v };
 }
 
-function offsetOf(s) {
-  if (!isOffset(s)) return -1;
-  let v;
-  try { v = Number(ron.decode(s)); } catch (e) { return -1; }
-  return v >= 0 ? v : -1;
+//  The same prefix off a blob sha1 (hex).  16 hex digits are 64 bits — more than
+//  the 60 a 10-char hashlet can carry — so ONE BigInt answers every comparison.
+function shaBits(sha, bits) {
+  return BigInt("0x" + sha.slice(0, 16)) >> BigInt(64 - bits);
 }
+function hasBits(sha, hb) { return shaBits(sha, hb.bits) === hb.val; }
 
 //  --- the mint (LITE-026) ---------------------------------------------------
-//  The INVERSE of hashletHex/offsetOf, beside them so ONE file owns the ron64
-//  packing in both directions.  `ron.encode` drops a leading zero and a hashlet
-//  is read two chars at a time, so a pair is padded back to width 2.
-function packPair(v) { return ron.encode(BigInt(v)).padStart(2, "0"); }
-function packOffset(n) { const s = ron.encode(BigInt(n)); return s === "" ? "0" : s; }
-
-//  LITE-025:PW:zcD_: a blob sha1 (hex) -> the SHORTEST hashlet naming it among
-//  `others`, the path's own blobs — min 4 chars, EVEN, one non-digit (what tells
-//  segment 2 from a column), extended BY 2 until unique.  null = 10 chars still
-//  collide, so nothing is minted.
+//  BEE-019:55: a blob sha1 (hex) -> the SHORTEST hashlet naming it among
+//  `others`, the path's own blobs — from 2 chars up, ONE at a time, until no
+//  other blob shares those bits AND it holds a non-digit (what tells segment 2
+//  from a column).  null = 10 chars still collide, so nothing is minted.
 function mintHashlet(sha, others) {
-  for (let pairs = 2; pairs <= 5; pairs++) {
-    const hexn = pairs * 3;
-    if (sha.length < hexn) return null;
-    let h = "";
-    for (let i = 0; i < pairs; i++)
-      h += packPair(parseInt(sha.slice(i * 3, i * 3 + 3), 16));
-    if (!isHashlet(h)) continue;                  // all-digit: extend by 2
+  for (let k = 2; k <= 10; k++) {
+    const bits = 6 * k, mine = shaBits(sha, bits);
+    const h = ron.encode(mine).padStart(k, "0");   // encode drops leading zeros
+    if (allDigits(h)) continue;                    // a column: grow one char
     let clash = false;
     for (const o of others || [])
-      if (o !== sha && o.slice(0, hexn) === sha.slice(0, hexn)) { clash = true; break; }
+      if (o !== sha && shaBits(o, bits) === mine) { clash = true; break; }
     if (!clash) return h;
   }
   return null;
@@ -169,21 +154,21 @@ function blobHistory(ctx, ix, rel) {
   return out;
 }
 
-//  The commits of this path whose blob AT THIS PATH carries the prefix.  A file
-//  reverted to an older version answers twice, which is what `earliest` is for.
-function blobsFor(ctx, ix, rel, hexpfx) {
+//  The commits of this path whose blob AT THIS PATH carries the bit prefix.  A
+//  file reverted to an older version answers twice — that is `earliest`'s job.
+function blobsFor(ctx, ix, rel, hb) {
   const out = [];
   for (const c of historyOf(ix, ctx.r, rel)) {
     const e = rd.entryAt(ctx.r, c.m.tree, rel);
     if (e === null || e.dir) continue;
-    if (e.sha.slice(0, hexpfx.length) === hexpfx)
+    if (hasBits(e.sha, hb))
       out.push({ sha: c.sha, ts: c.ts, m: c.m, blob: e.sha });
   }
   return out;
 }
 
 //  The WORKING copy's own blob id — a link minted on content no commit carries
-//  (bee reads no `.git/index`, so staged-only reads as worktree: LITE-025:1s_:zcD_).
+//  (bee reads no `.git/index`, so staged-only reads as worktree: LITE-025:104:zc).
 function blobIdOf(bytes) {
   const head = utf8.Encode("blob " + bytes.length);   // then the NUL git puts
   const all = new Uint8Array(head.length + 1 + bytes.length);
@@ -336,13 +321,13 @@ function deleterOf(ctx, ix, rel, anchor, id, ext) {
 }
 
 //  --- the follow ------------------------------------------------------------
-//  follow(partial, offSeg, hash, from) -> null (a quiet miss, the caller's own
+//  follow(partial, lineSeg, hash, from) -> null (a quiet miss, the caller's own
 //  message stands), { rels } when the partial names SEVERAL files that answer
 //  (the caller's chooser), or { rel, full, line, col, note } — the landing.
-function follow(partial, offSeg, hash, from) {
-  const hexpfx = hashletHex(hash);
-  const off = offsetOf(offSeg);
-  if (hexpfx === null || off < 0) return null;
+function follow(partial, lineSeg, hash, from) {
+  const hb = hashletBits(hash);
+  const line = Number(lineSeg);
+  if (hb === null || !(line >= 1)) return null;
   let ctx;
   try { ctx = idx.openRepo(from || io.cwd(), true); } catch (e) { return null; }
   try {
@@ -364,14 +349,14 @@ function follow(partial, offSeg, hash, from) {
       }
       const hits = [], seats = [];
       for (const rel of rels) {
-        const seat = land(ctx, ix, rel, hexpfx, off);
+        const seat = land(ctx, ix, rel, hb, line);
         if (seat === null) continue;
         hits.push({ rel: rel, full: ctx.root + "/" + rel });
         seats.push(seat);
       }
       //  BEE-014: the minter fans out over the mount table, so the follower
       //  must too — a permalink minted against a sibling repo lands THERE.
-      if (hits.length === 0) return foreignFollow(ctx, p, hexpfx, off);
+      if (hits.length === 0) return foreignFollow(ctx, p, hb, line);
       if (hits.length > 1) return { rels: hits };
       return seats[0];
     } finally { try { ix.close(); } catch (e) {} }
@@ -382,7 +367,7 @@ function follow(partial, offSeg, hash, from) {
 //  BEE-014:51: the follow's FAN-OUT, the minter's mirror — every OTHER registered
 //  repo opened READ-ONLY, never brought up; the first that spells the path AND
 //  carries the anchored blob is the landing, a path-only answer is no answer.
-function foreignFollow(home, partial, hexpfx, off) {
+function foreignFollow(home, partial, hb, line) {
   const mnt = require("./mount.js");
   const spellings = require("door.js").refSpellings(partial);
   let mounts;
@@ -399,7 +384,7 @@ function foreignFollow(home, partial, hexpfx, off) {
         const rels = rsv.resolveAt(tctx, tix, tctx.head.sha, t);
         if (rels.length === 0) continue;
         for (const rel of rels) {
-          const seat = land(tctx, tix, rel, hexpfx, off);
+          const seat = land(tctx, tix, rel, hb, line);
           if (seat !== null) return seat;
         }
         break;                                  // that spelling answered; no other will
@@ -416,30 +401,33 @@ function foreignFollow(home, partial, hexpfx, off) {
 //  The anchored version: the path's own blob history first (EARLIEST match), the
 //  staged/working blob after it — the whole scope, in order.
 //  -> { was, commit, tier } — `commit` is null for a working-copy anchor.
-function anchorOf(ctx, ix, rel, full, hexpfx) {
-  const b = earliest(blobsFor(ctx, ix, rel, hexpfx));
+function anchorOf(ctx, ix, rel, full, hb) {
+  const b = earliest(blobsFor(ctx, ix, rel, hb));
   if (b !== null) {
     const o = idx.object(ctx.r, b.blob);
     if (o !== null && o.type === "blob")
       return { was: o.bytes, commit: b, tier: "blob" };
   }
   const wt = nowBytes(full);
-  if (wt !== null && blobIdOf(wt).slice(0, hexpfx.length) === hexpfx)
+  if (wt !== null && hasBits(blobIdOf(wt), hb))
     return { was: wt, commit: null, tier: "work" };
   return null;
 }
 
-function land(ctx, ix, rel, hexpfx, off) {
+function land(ctx, ix, rel, hb, line) {
   const full = ctx.root + "/" + rel;
-  const a = anchorOf(ctx, ix, rel, full, hexpfx);
+  const a = anchorOf(ctx, ix, rel, full, hb);
   if (a === null) return null;
   const anchor = a.commit, was = a.was;
-  if (off >= was.length) return null;
+  //  BEE-019:34: the LINE is what the ref names; its first byte is how the walk
+  //  below carries it across.  No such line in the anchored blob = no landing.
+  const off = byteAt(was, line, 1);
+  if (off < 0) return null;
   const now = nowBytes(full);
   if (now === null) return null;
   const seat = { rel: rel, full: full, line: 0, col: 0, note: "", tier: a.tier,
                  anchor: anchor === null ? "" : anchor.sha.slice(0, 8) };
-  //  Nothing moved: the blob offset IS today's offset, no fold needed.
+  //  Nothing moved: the anchored line IS today's line, no fold needed.
   if (wv.bytesEq(was, now)) {
     const lc = lineCol(now, off);
     seat.line = lc.line; seat.col = lc.col;
@@ -447,8 +435,8 @@ function land(ctx, ix, rel, hexpfx, off) {
   }
   const ext = wv.extOf(rel);
   if (!weavable(was, now)) {
-    //  Unweavable (binary, or over the source cap): the blob offset is all
-    //  there is — the anchored line as the commit saw it.
+    //  Unweavable (binary, or over the source cap): the anchored blob is all
+    //  there is — the line as the commit saw it.
     const lc = lineCol(was, off);
     seat.line = lc.line; seat.col = lc.col;
     return seat;
@@ -474,8 +462,7 @@ function land(ctx, ix, rel, hexpfx, off) {
 
 module.exports = { follow: follow, earliest: earliest, anchorOf: anchorOf,
                    blobIdOf: blobIdOf, blobHistory: blobHistory,
-                   hashletHex: hashletHex, offsetOf: offsetOf,
-                   mintHashlet: mintHashlet, packOffset: packOffset,
-                   walkNew: walkNew,
-                   isHashlet: isHashlet, isOffset: isOffset,
+                   hashletBits: hashletBits, hasBits: hasBits,
+                   mintHashlet: mintHashlet, walkNew: walkNew,
+                   isHashlet: isHashlet, isLine: isLine,
                    lineCol: lineCol, byteAt: byteAt };

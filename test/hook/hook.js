@@ -1,7 +1,7 @@
 //  lite/test/hook/hook.js — LITE-026: what the pre-commit hook left behind.
 //  Run AFTER a real `git commit` drove `lite hook`, so every assertion is over
 //  the COMMITTED blob, not a scratch buffer: a fresh `file:line(:col)` ref is
-//  now `file:OFF:HASHLET`, a ref that resolves to nothing is byte for byte what
+//  now `file:LINE:HASHLET`, a ref that resolves to nothing is byte for byte what
 //  the author typed, and the minted link FOLLOWS back to the line it names —
 //  through the door and through a real pty click on the painted token.
 //
@@ -29,22 +29,19 @@ const tag = (t) => String.fromCharCode(65 + ((t >>> 27) & 0x1f));
 const ends = (s, tail) => typeof s === "string" && s.slice(-tail.length) === tail;
 
 //  ---- the oracle -----------------------------------------------------------
-//  ron64 of a byte offset, and the hashlet: the blob sha1 packed 12 bits per
-//  PAIR of ron64 chars (3 hex digits a pair, big-endian), extended by 2 until it
-//  holds a non-digit AND no OTHER blob of that path shares the prefix.
-function ron64(v) { const s = ron.encode(BigInt(v)); return s === "" ? "0" : s; }
-function pair(hex3) { return ron.encode(BigInt(parseInt(hex3, 16))).padStart(2, "0"); }
+//  The LINE as the author typed it, and the hashlet: k ron64 chars ARE the blob
+//  sha1's top 6k BITS (BEE-019:33), grown ONE char at a time until it holds a
+//  non-digit AND no OTHER blob of that path shares those bits.
+function top(sha, bits) { return BigInt("0x" + sha.slice(0, 16)) >> BigInt(64 - bits); }
 function mint(sha, others) {
-  for (let pairs = 2; pairs <= 5; pairs++) {
-    const hexn = pairs * 3;
-    let h = "";
-    for (let i = 0; i < pairs; i++) h += pair(sha.slice(i * 3, i * 3 + 3));
+  for (let k = 2; k <= 10; k++) {
+    const bits = 6 * k, h = ron.encode(top(sha, bits)).padStart(k, "0");
     let nondigit = false;
     for (const c of h) if (c < "0" || c > "9") nondigit = true;
     if (!nondigit) continue;
     let clash = false;
     for (const o of others || [])
-      if (o !== sha && o.slice(0, hexn) === sha.slice(0, hexn)) clash = true;
+      if (o !== sha && top(o, bits) === top(sha, bits)) clash = true;
     if (!clash) return h;
   }
   return "";
@@ -53,13 +50,13 @@ function mint(sha, others) {
 const FIX = io.getenv("LITE_FIX");
 const B_FSW = io.getenv("LITE_BFSW"), B_TCP0 = io.getenv("LITE_BTCP0"),
       B_TCP1 = io.getenv("LITE_BTCP1");
-const LINE = 16;                                   // every fixture line is 16 bytes
 const H_FSW = mint(B_FSW, []), H_TCP = mint(B_TCP1, [B_TCP0]);
-//  `:20` is line 20 column 1; `:20:5` the same line, byte column 5.
-const P_FSW20  = "src/abc/FSW.c:" + ron64(19 * LINE) + ":" + H_FSW;
-const P_FSW20C = "src/abc/FSW.c:" + ron64(19 * LINE + 4) + ":" + H_FSW;
-const P_FSW7   = "src/abc/FSW.c:" + ron64(6 * LINE) + ":" + H_FSW;
-const P_TCP41  = "src/abc/TCP.c:" + ron64(40 * LINE) + ":" + H_TCP;
+//  BEE-019:54: the anchor is the LINE, so `:20` and `:20:5` mint the SAME link —
+//  the column a compiler counted was never what the ref meant.
+const P_FSW20  = "src/abc/FSW.c:20:" + H_FSW;
+const P_FSW20C = P_FSW20;
+const P_FSW7   = "src/abc/FSW.c:7:" + H_FSW;
+const P_TCP41  = "src/abc/TCP.c:41:" + H_TCP;
 w1("#    minted " + P_FSW20 + "  " + P_TCP41 + "\n");
 
 //  ---- the committed blobs --------------------------------------------------
@@ -78,7 +75,7 @@ const OLD = (committed("doc/old.mkd") || "").split("\n");
 
 check("a fresh `file:line` ref is COMMITTED as a permalink",
       NEW[0] === "see " + P_FSW20 + " for the anchor", NEW[0]);
-check("...and a `file:line:col` one keeps the column in the byte offset",
+check("...and a `file:line:col` one mints the same link, column dropped",
       NEW[1] === "and " + P_FSW20C + " with a column", NEW[1]);
 check("a ref no file answers is left exactly as typed",
       NEW[2] === "gone no/such/file.c:3 resolves to nothing", NEW[2]);
@@ -128,8 +125,8 @@ check("...on the very line the `:20` ref meant",
       a20 !== null && a20[0].land && a20[0].land.line === 20 && a20[0].land.col === 1,
       a20 === null ? "null" : JSON.stringify(a20[0].land || null));
 const a20c = entry.openTarget(P_FSW20C);
-check("...and the column ref on that line's column 5",
-      a20c !== null && a20c[0].land && a20c[0].land.line === 20 && a20c[0].land.col === 5,
+check("...and the column ref on that same line",
+      a20c !== null && a20c[0].land && a20c[0].land.line === 20 && a20c[0].land.col === 1,
       a20c === null ? "null" : JSON.stringify(a20c[0].land || null));
 const a41 = entry.openTarget(P_TCP41);
 check("the staged-blob permalink follows to the line that commit added",

@@ -66,7 +66,7 @@ picks the sink, `--plain` (also what a pipe defaults to), `--color`, `--html`:
  -  `bee install [<repo>]` — wire bee as the repo's git merge driver and pre-commit hook, list it in `~/.config/bee/repos`, index it
      1. a LINKED WORKTREE is refused: a repo is known by its path (`bee index` redirects to the original instead)
      2. a SUBMODULE is an ordinary repo: each initialised one is registered, indexed and lindexed too
- -  `bee hook [<repo>]` — the pre-commit pass: fresh `file:line(:col)` refs in the staged text become `file:OFF:HASHLET` permalinks, re-staged
+ -  `bee hook [<repo>]` — the pre-commit pass: fresh `file:line(:col)` refs in the staged text become `file:LINE:HASHLET` permalinks, re-staged
  -  `bee mint [--dry-run] <file>...` — the same upgrade for refs that ALREADY landed transient, in the working copy only; the hook cannot reach those
      1. the file list names the CARRIERS: refs written in them, pointing anywhere; a target not listed must be clean, or it is refused
      2. everything left alone is reported, one line per ref — unresolved, ambiguous, past the end, on a link cycle

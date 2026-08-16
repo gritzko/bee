@@ -1,10 +1,10 @@
 //  index/refs.js as per LITE-006: ref resolution for a foreign `.git` — HEAD,
 //  loose refs and packed-refs chased to a sha.  It sits ABOVE the ODB waist BY
-//  DESIGN (LITE-006:1He:RcNe): quickjab/git.c rules refs stay above it and dog/git
+//  DESIGN (LITE-006:49:Rc): quickjab/git.c rules refs stay above it and dog/git
 //  carries no ref-store reader, so this mirrors quickjab/test/gitverify.js, cut
 //  to the calls the indexer needs; object bytes still go through git.parseCommit
 //  and git.tree, never a parser of our own.  A linked worktree keeps HEAD in its
-//  own gitdir and the branches in the common one (`commondir`, BEE-009:XL:28Oq).
+//  own gitdir and the branches in the common one (`commondir`, BEE-009:21:28O).
 "use strict";
 
 //  A full git object id: 40 lowercase-hex characters (be/shared/util/sha.js).

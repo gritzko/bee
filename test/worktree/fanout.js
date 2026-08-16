@@ -3,7 +3,7 @@
 //  `bee` run inside a `git worktree` checkout wrote that path too) is healed at
 //  RESOLVE time: `index/mount.js` folds a worktree family, so an ordinary
 //  filename resolves ONCE and `door.seatOf` answers a seat, not the {rels}
-//  chooser `http.js:2Yp:7s1h` drops to plain painted text.
+//  chooser `http.js:228:7s` drops to plain painted text.
 //
 //  $BEE_MAIN the main worktree, $BEE_WT the linked one, both registered.
 "use strict";
