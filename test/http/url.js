@@ -172,10 +172,11 @@ check("a dir reference opens in list",
 //  NOTHING answers -> no href; the painter leaves plain text
 check("an unresolvable reference gets NO url",
       srv.urlOf(mkpg(doorOf(null, null, null), 8), "nosuch.c:3") === "");
-//  SEVERAL answer -> no single page, so no href either
-check("an ambiguous reference gets NO url",
+//  BEE-012: SEVERAL answer -> a CHOICE, not a miss: the chooser page, read in
+//  this page's own repo.  Before this it folded to "" beside a real miss.
+check("an ambiguous reference gets the chooser url",
       srv.urlOf(mkpg(doorOf({ rels: [{ rel: "a/x.c" }, { rel: "b/x.c" }] }, null, null), 8),
-                "x.c") === "");
+                "x.c") === "/repo/choose/x.c");
 //  OUTSIDE the repo -> there is no page for it
 check("a reference outside the repo gets NO url",
       srv.urlOf(mkpg(doorOf({ full: "/elsewhere/x.c", line: 1, col: 0 }, "reg", TGT), 8),

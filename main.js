@@ -1,4 +1,4 @@
-//  main.js — the Beagle-bee ENTRY (LITE-003): DISPATCH and ONE mode pick.
+//  main.js — Beagle-bee (LITE-003): DISPATCH and ONE mode pick.
 //
 //  A word that names a verb goes to door.js's view for it; every other arg is a
 //  file or dir path.  Then the mode: at a terminal with no flag the hunks go to
@@ -97,9 +97,12 @@ function runHook(args) {
 //  The whole DOOR is handed over — the verb table AND the reference resolution
 //  — so http links through this file's code and owns no resolver of its own.
 function runHttp(args) {
+  //  BEE-012: `openTarget` rides along — the chooser page is the door's own
+  //  several-hits hunk, the one the pager shows.
   require("http.js").http(args, { verbs: door.VERBS, seatOf: door.seatOf,
                                           statOf: door.statOf,
-                                          openPath: door.openPath });
+                                          openPath: door.openPath,
+                                          openTarget: door.openTarget });
 }
 
 //  LITE-016: `bee chat [dir] [outdir]` renders the Claude Code session logs of

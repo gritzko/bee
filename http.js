@@ -53,6 +53,9 @@ const ROUTE = {
   tree:     "tree",                 //  /tree/<path|hex>[?<rev>]
   blob:     "blob",                 //  /blob/<hexlet>
   bytes:    "cat",                  //  /bytes/<path>[?<rev>] the bytes VERBATIM
+  //  BEE-012: SEVERAL hits are a choice, not a miss — the ref is read in THIS
+  //  repo's ambient, so the page lists what a reader on that page would see.
+  choose:   "choose",               //  /<repo>/choose/<ref>
 };
 
 //  LITE-036: the EXTENSION -> content type table — the ONE place a served byte
@@ -222,9 +225,14 @@ function memoUrl(pg, key, target, resolve) {
 //  ABSOLUTE path, which the mount table addresses — in ANY registered repo, not
 //  only the one this page came from.  Outside every registered repo there is no
 //  page, so such a ref simply gets no href.
-function seatRel(pg, target) {
-  let seat;
-  try { seat = pg.door.seatOf(target); } catch (e) { return null; }
+//  BEE-012: the door is asked ONCE per reference (the budget counts follows),
+//  so the seat is taken here and placed by `seatAt` below.
+function seatOf(pg, target) {
+  try { return pg.door.seatOf(target); } catch (e) { return null; }
+}
+
+//  A SEAT -> where it sits in the URL's frame, or null when no page names it.
+function seatAt(pg, seat) {
   if (seat === null || seat.rels) return null;
   const w = pathIn(pg, seat.full);
   if (w === null || w.rel === "") return null;
@@ -232,10 +240,17 @@ function seatRel(pg, target) {
   return st === null ? null : { seat: seat, rel: w.rel, name: w.name, st: st };
 }
 
+function seatRel(pg, target) { return seatAt(pg, seatOf(pg, target)); }
+
 //  A dir opens in the browser, a file in `cat` anchored on the landed token —
 //  both under `/<repo>/<path>`, the form that needs no verb (ruling 2).
 function refResolve(pg, target) {
-  const s = seatRel(pg, target);
+  const seat = seatOf(pg, target);
+  //  BEE-012: a MULTI-HIT is bee saying "which one?", not "I do not know" — it
+  //  gets the chooser page, read in this page's own repo; a MISS stays plain.
+  if (seat !== null && seat.rels)
+    return "/" + pg.name + "/choose/" + escPath(target);
+  const s = seatAt(pg, seat);
   if (s === null) return "";
   if (s.st.kind === "dir") return "/" + s.name + "/" + escPath(s.rel) + "/";
   const b = anchorByte(pg, s.seat);
@@ -459,6 +474,24 @@ function handle(req, sock, st) {
     sendPage(sock, 404, "Not Found", "bee http",
              html.errorPage("bee http", "there is no /" + r.head + " page here"), only);
     return "404";
+  }
+  //  BEE-012: the chooser reads a REFERENCE, not a path, so it takes no
+  //  re-rooting and no rev — the door's own several-hits hunk IS the page.
+  if (r.verb === "choose") {
+    const pos = { repo: mount.root, path: "", anchor: "" };
+    let hunks = null;
+    try { hunks = st.door.openTarget(r.arg, pos); } catch (e) { hunks = null; }
+    if (hunks === null || !hunks.length) {
+      sendPage(sock, 404, "Not Found", "choose",
+               html.errorPage("choose", "nothing here answers to " + r.arg), only);
+      return "404";
+    }
+    const pg = { root: mount.root, name: mount.name, prefix: "", door: st.door,
+                 refs: new Map(), hunks: new Map(), left: REF_CAP, rev: "" };
+    const link = function (t) { return mnt.within(pos, function () { return urlOf(pg, t); }); };
+    sendPage(sock, 200, "OK", "choose " + r.arg,
+             html.page("choose " + r.arg, html.hunksHtml(hunks, link)), only);
+    return "200";
   }
   //  BEE-003: the verb runs IN THE REPO THAT HOLDS THE PATH — a submodule is an
   //  ordinary repo ([BEE-006]) addressed through its parent (ruling 5), so the

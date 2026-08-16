@@ -313,13 +313,18 @@ function resolvePartial(partial) {
     out.push({ rel: rel, full: real, repo: "" });
   };
   const mounts = mnt.mounts();
-  //  `///name/...` names its repo outright — the registry IS the mount table.
-  if (auth) {
-    const segs = refSegs(path);
+  //  BEE-011: the repo NAME then the path under its root — an exact descent, no
+  //  suffix match.  `///bee/x.js` spells it outright; `bee/x.js` reaches it below.
+  const named = function (segs) {
     const m = mnt.named(segs[0]);
-    if (m === null) return [];
+    if (m === null) return false;
     for (const rel of inMount(m, "/" + segs.slice(1).join("/"), true))
       add(m, rel === "" ? m.root : m.root + "/" + rel);
+    return true;
+  };
+  //  `///name/...` names its repo outright — the registry IS the mount table.
+  if (auth) {
+    if (!named(refSegs(path))) return [];
     return out;
   }
   //  1. the DIR OF THE FILE BEING READ — the leg that was missing.
@@ -344,6 +349,12 @@ function resolvePartial(partial) {
     if (self !== null && m.root === self.root) continue;
     for (const rel of inMount(m, path, anchored))
       add(m, rel === "" ? m.root : m.root + "/" + rel);
+  }
+  //  4. BEE-011: the PROJECT-PREFIXED reading, last — a plain partial that
+  //  answers keeps its answer, so no ref resolving today changes where it goes.
+  if (!out.length && !anchored) {
+    const segs = refSegs(path);
+    if (segs.length > 1) named(segs);
   }
   return out;
 }
