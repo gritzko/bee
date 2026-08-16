@@ -15,8 +15,9 @@ Layout: `index/` reads the index and the ODB, `view/` turns an arg into hunks
 over `wrap` + `theme`), `door.js` turns a target into a view, and `main.js`
 `pager.js` `http.js` `merge.js` `chat.js` are the apps.  The REPO is an axis of
 the target, not the cwd: `index/mount.js` reads `~/.config/bee/repos` as the
-mount table and carries the ambient `{repo, path, anchor}` a view reads in.  A
-TICKET CODE is a target like any other — `door.js` tries `ABC-123`, then
+mount table and carries the ambient `{repo, path, anchor}` a view reads in — a
+family of `git worktree` checkouts folds to ONE mount there.  A TICKET CODE is
+a target like any other — `door.js` tries `ABC-123`, then
 `.mkd` `.md` `.txt`, then `ABC-123/README.mkd` `README.md`, first hit wins —
 so a code clicks through to its ticket in any registered repo.
 
@@ -29,6 +30,7 @@ picks the sink, `--plain` (also what a pipe defaults to), `--color`, `--html`:
     BOTH passes, the commit walk and the tip-blob link scan, each off its own
     mark, both on the one summary line
      1. every INITIALISED submodule is indexed too, depth-first; an uninitialised one is skipped in words
+     2. inside a LINKED WORKTREE it registers the ORIGINAL — one repository is one line, and it says which
  -  `bee lindex [<target>]` — backlink suspects; lazy, tip blobs only
      1. bare: bring the LINK rows up to the tip, this repo only
      2. `<target>`: the paths that may link to a file or a ticket code, looked
@@ -57,7 +59,7 @@ picks the sink, `--plain` (also what a pipe defaults to), `--color`, `--html`:
      4. `/<repo>/bytes/<path>[?<rev>]` ships the file's raw bytes; a rendered image points there
      5. a SUBMODULE is served through its parent (`/quickjab/dog/abc/TCP.c`), never under a name of its own
  -  `bee install [<repo>]` — wire bee as the repo's git merge driver and pre-commit hook, list it in `~/.config/bee/repos`, index it
-     1. a LINKED WORKTREE is refused: a repo is known by its path
+     1. a LINKED WORKTREE is refused: a repo is known by its path (`bee index` redirects to the original instead)
      2. a SUBMODULE is an ordinary repo: each initialised one is registered, indexed and lindexed too
  -  `bee hook [<repo>]` — the pre-commit pass: fresh `file:line(:col)` refs in the staged text become `file:OFF:HASHLET` permalinks, re-staged
  -  `bee merge <base> <ours> <theirs> [-o <out>] [-p <path>]` — CRDT 3-way file merge

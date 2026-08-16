@@ -160,13 +160,6 @@ function attrAppend(gitdir, file) {
   writeBytes(file, utf8.Encode(old + ATTR_LINE + "\n"));
 }
 
-//  BEE-001: a LINKED WORKTREE carries `<gitdir>/commondir` and nothing else
-//  does — a plain fs probe, no parsing.
-function linkedWorktree(gitdir) {
-  try { return io.stat(gitdir + "/commondir").kind === "reg"; }
-  catch (e) { return false; }
-}
-
 //  install(repoArg) -> a one-line report.  The repo resolves exactly as
 //  `bee index` resolves it (a root, a `.git` dir or a gitfile; the cwd by
 //  default).  BEE-001: install OWNS the bring-up — the driver definition
@@ -192,10 +185,13 @@ function install(repoArg) {
   finally { idx.closeRepo(ctx); }
   //  BEE-001: bee names a repo BY ITS PATH, and a linked worktree is a second
   //  path over one history — so it is refused, in those words.
-  if (linkedWorktree(gitdir))
+  //  BEE-009: `index` REDIRECTS instead — install is the verb you TYPE, and a
+  //  typed repo that is not the one bee would take is worth a word.
+  if (idx.linkedWorktree(gitdir))
     throw "install: " + root + " is a linked worktree — bee knows a repo by " +
           "its path, and a worktree is a second path over one history; " +
-          "install the main worktree instead";
+          "install the main worktree instead (" +
+          (idx.origin(gitdir) || "the one `commondir` names") + ")";
 
   const cmd = selfPath() + " merge %O %A %B -o %A -p %P";
   //  `--fixed-value` compares the stored value BYTE for byte, so no pattern of

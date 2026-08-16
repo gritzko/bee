@@ -8,7 +8,8 @@
 //  repo ([BEE-006]) but not a second name — it is addressed THROUGH its parent
 //  (`/quickjab/dog/abc/TCP.c`, ruling 5), so it carries the parent's name plus
 //  the `prefix` it sits at, and its own registry line (install registers one)
-//  only REDIRECTS to that canonical form.
+//  only REDIRECTS to that canonical form.  A family of `git worktree` checkouts
+//  is ONE mount too ([BEE-009]) — a legacy line naming a linked one is folded.
 //
 //  THE AMBIENT `{repo, path, anchor}` — where a run, a request or a view is
 //  positioned.  The process cwd is no longer the repo: it is only the default
@@ -37,28 +38,53 @@ function under(outer, inner) {
          inner.slice(0, outer.length + 1) === outer + "/";
 }
 
+//  Does `root` HOLD the path `p` (itself included)?
+function holds(root, p) { return p === root || under(root, p); }
+
+//  BEE-009: a legacy line naming a LINKED WORKTREE must stop competing in the
+//  fan-out — a family folds to ONE, and the user's file is never rewritten.
+function fold(lines) {
+  const here = at();
+  const fam = new Map(), out = [];
+  for (const root of lines) {
+    const key = idx.mainOf(root);
+    const e = fam.get(key);
+    //  The ambient checkout when the reader stands in one, else the first line;
+    //  the NAME stays that line's, so `///bee` names the repo from `bee2` too.
+    if (e === undefined) {
+      const n = { name: basename(root), root: root };
+      fam.set(key, n); out.push(n);
+    } else if (holds(root, here) && !holds(e.root, here)) e.root = root;
+  }
+  return out;
+}
+
 //  BEE-003: the registry as a mount table.  Lines are realpath'd (a symlinked
 //  line and its target are ONE repo, and `/home/gritzko/src/bee/bee` is a
 //  symlink to its own root) and deduped; a line lying inside another becomes
 //  that one's SUB mount, addressed through it.
 //  -> [{ name, root, prefix, own, top, dup }], registry order.
 function list(home) {
-  const roots = [], seen = new Set();
+  const lines = [], seen = new Set();
   for (const line of idx.repos(home)) {
     let real = line;
     try { real = io.realpath(line); } catch (e) { real = line; }
     if (seen.has(real)) continue;
     seen.add(real);
-    roots.push(real);
+    lines.push(real);
   }
+  const fam = fold(lines), roots = fam.map(function (e) { return e.root; });
   const out = [], named = new Set();
-  for (const root of roots) {
-    let top = null;                                // the OUTERMOST line above it
-    for (const o of roots) if (under(o, root) && (top === null || o.length < top.length)) top = o;
+  for (let i = 0; i < fam.length; i++) {
+    const root = fam[i].root;
+    let top = null, topName = null;                // the OUTERMOST line above it
+    for (let j = 0; j < roots.length; j++)
+      if (under(roots[j], root) && (top === null || roots[j].length < top.length))
+        { top = roots[j]; topName = fam[j].name; }
     const own = basename(root);
     const m = top === null
-      ? { name: own, root: root, prefix: "", own: own, top: root, dup: false }
-      : { name: basename(top), root: root, prefix: root.slice(top.length + 1),
+      ? { name: fam[i].name, root: root, prefix: "", own: own, top: root, dup: false }
+      : { name: topName, root: root, prefix: root.slice(top.length + 1),
           own: own, top: top, dup: false };
     //  RULED OPEN (ruling 6): the basename IS the name.  A second line claiming
     //  a taken name is not reachable by it — no disambiguator is invented here.

@@ -806,6 +806,48 @@ function discover(from) {
   }
 }
 
+//  BEE-001: a LINKED WORKTREE carries `<gitdir>/commondir` and nothing else
+//  does — a plain fs probe, no parsing.  Both doors read it from here.
+function linkedWorktree(gitdir) {
+  try { return io.stat(gitdir + "/commondir").kind === "reg"; }
+  catch (e) { return false; }
+}
+
+//  BEE-009: the gitdir a worktree ROOT keeps — a plain `.git` dir, or the path
+//  a GITFILE names (a linked worktree, a submodule).  null = no repo there.
+function gitdirOf(root) {
+  const p = root + "/.git";
+  let kind = null;
+  try { kind = io.stat(p).kind; } catch (e) { return null; }
+  if (kind === "dir") return p;
+  if (kind !== "reg") return null;
+  const t = readText(p);
+  if (t === null) return null;
+  const i = t.indexOf("gitdir:");
+  if (i < 0) return null;
+  const d = t.slice(i + 7).trim();
+  return d === "" ? null : (d[0] === "/" ? d : root + "/" + d);
+}
+
+//  BEE-009: the ORIGINAL a linked worktree is a second path to — `commondir`
+//  (index/refs.js) minus its `/.git`.  null = a main worktree or a submodule.
+function origin(gitdir) {
+  if (gitdir === null || !linkedWorktree(gitdir)) return null;
+  let c = refs.commonDir(gitdir);
+  try { c = io.realpath(c); } catch (e) { return null; }
+  if (c.length <= 5 || c.slice(-5) !== "/.git") return null;
+  const root = c.slice(0, -5);
+  try { return io.stat(root + "/.git").kind === "dir" ? root : null; }
+  catch (e) { return null; }
+}
+
+//  BEE-009: the MAIN worktree a path is a checkout of — itself when it is one,
+//  or is no repo at all.  The registry's identity, one line per repository.
+function mainOf(root) {
+  const o = origin(gitdirOf(root));
+  return o === null ? root : o;
+}
+
 //  openRepo(arg) -> { h, repo, gitdir, root, head, reader }.  `root` is the
 //  worktree the paths in the index are relative to (the gitdir's parent for a
 //  plain `.git`, else the path we opened).  The caller closes with closeRepo.
@@ -918,10 +960,13 @@ function bringUp(ctx, ix, opts) {
   const tip = (opts.tip && opts.tip !== hd.sha) ? opts.tip : hd.sha;
   const bare = tip !== hd.sha;
   const rec = { repo: ctx.repo, gitdir: ctx.gitdir, ref: bare ? tip : hd.ref,
-                tip: tip, tracks: null, tracked: false, upToDate: false,
-                commits: 0, revs: 0, rows: 0 };
+                tip: tip, tracks: null, tracked: false, origin: null,
+                upToDate: false, commits: 0, revs: 0, rows: 0 };
   if (opts.track !== false) {
-    const t = track(ctx.repo, opts.home);
+    //  BEE-009: a linked worktree is a second path over one history, so the
+    //  line is the ORIGINAL's — [BEE-001]: bee knows a repo by its path.
+    rec.origin = origin(ctx.gitdir);
+    const t = track(rec.origin || ctx.repo, opts.home);
     rec.tracks = t.file; rec.tracked = t.added;
   }
   const refHl = bare ? hlOfSha(tip) : hlOfText(hd.ref);
@@ -1068,7 +1113,8 @@ function summary(rec) {
 //  BEE-006: what the recursion took and what it passed over, as a tail phrase —
 //  a skip is said in words on the ONE line, never a failure of this run.
 function subsSaid(rec) {
-  let s = "";
+  //  BEE-009: a run inside a linked worktree took the ORIGINAL, and says so.
+  let s = rec.origin ? ", registered " + rec.origin : "";
   const n = (rec.subs || []).length;
   if (n) s += ", took " + n + " submodule" + (n === 1 ? "" : "s");
   for (const w of (rec.skipped || [])) s += ", skipped " + w;
@@ -1082,6 +1128,8 @@ module.exports = {
   index: index, summary: summary, track: track, repos: repos,
   openIndex: openIndex, sweep: sweep,
   discover: discover, openRepo: openRepo, closeRepo: closeRepo,
+  //  BEE-009: the linked-worktree tell and the ORIGINAL both doors take.
+  linkedWorktree: linkedWorktree, origin: origin, mainOf: mainOf,
   //  BEE-006: the gitlink half — the walk, the sub list and the dir-rev source.
   subTree: subTree, subPaths: subPaths, submodulePaths: submodulePaths,
   subAt: subAt, subRevs: subRevs, submodules: submodules, subsSaid: subsSaid,
