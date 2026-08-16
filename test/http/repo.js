@@ -63,16 +63,18 @@ const local = rows(W + "/home/ref.c", "q.txt");
 check("a same-named local file still answers first",
       local !== null && local.length === 1 && local[0].full === W + "/home/q.txt", one(local));
 
-//  --- the anchored spellings -------------------------------------------------
-//  A leading `/` is another repo's ROOT, so it never suffix-matches; `///name`
-//  names the repo outright, the registry being the mount table.
+//  --- the slash-headed spellings ---------------------------------------------
+//  BEE-013: a leading `/` LIKELY means that repo's root, but nothing assumes
+//  it — the SEGMENTS are what is looked up (gritzko's ruling 2026-08-16), so a
+//  ref that heads with a repo NAME (`/quickjab/dog/abc/TCP.c`) is bogus as a
+//  root path and answers anyway.  `///name` still names the repo outright.
 const anch = rows(W + "/home/ref.c", "/dog/abc/TCP.c");
-check("a root-absolute ref is anchored at a repo root",
+check("a root-absolute ref answers from a repo root",
       anch !== null && anch.length === 1 && anch[0].repo === "quick" &&
       anch[0].rel === "dog/abc/TCP.c", one(anch));
 const notail = rows(W + "/home/ref.c", "/near.txt");
-check("...and it does NOT match a deeper same-named file",
-      notail !== null && notail.length === 0, one(notail));
+check("...and a deeper same-named file IS a candidate (segments, not a root)",
+      notail !== null && notail.length === 2, one(notail));
 const auth = rows(W + "/home/ref.c", "///quick/q.txt");
 check("`///name` resolves through the registry",
       auth !== null && auth.length === 1 && auth[0].full === W + "/quick/q.txt", one(auth));

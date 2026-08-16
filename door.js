@@ -222,11 +222,31 @@ function ticketPaths(partial) {
   return out;
 }
 
+//  BEE-013: a SLASH-HEADED ref is a POCKET PAGE — `[/wiki/Bro]`, `[/meta/todo]`
+//  ([/meta/wiki]: a page is linked bare).  The name carries no extension,
+//  exactly as a ticket code carries none, so the SAME six spellings apply: a
+//  thin page is `Page.mkd`, a fat one `Page/README.mkd`.  DOG-042 fuses the
+//  token; this is that ruling on the resolving side.
+//  The slash is DROPPED and the segments are looked up like any other ref's:
+//  a leading slash likely means that repo's root, but we do not assume it —
+//  we look for such a file (gritzko's ruling 2026-08-16), so a wiki parked
+//  under `docs/wiki/` answers `/wiki/Page` as readily as one at the root.
+function pagePaths(partial) {
+  const s = String(partial);
+  const bare = s.charAt(0) === "/" ? s.slice(1) : s;
+  const out = [];
+  for (const p of TICKET_SPELLINGS) out.push(bare + p);
+  return out;
+}
+
 //  A ref -> the spellings to TRY, in order: one for an ordinary path, six for a
-//  ticket code.  Every leg that resolves a partial runs this one scan.
+//  ticket code, six for a pocket page.  Every leg that resolves a partial runs
+//  this one scan, so the slash is read in ONE place.
 function refSpellings(partial) {
-  const t = ticketPaths(partial);
-  return t === null ? [String(partial)] : t;
+  const s = String(partial);
+  if (s.charAt(0) === "/") return pagePaths(s);
+  const t = ticketPaths(s);
+  return t === null ? [s] : t;
 }
 
 //  BEE-003: ONE mount's answer, repo-relative paths.  The lookup is FSEG
@@ -290,7 +310,9 @@ function resolvePartial(partial) {
   const idx = require("index/index.js");
   const path = refNorm(partial);                 // BEE-003: the `..` climb, once
   const auth = path.slice(0, 3) === "///";       // `///bee/x.js`: the repo NAMED
-  const anchored = path.charAt(0) === "/";       // another repo's ROOT
+  //  BEE-013: a slash-headed ref is a POCKET PAGE, resolved by its SEGMENTS
+  //  like any other ref — only `///name` (auth) descends a repo root exactly.
+  const page = !auth && path.charAt(0) === "/";
   const out = [], seen = new Set();
   //  A row is `{ rel, full, repo }`: the CANONICAL spelling when a registered
   //  repo holds it — its name plus the path under that repo's root, so a
@@ -330,31 +352,51 @@ function resolvePartial(partial) {
   //  1. the DIR OF THE FILE BEING READ — the leg that was missing.
   //  BEE-008: the ticket spellings here are plain stats, first hit wins.
   const here = mnt.dir();
-  if (!anchored && here !== null) for (const t of refSpellings(path))
+  if (here !== null) for (const t of refSpellings(path))
     if (statOf(here + "/" + t) !== null) { add(null, here + "/" + t); break; }
   if (out.length) return out;
   //  2. the ambient repo at HEAD, with its own mount prefix.
   const root = idx.discover(mnt.at());
-  if (root === null && !anchored) return null;   // no repo: the caller fs-scans
+  if (root === null && !page) return null;       // no repo: the caller fs-scans
   let self = null;
   if (root !== null) {
     for (const m of mounts) if (m.root === root) { self = m; break; }
     if (self === null) self = { name: mnt.basename(root), root: root, prefix: "" };
-    for (const rel of inMount(self, path, anchored, true))
+    for (const rel of inMount(self, path, false, true))
       add(self, rel === "" ? self.root : self.root + "/" + rel);
     if (out.length) return out;
   }
   //  3. every registered repo, submodules recursed.
   for (const m of mounts) {
     if (self !== null && m.root === self.root) continue;
-    for (const rel of inMount(m, path, anchored))
+    for (const rel of inMount(m, path, false))
       add(m, rel === "" ? m.root : m.root + "/" + rel);
   }
   //  4. BEE-011: the PROJECT-PREFIXED reading, last — a plain partial that
   //  answers keeps its answer, so no ref resolving today changes where it goes.
-  if (!out.length && !anchored) {
+  if (!out.length && !page) {
     const segs = refSegs(path);
     if (segs.length > 1) named(segs);
+  }
+  //  5. BEE-013: PEEL THE HEAD.  A ref may carry leading segments that name
+  //  nothing in any tree — a repo name, a project dir, a `public_html`, a
+  //  submodule spelled from its parent — and we do not know what counts as a
+  //  ROOT in any given context (gritzko's ruling 2026-08-16), so we assume
+  //  none: drop one leading segment at a time and take the first TAIL that
+  //  answers.  `/quickjab/dog/abc/TCP.c` is bogus as a path and opens anyway.
+  //  Last of all, and only on a total miss, so nothing that resolves today
+  //  moves; the page-ness rides along, so a peeled page keeps its spellings.
+  //  The tail keeps at least TWO segments: a bare basename is too weak to
+  //  vouch for a head nobody recognised, and peeling down to one would revive
+  //  every dead climb (`../nowhere/q.txt` must stay dead) and turn a unique
+  //  miss into a chooser full of same-named files.
+  if (!out.length) {
+    const segs = refSegs(path);
+    const head = page ? "/" : "";
+    for (let i = 1; i + 1 < segs.length; i++) {
+      const sub = resolvePartial(head + segs.slice(i).join("/"));
+      if (sub !== null && sub.length) return sub;
+    }
   }
   return out;
 }
@@ -462,5 +504,6 @@ module.exports = {
   posOf: posOf, refusal: refusal, resolvePartial: resolvePartial,
   //  BEE-008: a ticket code is a stem — the one scan every leg resolves by.
   ticketCode: ticketCode, ticketPaths: ticketPaths, refSpellings: refSpellings,
+  pagePaths: pagePaths,                  // BEE-013: a pocket page's spellings
   refNorm: refNorm,
 };

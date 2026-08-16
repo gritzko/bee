@@ -123,6 +123,18 @@ mkdir -p "$TKTREPO"
   printf '#   TKT-007: one of two\n'                              > todo/TKT/TKT-007.mkd
   printf '#   TKT-007: the other\n'                               > todo/OTH/TKT-007.mkd
   printf '#   TKT-009: a README.md ticket\n'                      > todo/TKT/TKT-009/README.md
+  # BEE-013: the POCKET-PAGE fixture — a wiki laid out the [/meta/wiki] way,
+  # so a `/wiki/Page` ref has every spelling to choose between.  `docs/wiki/`
+  # is the one that pins SEGMENTS, not a root: it answers `/wiki/Deep` while
+  # sitting nowhere near the repo root.
+  mkdir -p wiki/Fat meta docs/wiki
+  printf '#   Bro\n\nthe pager page BROMARK\n'                    > wiki/Bro.mkd
+  printf '#   Nav\n'                                              > wiki/Nav.md
+  printf '#   Fat\n\nthe dir-shaped page\n'                       > wiki/Fat/README.mkd
+  printf '#   Both: the .mkd that wins\n'                         > wiki/Both.mkd
+  printf '#   Both: the .md that loses\n'                         > wiki/Both.md
+  printf 'the tickets page\n'                                     > meta/todo.mkd
+  printf '#   Deep: not at the root at all\n'                     > docs/wiki/Deep.mkd
   git add -A
   GIT_AUTHOR_DATE="2020-03-01T00:00:00Z" GIT_COMMITTER_DATE="2020-03-01T00:00:00Z" \
     git commit -q -m "t0 every spelling a ticket takes" || exit 1
@@ -139,3 +151,16 @@ if [ "$RC" != 0 ]; then
     exit 1
 fi
 echo "PASS [bee/ticket] runtime $RT"
+
+# --- BEE-013: the pocket-page leg, over the SAME fixture repo --------------
+( cd "$TKTREPO" && HOME="$FAKEHOME" \
+  "$RT" --eval "require('$CASE/page.js')" ) > "$WORK/p.out" 2>"$WORK/p.err"
+RC=$?
+cat "$WORK/p.out"
+if [ "$RC" != 0 ]; then
+    FAILED=1
+    echo "--- stderr ---"; cat "$WORK/p.err"
+    echo "FAIL [bee/page]" >&2
+    exit 1
+fi
+echo "PASS [bee/page] runtime $RT"

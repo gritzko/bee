@@ -1,21 +1,11 @@
-//  merge.js — LITE-014: the git MERGE DRIVER and the wiring that points
-//  git at it.  Two verbs, one feature:
-//
-//    bee merge <base> <ours> <theirs> [-o <out>] [-p <path>]
-//    bee install [<repo>]
-//
-//  git calls a custom driver per file that changed on BOTH sides: `%O %A %B`
-//  are temp files (base / ours / theirs), the result goes over `%A`, and the
-//  EXIT CODE says clean (0) or conflicted (non-zero).  The temps carry junk
-//  names, so the tokenizer's extension comes from `%P` — the real repo path.
-//
-//  DIS-080/PATCH-025: a conflict writes the MARKERLESS woven bytes (both sides'
-//  tokens in RGA order, NO `<<<<`/`====`/`>>>>` fences) and exits non-zero.
-//  git then flags the path unmerged and the user resolves in the worktree; a
-//  `git mergetool` finds no fences, which is the design, not a defect.
-//
-//  Exit is by THROW, as everywhere in bee: the runtime maps an uncaught throw
-//  to exit 1, and 1 is exactly what git reads as "conflict".
+//  merge.js — LITE-014: the git merge driver (`bee merge <base> <ours> <theirs>
+//  [-o <out>] [-p <path>]`) and the wiring that points git at it (`bee install
+//  [<repo>]`).  git calls the driver per file changed on both sides with `%O %A
+//  %B` temp files, the result goes over `%A`, the exit code says clean (0) or
+//  conflicted; `%P` names the real path, hence the tokenizer's extension.  A
+//  conflict writes markerless woven bytes (index/weave.js; DIS-080, PATCH-025)
+//  and exits non-zero by throw — the runtime maps an uncaught throw to exit 1,
+//  which git reads as "conflict".  install: BEE-001, LITE-026 (the hook).
 "use strict";
 
 const wv = require("index/weave.js");
@@ -60,10 +50,9 @@ function run(argv) {
 
 //  --- the fallback ----------------------------------------------------------
 //  weave3 said null (binary, or over the 4 MB source cap): hand the three files
-//  to git's OWN text merge rather than pick a side.  `git merge-file` merges IN
-//  PLACE over its first argument, which is what the driver contract wants, so
-//  the ours bytes go to `out` first when out is not the ours file itself.
-//  It exits with the conflict count (or negative, i.e. 255, on a real error).
+//  to git's own text merge rather than pick a side.  `git merge-file` merges in
+//  place over its first argument, so the ours bytes go to `out` first when out
+//  is not the ours file; it exits with the conflict count (255 on a real error).
 function gitMergeFile(base, ours, theirs, out, oursBytes, path) {
   if (out !== ours) writeBytes(out, oursBytes);
   const argv = ["git", "merge-file"];
@@ -149,6 +138,7 @@ function attrInstalled(file) {
   return false;
 }
 
+//  Append ATTR_LINE to `.git/info/attributes`, creating `info/` and the file.
 function attrAppend(gitdir, file) {
   try { io.mkdir(gitdir + "/info"); } catch (e) {}      // already there is fine
   let old = "";
@@ -160,33 +150,26 @@ function attrAppend(gitdir, file) {
   writeBytes(file, utf8.Encode(old + ATTR_LINE + "\n"));
 }
 
-//  install(repoArg) -> a one-line report.  The repo resolves exactly as
-//  `bee index` resolves it (a root, a `.git` dir or a gitfile; the cwd by
-//  default).  BEE-001: install OWNS the bring-up — the driver definition
-//  through `git config` (git NEVER reads driver commands from a tracked file),
-//  the pattern line in `.git/info/attributes`, the pre-commit hook, the repo's
-//  path in `$HOME/.config/bee/repos`, then `index` and `lindex`.  Every step is
-//  idempotent, so a reinstall writes nothing and says so.
+//  install(repoArg) -> a one-line report.  BEE-001: install owns the bring-up —
+//  the driver via `git config` (git never reads driver commands from a tracked
+//  file), the `.git/info/attributes` line, the pre-commit hook, the repo path in
+//  `$HOME/.config/bee/repos`, then `index`.  Idempotent: a reinstall says so.
 function install(repoArg) {
   const idx = require("index/index.js");
   const arg = repoArg === undefined ? io.cwd() : repoArg;
   let ctx = null;
   try { ctx = idx.openRepo(arg); }
   catch (e) {
-    //  LITE-026: a repo with NO COMMITS YET is wired all the same — a fresh
-    //  `git init` is exactly when you install, and the hook mints on the very
-    //  first commit.  openRepo's HEAD gate is right for the read verbs and is
-    //  left as it is; hook.js owns the HEAD-less handle.
+    //  LITE-026: a repo with no commits yet is wired all the same (a fresh `git
+    //  init` is when you install); hook.js owns the HEAD-less handle.
     ctx = require("index/hook.js").openUnborn(arg);
     if (ctx === null) throw e;
   }
   let root, gitdir, unborn;
   try { root = ctx.root; gitdir = ctx.gitdir; unborn = ctx.head === null; }
   finally { idx.closeRepo(ctx); }
-  //  BEE-001: bee names a repo BY ITS PATH, and a linked worktree is a second
-  //  path over one history — so it is refused, in those words.
-  //  BEE-009: `index` REDIRECTS instead — install is the verb you TYPE, and a
-  //  typed repo that is not the one bee would take is worth a word.
+  //  BEE-001/BEE-009: bee names a repo by its path, a linked worktree is a second
+  //  path over one history — `index` redirects to the original, install refuses.
   if (idx.linkedWorktree(gitdir))
     throw "install: " + root + " is a linked worktree — bee knows a repo by " +
           "its path, and a worktree is a second path over one history; " +
@@ -219,12 +202,10 @@ function install(repoArg) {
          " — " + broughtUp(idx, root, unborn);
 }
 
-//  BEE-001: the index half of the bring-up, as a phrase for the report line.
-//  A repo with NO COMMITS has nothing to index and says so (LITE-026).
-//  BEE-007: ONE call does both halves now — `index` carries the link record.
-//  BEE-006: it also recursed depth-first into every initialised submodule (with
-//  the registry off), so each sub is REGISTERED here and the line says what was
-//  taken and what was passed over.
+//  BEE-001: the index half of the bring-up, as a phrase for the report line; no
+//  commits = nothing to index (LITE-026).  BEE-007: one `index` call carries the
+//  link record too; BEE-006: it recursed into every initialised submodule with
+//  the registry off, so each sub is registered here and the line says which.
 function broughtUp(idx, root, unborn) {
   if (unborn) return "no commits to index yet";
   const rec = idx.index(root, { track: false });

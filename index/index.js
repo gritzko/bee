@@ -1,75 +1,11 @@
-//  index/index.js — LITE-006: `quickjab index <repo>`, the LAZY, COMMIT-BASED
-//  blob<->path index a git repo keeps in its OWN `<repo>/.git/be/`.
-//
-//  Everything in `.git/be/` is DERIVED: `rm -rf` it and the next run rebuilds
-//  it from the ODB.  Registered repos are listed in `$HOME/.config/bee/repos`
-//  (BEE-001), a plain list of absolute worktree paths — `bee install` writes it.
-//
-//  ONE unified wh128 run family (`abc.index("wh128", …)` = a dog Pup stack).
-//  Six record kinds, the kind nibble in the LOW 4 bits of the key; `path_hl` is
-//  the TOP 40 bits of the path's hashlet, blob/commit/ref hashlets are ALWAYS
-//  the full 60; `rev` is a per-path arrival-local 20-bit counter.
-//
-//    1. REV-BLOB  key = path_hl:40|rev:20|BLOB  val = blob_hl:60|vnib:4
-//    2. REV-CMMT  key = path_hl:40|rev:20|CMMT  val = commit_hl:60|vnib:4
-//    3. REV-PARS  key = path_hl:40|rev:20|PARS  val = par1:20|par2:20|par3:20|vnib:4
-//    4. CPAR      key = commit_hl:60|CPAR       val = parent_hl:60|ord:4
-//    5. B2P       key = blob_hl:60|B2P          val = path_hl:40|rev:20|vnib:4
-//    6. FSEG      key = fn_hl:40|prnt_hl:20|FSEG  val = seg0..seg5:10 each|depth:4
-//    7. LINK      key = fn_hl:40|par:20|LINK     val = src path_hl:40|gpar:20|vnib:4
-//    8. MARK      key = ref_hl:60|MARK          val = tip commit_hl:60|vnib:4
-//
-//  LINK (LITE-033, index/lindex.js) is the one kind this file does not write:
-//  it is a separate, equally lazy round over the TIP blobs, and it rides the
-//  same index so `rm -rf .git/be` still rebuilds everything.  BEE-002 keys it on
-//  the TARGET's own segment hashlets, so the indexing ORDER cannot change a key.
-//  BEE-007: `index()` RUNS that round too — one verb, two marks.  The VERB folds,
-//  the PASSES do not: each half keeps its own O(1) no-op, and `bringUp` stays the
-//  commit half alone, so a read view (`log`/`list`/`commit`) never lexes a blob.
-//
-//  LITE-044: a changed DIR gets a rev too — ONE REV-CMMT row on the DIR PATH's
-//  own `path_hl`, so `lite list` reads a dir's last commit off the index exactly
-//  the way it reads a file's, at any depth and with no ancestry walk.  A dir
-//  mints nothing else: REV-BLOB/REV-PARS/B2P/FSEG all describe a FILE's content
-//  or a FILE's name, and a subtree sha is neither.
-//  A hot dir changes in most commits, so its rev chain is as long as the
-//  HISTORY — reading it whole would undo LITE-028.  Both the indexer and the
-//  fuse therefore take its LAST rev alone, by galloping exact-key probes over
-//  the dense chain (`lastRev`): O(log) seeks, never O(history) rows.
-//
-//  BEE-006: a SUBMODULE is an ordinary repo — `index` and `install` RECURSE
-//  into every initialised one (depth-first, `$HOME/.config/bee/repos` and an index
-//  of its own), an uninitialised or out-of-worktree one is skipped in words, and
-//  a cycle stops at the first repo already taken.  The parent keeps only the
-//  gitlink's own history: a commit that BUMPS the pointer mints ONE dir-shaped
-//  REV-CMMT row on the sub's path, never a REV-BLOB — a foreign commit is no
-//  blob of ours, which is why `readTree` drops gitlinks in the first place.
-//
-//  `vnib` is RESERVED (0) everywhere the ruled table does not name a field;
-//  CPAR's low nibble is the parent ordinal (first parent = 0), and a ROOT
-//  commit's CPAR row carries an EMPTY parent slot (all-ones, the same "empty
-//  slot" spelling REV-PARS uses).  One file's log is ONE prefix scan of its
-//  `path_hl`: the rows come back rev-ordered oldest-first, each rev naming its
-//  blob, its commit and its parent revs — what CFOLD weave folding consumes,
-//  with no ODB walk at query time.
-//
-//  THE LAZY CONTRACT (ruling 2026-08-13: PRESENCE is the boundary, and there
-//  is no walk ceiling at all).
-//   1. the tip is already this ref's MARK -> no-op, without even a scan;
-//   2. else the index is asked, by KEY, whether it holds a given commit (its
-//      CPAR rows) and what state a given path has arrived at (LITE-028);
-//   3. walk UP from the tip, never entering a commit in that set.  So each run
-//      indexes exactly the commits no run has indexed yet: a history of ANY
-//      size converges over successive runs, an INTERRUPTED run keeps every
-//      commit it sealed, and a rebase needs no special case (the rewritten
-//      commits are simply not in the index, so they are what gets walked);
-//   4. per commit the rev rows go in FIRST and the CPAR rows LAST, because a
-//      seal persists a PREFIX of what was put — so a CPAR row on disk proves
-//      the commit's rev rows are on disk too, and a kill between them costs a
-//      redundant re-walk, never a commit stranded behind a lying boundary;
-//   5. data rows are never deleted and re-puts are idempotent: a re-derived
-//      rev finds its own (path, blob, commit) triple and writes nothing;
-//   6. the MARK row is the run's LAST write (DOG-027).
+//  index/index.js as per LITE-006: the lazy, commit-based blob<->path index a repo
+//  keeps in its own `<gitdir>/be/` (derived: `rm -rf` it, the next run rebuilds
+//  it from the ODB).  One wh128 run family, eight record kinds keyed by
+//  hashlets — the record table is LITE-006:17, the lazy contract (presence is
+//  the walk boundary, rev rows first and CPAR last per commit, MARK last per
+//  run) LITE-006:53.  Keyed O(1) reads: LITE-028:39; dir revs: LITE-044:42;
+//  submodules: BEE-006:42; LINK rows: index/lindex.js (LITE-033, BEE-002:29,
+//  BEE-007:10).  Registry `$HOME/.config/bee/repos`: BEE-001:25.
 "use strict";
 
 const refs = require("./refs.js");
@@ -77,13 +13,11 @@ const isSha40 = refs.isSha40;
 
 //  The run family lives in the repo's own gitdir.
 const IDX_DIR = "be";
-//  BEE-002: the index FORMAT is its extension — the re-keyed LINK rows share the
+//  BEE-002:115: the index format is its extension — re-keyed LINK rows share the
 //  key space with the old ones, so `.lite.idx` retires and `openIndex` sweeps it.
 const IDX_EXT = ".lite2.idx";
-//  DOG-032: the INITIAL derive alone opens a big memtable (64Ki wh128 rows =
-//  1 MB) and seals lazily — an incremental run puts a handful of rows and keeps
-//  the one-page durable default.  The magic 200-row batch is gone: the batch IS
-//  the memtable (`ix.mem` rows), so a commit never lands mid-page.
+//  DOG-032:38: the initial derive alone opens a 64Ki-row memtable, seals lazily;
+//  the batch is the memtable (`ix.mem`), so a commit never lands mid-page.
 const IDX_BULK_ROWS = 1 << 16;
 //  Parsed trees held per run (a tree is immutable, so this only ever hits).
 const TREE_CACHE_MAX = 1 << 14;
@@ -96,12 +30,8 @@ const REV_BITS = 20n, PHL_BITS = 40n;
 const REV_MAX = (1n << REV_BITS) - 1n;          // also the empty PARS slot
 const PHL_MASK = (1n << PHL_BITS) - 1n;
 const HL60_MASK = (1n << 60n) - 1n;
-//  Ruling 2026-08-13: the walk stops at commits already in the index, so EVERY
-//  indexed commit must carry a row that says so — and a ROOT commit has no
-//  parent to hang a CPAR row on.  It gets ONE CPAR row with an EMPTY parent
-//  slot, all-ones, which is the ruled table's own vocabulary for an empty slot
-//  (REV-PARS: "empty slot = all-ones").  No new kind, no new record: a CPAR
-//  row means "this commit is indexed", and its parent slot may be empty.
+//  LITE-006:54, the root-commit wrinkle: a CPAR row means "this commit is
+//  indexed", so a root commit gets one with an empty (all-ones) parent slot.
 const CPAR_NONE = HL60_MASK;
 
 //  path_hl:40 | rev:20 | kind:4
@@ -119,11 +49,9 @@ function parsVal(p) {
   return (s[0] << 44n) | (s[1] << 24n) | (s[2] << 4n);
 }
 //  --- LITE-011: FSEG, the partial-path record -------------------------------
-//  key = fn_hl:40 | prnt_hl:20 | 6, val = seg0..seg5:10 each ROOT-FIRST | vnib:4.
-//  The val is a pure function of the path TEXT — no rev, no commit, no blob —
-//  so a row is minted once, re-puts are byte-identical, and nothing invalidates
-//  it: it describes a NAME, not a content state.  ROOT-FIRST is load-bearing,
-//  it anchors index/resolve.js's descent at the root tree.
+//  key = fn_hl:40 | prnt_hl:20 | 6, val = seg0..seg5:10 each root-first | vnib:4.
+//  LITE-011:30: a pure function of the path text (a name, not a content state),
+//  minted once, never invalidated; root-first anchors resolve.js (LITE-011:31).
 const SEG_SLOTS = 6;                              // the val holds the TOP six
 const DEPTH_MAX = 15;                             // vnib is 4 bits
 const SEG_MASK = (1n << 10n) - 1n;
@@ -190,14 +118,9 @@ function readText(path) {
   } catch (e) { return null; }
 }
 
-//  BEE-001: append `repo` to `$HOME/.config/bee/repos`, deduped ON READ — one
-//  absolute worktree path per line, no other column.  The list is a handful of
-//  lines, so the append is a read-modify-write of the whole file.
-//  The retired `$HOME/.config/be/tracks` SEEDS the new file once, when the new
-//  one is absent; writing it is what retires the old one for good.
-//  Returns { file, added }.
-//  BEE-002: the registered worktree paths, deduped ON READ, file order — what a
-//  cross-repo query fans out over.  The retired `tracks` file still seeds it.
+//  BEE-001:25/BEE-002:29: the registered worktree paths, one per line, deduped
+//  on read, file order — what a cross-repo query fans out over.  The retired
+//  `$HOME/.config/be/tracks` seeds the list while the new file is absent.
 function repos(home) {
   home = home || io.getenv("HOME");
   if (!home) return [];
@@ -211,6 +134,8 @@ function repos(home) {
   return out;
 }
 
+//  BEE-001: append `repo` to `$HOME/.config/bee/repos` (a read-modify-write of
+//  the whole short file) -> { file, added }; writing it retires `tracks` for good.
 function track(repo, home) {
   home = home || io.getenv("HOME");
   if (!home) throw "index: there is no HOME, so there is no repo list";
@@ -323,8 +248,8 @@ function subAt(r, tree, path) {
   return sha === undefined ? null : sha;
 }
 
-//  A commit that BUMPED a gitlink gets ONE DIR REV on the sub's path (LITE-044's
-//  shape): dog/git's tree diff drops gitlinks, so the compare is here.
+//  BEE-006:45: a commit that BUMPED a gitlink gets ONE DIR REV on the sub's path;
+//  BEE-006:54: dog/git's tree diff drops gitlinks, so the compare is here.
 function subRevs(r, subs, tree, pTrees, out) {
   for (const s of subs) {
     const now = subAt(r, tree, s.path);
@@ -379,14 +304,10 @@ function identTs(ident) {
 }
 
 //  --- the index handle ------------------------------------------------------
-//  `abc.index` io.mkdir()s its dir, so the family CREATES `<gitdir>/be` — that
-//  directory is derived state this verb owns, never a store to be conjured.
-//  DOG-032: `bulk` opens the from-scratch derive's handle — a 1 MB memtable and
-//  lazy seals, finished by the ONE durable commit that writes the mark.
-//  BEE-002: `ro` opens the index READ-ONLY (a query fanning out over another
-//  repo's index must bring nothing up and sweep nothing there).
-//  A LINKED WORKTREE shares the ODB and the refs, so it shares the INDEX: the
-//  dir is the COMMON gitdir's, never the per-worktree one (only HEAD is local).
+//  `abc.index` mkdirs `<gitdir>/be`, derived state this verb owns.  `bulk` is
+//  DOG-032's big-memtable derive, `ro` a read-only open (BEE-002:29: a cross-repo
+//  query brings nothing up, sweeps nothing).  A linked worktree shares the ODB,
+//  so it shares the index: the dir is the common gitdir's, never the worktree's.
 function indexDir(gitdir) {
   const c = refs.commonDir(gitdir);
   let d = c;                                  // a worktree's is `<gd>/../..`
@@ -402,7 +323,7 @@ function openIndex(gitdir, bulk, ro) {
   return abc.index("wh128", o);
 }
 
-//  LITE-044/BEE-002: unlink every file of an OUTDATED format before the family
+//  BEE-002:115: unlink every file of an OUTDATED format before the family
 //  is opened — the dir is fully derived, so the next run re-derives from the ODB.
 function sweep(dir) {
   let fs;
@@ -484,38 +405,19 @@ function markSet(ix, refHl) {
 }
 
 //  --- the arrival state -----------------------------------------------------
-//  The state the walk extends:
-//
-//    next  : path_hl -> the next free rev
-//    byPB  : (path_hl<<60|blob_hl) -> its NEWEST rev   (the PARS lookup)
-//    top   : path_hl -> its HIGHEST rev {rev, blob, commit}  (the re-put guard)
-//    done  : every INDEXED commit's hashlet60          (THE walk boundary)
-//
-//  `top` is what is left of the old per-rev (path, blob, commit) guard, and it
-//  is now enough: with PRESENCE as the boundary a sealed commit is NEVER walked
-//  twice, so the only rev that can be re-derived is one belonging to the commit
-//  that was IN FLIGHT when a run died — its rev rows may have been auto-sealed
-//  by a full memtable page while its CPAR rows (put last) were not.  That
-//  commit's revs are by construction the HIGHEST rev of each path it touched,
-//  so one row per PATH catches them, instead of one entry per REV.
-//
-//  LITE-028: none of it is read WHOLE any more.  A run needs `done` for the
-//  commits it PROBES and next/byPB/top for the paths its new commits TOUCH, so
-//  both are filled by keyed seeks and memoized for the run — a one-commit
-//  catch-up reads a handful of rows instead of the entire history.
-//  KNOWN TRAP (be/shared/mtimeidx.js): `range`/`prefix` return ZERO rows when
-//  the upper bound reaches 2^64, so every read here MUST ride the seek cursor.
-
+//  What the walk extends: `next` path_hl -> next free rev; `byPB` (path,blob)
+//  -> newest rev (the PARS lookup); `top` path_hl -> highest {rev, blob, commit}
+//  (the re-put guard, LITE-006:56); `done` = indexed commits.  LITE-028:39: all
+//  filled by keyed seeks, memoized for the run, never read whole.
 function state(ix) {
   const st = { ix: ix, next: new Map(), byPB: new Map(), top: new Map(),
                have: new Set(), dirs: new Set(),          // LITE-044: loadDir's
                yes: new Set(), no: new Set(), all: false };
-  //  An EMPTY index is fully known after ONE row read — the from-scratch derive
-  //  then seeks for nothing, because every row it will ever read is its own.
+  //  An empty index is fully known after one row read.  mtimeidx.js trap: `range`
+  //  and `prefix` answer zero rows at a 2^64 bound, so every read here is a `seek`.
   if (!ix.seek(0n).next()) st.all = true;
-  //  `done` without materializing it: ONE keyed CPAR seek per PROBED commit —
-  //  a CPAR row IS the "this commit is indexed" flag, so the probe is the
-  //  presence test.  `add` is what the run's own seals contribute.
+  //  `done` unmaterialized: one keyed CPAR seek per probed commit (a CPAR row is
+  //  the "indexed" flag); `add` is what the run's own seals contribute.
   st.done = {
     has: function (chl) { return hasDone(st, chl); },
     add: function (chl) { st.yes.add(chl); st.no.delete(chl); }
@@ -533,10 +435,9 @@ function hasDone(st, chl) {
   return hit;
 }
 
-//  ONE path's rows, by the key span its `path_hl` owns: every REV row of the
-//  path is in [phl<<24, (phl+1)<<24), so one seek fills next/byPB/top for it.
-//  Other kinds hash into that span too (a B2P/FSEG/CPAR key whose top 40 bits
-//  land there), so the span is filtered by KIND, never cut short by one.
+//  LITE-028:41: one path's rows, by the key span its `path_hl` owns — every REV
+//  row of the path is in [phl<<24, (phl+1)<<24), so one seek fills next/byPB/top.
+//  Other kinds hash into that span too, so it is filtered by KIND, never cut short.
 function loadPath(st, phl) {
   if (st.all || st.have.has(phl)) return;
   st.have.add(phl);
@@ -547,7 +448,7 @@ function loadPath(st, phl) {
   }
 }
 
-//  --- LITE-044: the last rev, without the chain -----------------------------
+//  --- LITE-044:49: the last rev, without the chain --------------------------
 //  A rev chain is DENSE (0..k, minted in order and sealed in order), so "is
 //  there a rev r" is an EXACT-key probe and the highest rev is found by
 //  galloping and then bisecting: O(log k) seeks, no row of the chain read.
@@ -572,7 +473,7 @@ function lastRev(ix, phl, kind) {
 
 //  A DIR path's state: its LAST rev alone.  A hot dir changes in most commits,
 //  so folding its whole chain the way loadPath folds a file's would be the very
-//  O(history) read LITE-028 removed — and a dir needs neither byPB nor a blob.
+//  O(history) read LITE-028 removed (LITE-044:49); a dir needs no byPB, no blob.
 function loadDir(st, phl) {
   if (st.all || st.dirs.has(phl)) return;
   st.dirs.add(phl);
@@ -613,17 +514,10 @@ function row(st, k, v) {
 }
 
 //  --- the commit walk -------------------------------------------------------
-//  Ruling 2026-08-13: THERE IS NO WALK CEILING.  The walk climbs from the tip
-//  and stops at any commit ALREADY IN THE INDEX — presence, not a watermark, is
-//  the boundary.  Three things fall out of that:
-//   -  a history of any size CONVERGES: each run indexes strictly the commits
-//      no run has indexed yet, so the work left shrinks every time;
-//   -  an INTERRUPTED run keeps its progress: whatever was sealed is a
-//      boundary the next run stops at, and nothing is redone;
-//   -  a rebase/reset needs no special case: the rewritten commits are simply
-//      not in the index, so they are exactly what gets walked.
-//  The MARK survives as the ruled per-ref watermark and as the O(1) no-op:
-//  tip already marked -> answer without even scanning the index.
+//  Climb from the tip, never entering a commit already in the index: presence,
+//  not a watermark, is the boundary (LITE-006:53, ruling 2026-08-13 — any
+//  history converges, an interrupted run resumes, a rebase needs no case).  The
+//  MARK survives only as the O(1) no-op in bringUp.
 function collect(r, tip, done, prog) {
   const set = new Set(), queue = [];
   if (done.has(hlOfSha(tip))) return { set: set, order: [] };
@@ -710,17 +604,10 @@ function topo(r, set) {
 }
 
 //  --- the per-commit rev derivation ----------------------------------------
-//  A commit yields a NEW REV of path P iff P's blob differs from P's blob in
-//  EVERY parent; a subtree whose sha equals the corresponding subtree sha in
-//  ANY parent is PRUNED whole — nothing under it can have changed there.
-//
-//  DOG-030: both tests are now ONE C leaf.  `git.getTreeDiff(h, a, b)` hands
-//  back ONLY the entries that differ, in git tree FORMAT — each changed name
-//  an adjacent PAIR (the NEW side first, then the OLD one, an all-zero sha
-//  spelling "absent on that side").  So a name MISSING from a parent's diff
-//  IS the prune, for a blob and for a subtree alike, and the JS work per
-//  commit is O(changed) instead of O(dir width).  Merges are one pairwise
-//  call per parent, intersected here: present in EVERY parent's diff.
+//  A commit yields a new rev of path P iff P's blob differs from P's in every
+//  parent; a subtree equal to any parent's is pruned whole.  DOG-030:23: both
+//  tests are one C leaf, `git.getTreeDiff` — only differing entries come back,
+//  as (new, old) pairs (DOG-030:24): a name missing from a parent's diff is pruned.
 const ZERO40 = "0000000000000000000000000000000000000000";
 const MODE_DIR = 0o40000;
 
@@ -773,7 +660,7 @@ function descend(r, treeSha, pTrees, prefix, out) {
     if (same) continue;
     if (e.dir) {
       const pd = olds.map((s) => (s.old !== null && s.oldDir) ? s.old : null);
-      //  LITE-044: a changed DIR is a node of its own, listed BEFORE its
+      //  LITE-044:42: a changed DIR is a node of its own, listed BEFORE its
       //  children; `emit` mints it one rev row, `lindex` skips it.
       out.push({ path: path, phl: pathHl(path), blob: e.sha, pblobs: pd,
                  dir: true });
@@ -896,11 +783,10 @@ function submodules(ctx) {
 }
 
 //  --- the run ---------------------------------------------------------------
-//  index(repoArg, opts) -> the summary record, `rec.link` holding the LINK
-//  half's.  `opts.home` overrides the registry root, `opts.track === false`
-//  skips the repo list (LITE-007's `log` brings the index up to date but must
-//  write nothing else), `opts.climb` looks for the repo above the arg,
-//  `opts.links === false` runs the commit half alone.
+//  index(repoArg, opts) -> the summary record, `rec.link` the LINK half's.
+//  opts: `home` (registry root), `track === false` (write no registry line),
+//  `climb` (find the repo above the arg), `links === false` (commit half
+//  alone), `subs === false` (no submodule recursion).
 function index(repoArg, opts) {
   opts = opts || {};
   const ctx = openRepo(repoArg, opts.climb);
@@ -913,7 +799,7 @@ function index(repoArg, opts) {
       //  is required lazily, so lindex.js's own `require("./index.js")` is fine.
       if (opts.links !== false) rec.link = require("./lindex.js").scan(ctx, ix);
     } finally { try { ix.close(); } catch (e) {} }
-    //  BEE-006: DEPTH-FIRST into every initialised submodule — same bring-up,
+    //  BEE-006:48: DEPTH-FIRST into every initialised submodule — same bring-up,
     //  same opts, so `track: false` writes no registry line for any of them.
     if (opts.subs !== false) indexSubs(ctx, rec, opts);
   } finally { closeRepo(ctx); }
@@ -948,12 +834,10 @@ function indexSubs(ctx, rec, opts) {
   }
 }
 
-//  bringUp(ctx, ix, opts) -> the summary record.  THE lazy step: the O(1) mark
-//  check, then index strictly the commits the index does not hold yet, reading
-//  (LITE-028) only the commits it probes and the paths they touch.  `ix` is
-//  the caller's open handle, so `log` queries the very rows this just wrote.
-//  BEE-005: `opts.tip` indexes from an ARBITRARY commit instead of the checked-
-//  out one — no ref names it, so its watermark is keyed by its COMMIT hashlet.
+//  bringUp(ctx, ix, opts) -> the summary record.  The lazy step: the O(1) mark
+//  check, then index strictly the commits the index does not hold yet (LITE-028:39,
+//  reading only what it probes and touches).  BEE-005: `opts.tip` indexes from
+//  an arbitrary commit; no ref names it, so its mark is keyed by its hashlet.
 function bringUp(ctx, ix, opts) {
   opts = opts || {};
   const hd = ctx.head, r = ctx.r;
@@ -995,20 +879,14 @@ function bringUp(ctx, ix, opts) {
     descend(r, m.tree, pTrees, "", changed);
     if (subs.length) subRevs(r, subs, m.tree, pTrees, changed);
     for (const c of changed) rec.revs += emit(wr, st, c, chl) ? 1 : 0;
-    //  The MID-COMMIT golden: the revs are sealed, the CPAR rows never land —
-    //  exactly what an auto-seal on a full memtable page can leave behind.  The
-    //  next run must re-walk this commit and re-derive those revs to NOTHING.
+    //  The mid-commit fault golden: revs sealed, CPAR rows never landed (what an
+    //  auto-seal on a full page leaves); the next run re-derives them to nothing.
     if (opts._faultMid !== undefined && rec.commits >= opts._faultMid) {
       wr.seal();
       throw "index: injected mid-commit fault at commit " + rec.commits;
     }
-    //  CPAR is the commit's DONE flag, so it is put LAST — a seal persists a
-    //  PREFIX of what was put, so a persisted CPAR row proves every rev row of
-    //  this commit was already put and is in this seal or an earlier one.  Put
-    //  it first and a kill between the two would strand the commit's revs
-    //  forever behind a boundary that says "indexed".
-    //  One row per parent, first parent ord 0; a ROOT commit gets the one row
-    //  with an EMPTY parent slot, so parentless still reads as PRESENT.
+    //  LITE-006:55: CPAR is the done flag and goes last (a seal persists a prefix);
+    //  one row per parent, a root commit one CPAR_NONE row (LITE-006:54).
     if (m.parents.length === 0) wr.put(hlKey(chl, K_CPAR), hlVal(CPAR_NONE, 0n));
     for (let i = 0; i < m.parents.length && i < 16; i++)
       wr.put(hlKey(chl, K_CPAR), hlVal(hlOfSha(m.parents[i]), BigInt(i)));
@@ -1059,9 +937,8 @@ function emit(wr, st, c, chl) {
     if (pr !== undefined && pars.indexOf(pr) < 0) pars.push(pr);
   }
 
-  //  LITE-011: the path's FSEG row, minted at its rev 0 — the one commit that
-  //  FIRST sees the path — and put BEFORE the rev rows, so a persisted blob row
-  //  (what the re-put guard reads) always proves the FSEG row landed too.
+  //  LITE-011:30: the FSEG row is minted at rev 0 and put before the rev rows, so a
+  //  persisted blob row (what the re-put guard reads) proves it landed too.
   if (rev === 0n) { const f = fsegRow(c.path); wr.put(f.key, f.val); }
   wr.put(revKey(c.phl, rev, K_BLOB), hlVal(bhl, 0n));
   wr.put(revKey(c.phl, rev, K_CMMT), hlVal(chl, 0n));
@@ -1075,7 +952,7 @@ function emit(wr, st, c, chl) {
   return true;
 }
 
-//  LITE-044: ONE changed DIR at ONE commit -> its ONE row.  The dir fuse wants
+//  LITE-044:45: ONE changed DIR at ONE commit -> its ONE row.  The dir fuse wants
 //  the newest commit under the dir and nothing else, so the rev carries the
 //  COMMIT alone: no blob (a subtree sha is no blob), no PARS (a dir has no
 //  content to fold), no B2P, no FSEG (resolve.js only ever names files).
@@ -1135,9 +1012,7 @@ module.exports = {
   subAt: subAt, subRevs: subRevs, submodules: submodules, subsSaid: subsSaid,
   MODE_SUB: MODE_SUB,
   bringUp: bringUp, reader: reader, readCommit: readCommit, readTree: readTree,
-  //  LITE-033: `lindex` reuses the pruning tree diff (the changed paths of
-  //  mark..tip, each with its NEW blob) and the batching writer, rather than
-  //  growing a second walk of its own.
+  //  LITE-033: `lindex` reuses the pruning tree diff and the batching writer.
   descend: descend, idxWriter: idxWriter, 
   //  LITE-044: the dir fuse (view/list.js) reads a dir's newest rev with these.
   lastRev: lastRev, revValAt: revValAt,

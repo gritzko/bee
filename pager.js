@@ -1,9 +1,11 @@
-//  pager.js — beagle-bee's raw-mode FILE pager: a scrollable viewport over
-//  render/wrap.js (soft-wrap index) + render/ansi.js (the cell paint), a status
-//  line, SGR mouse and a minimal `:` PATH bar.  An APP pinned to the ansi
-//  renderer: navigation is fs-only, ALWAYS through `opts.open`.
-//  tty.raw sets VMIN=0 VTIME=1 (a 100ms poll), so the key loop re-polls io.read
-//  until a byte arrives; cook-on-exit rides try/finally.
+//  pager.js — bee's raw-mode TUI pager ([/wiki/Bro]): a scrollable viewport
+//  over a hunk stream, a status line, SGR mouse and a minimal `:` path bar.
+//  Rows come from render/wrap.js (the soft-wrap index), cells from
+//  render/ansi.js (the paint); the pager is pinned to the ansi renderer
+//  (LITE-045).  Views stack back/forward (JAB-030, LITE-023) and each holds a
+//  cursor, an active line + token.  Navigation is fs-only, always through
+//  `opts.open` (door.js).  The run loop rides tty.raw (VMIN=0 VTIME=1, a 100ms
+//  poll) and cooks the tty on every exit path.
 "use strict";
 
 const ansi = require("render/ansi.js");
@@ -131,10 +133,8 @@ function Pager(fd, opts) {
 Pager.prototype.setHunks = function (hunks, path) {
   const p = path !== undefined ? path
           : hunks && hunks.length ? hunks[0].uri || "" : "";
-  //  BRO-014: a view opens NO-WRAP (long lines clamp at the right edge); `W` wraps.
-  //  LITE-023: every view carries its OWN cursor — {row, tok}, tok -1 = no active
-  //  token (the row's followable tokens are a render-side walk, never stored).
-  //  LITE-029: `span` is a LANDED token's bytes, which outlive a re-wrap.
+  //  BRO-014: views open no-wrap (`W` toggles).  LITE-023/LITE-029: each view owns
+  //  a cursor {row, tok, span}: tok -1 = line only, span = a landed token's bytes.
   this.view = { hunks: hunks, path: p, rows: null, scroll: 0, cols: 0, wrap: false,
                 cur: { row: 0, tok: -1, span: null } };
 };
@@ -402,11 +402,10 @@ Pager.prototype._fit = function (s, cols) {
 };
 
 //  ---- open / follow / refresh ----------------------------------------------
-//  The ONE fs door: hand `path` to opts.open and PUSH what it yields; a null/empty
-//  result (unreadable, empty dir) is a plain-words bar message.
-//  BEE-003: `from` is the AMBIENT — the dir of the file this view is reading —
-//  so the door resolves a reference where it was WRITTEN and a cross-repo hop
-//  is an ordinary push (the stack then holds the repo with the path).
+//  The one fs door: hand `path` to opts.open and push what it yields; null/empty
+//  (unreadable, empty dir) becomes a bar message.  BEE-003: `from` is the dir of
+//  the file being read, so the door resolves a ref where it was written and a
+//  cross-repo hop is an ordinary push (the stack entry keeps the repo).
 Pager.prototype._openPush = function (path, from) {
   if (!this.open) { this.message = "(no opener)"; return; }
   let hunks;
@@ -490,13 +489,10 @@ Pager.prototype._seatCur = function (rows, span) {
   return true;
 };
 
-//  Follow one F TOKEN: a dir listing joins the name to the hunk's OWN path (its
-//  rows are relative to the dir it lists).
-//  LITE-015: in any other hunk an `F` token IS a file reference — its BYTES go
-//  to the door verbatim, which is the one place that resolves anything.
-//  BEE-003: in any other hunk the DIR of the file being read rides along, which
-//  is the first leg of the door's resolution order — a ref written next to its
-//  target resolves there before any repo is scanned.
+//  Follow one `F` token.  A dir listing joins the name to the hunk's own path
+//  (its rows are relative to the dir it lists); elsewhere the token's bytes go
+//  to the door verbatim (LITE-015) with the dir of the file being read as the
+//  ambient (BEE-003) — a ref written next to its target resolves there first.
 Pager.prototype._follow = function (hunk, name) {
   if (!hunk) { this.message = "(nothing to follow)"; return; }
   if (hunk.kind === "dir") { this._openPush(resolvePath(hunk.uri || "", name)); return; }
@@ -607,11 +603,13 @@ Pager.prototype.key = function (b) {
   return this._keyScroll(b);
 };
 
+//  A page step: a near-full screen, keeping 1 row of context.
 Pager.prototype._page = function () {
   const sz = tty.size(this.fd);
-  return (sz.rows > 2 ? sz.rows : 24) - 2;       // a near-full page (keep 1 row)
+  return (sz.rows > 2 ? sz.rows : 24) - 2;
 };
 
+//  Scroll-mode keys; the SHORTCUTS table above is the spec (BRO-007).
 Pager.prototype._keyScroll = function (b) {
   const v = this.view;
   this.message = "";
@@ -650,6 +648,7 @@ Pager.prototype._keyScroll = function (b) {
   }
 };
 
+//  Path-bar keys: Enter opens the path, Esc cancels, BS edits (empty BS leaves).
 Pager.prototype._keyCommand = function (b) {
   if (b === 0x0d || b === 0x0a) {                        // Enter: open the path
     const cmd = this.cmd;
