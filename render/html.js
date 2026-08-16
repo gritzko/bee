@@ -72,14 +72,18 @@ const FRAME = [
     ";font:13px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}",
   ".hunk{margin:0 0 1.2em}",
   ".banner{padding:2px 8px;font-weight:bold}",
-  "pre.body{margin:0;padding:4px 8px;overflow-x:auto;white-space:pre}",
+  //  A browser is not a terminal: a long line SOFT-WRAPS instead of running off
+  //  the page, and an unbreakable atom (a URL, a long path) breaks rather than scrolls.
+  "pre.body{margin:0;padding:4px 8px;overflow-x:auto;white-space:pre-wrap;" +
+    "overflow-wrap:anywhere}",
   "pre.note{margin:0;padding:4px 8px;font-style:italic}",
   "a{color:inherit;text-decoration:none;border-bottom:1px dotted currentColor}",
   "a:hover{border-bottom-style:solid}",
   //  LITE-035: the rendered Markdown body — geometry and currentColor only, so
   //  the theme still owns every colour on the page.
   ".mark{padding:4px 12px;max-width:64em}",
-  ".mark pre{overflow-x:auto;padding:4px 8px;border:1px solid currentColor}",
+  ".mark pre{overflow-x:auto;padding:4px 8px;border:1px solid currentColor;" +
+    "white-space:pre-wrap;overflow-wrap:anywhere}",
   ".mark table{border-collapse:collapse}",
   ".mark th,.mark td{border:1px solid currentColor;padding:1px 6px}",
   ".mark blockquote{margin:0 0 1em;padding-left:8px;border-left:3px solid currentColor}",
