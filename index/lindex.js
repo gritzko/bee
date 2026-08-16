@@ -1,53 +1,11 @@
-//  index/lindex.js — LITE-033 + BEE-002: `bee lindex`, the BACKLINK round of
-//  the one `<gitdir>/be/*.lite2.idx` index.  The [LITE-006] records say what a
-//  path IS (REV/B2P); nothing said who POINTS at it, and "who links to this
-//  page" is the one wiki query the index could not answer.
-//
-//  RECORD `LINK` (kind nibble 7, the last free one):
-//      key = fn_hl:40 | par:20 | 7   val = src path_hl:40 | gpar:20 | vnib:4
-//  One row per (dst, src) pair.  Every slot is a truncated TEXT hashlet of the
-//  TARGET's own segments — the filename's top 40 bits, the immediate parent
-//  dir's top 20, the grandparent's top 20 — under the [LITE-011] FSEG rule: `0`
-//  spells absent, a genuine 0 bumps to 1, the filename slot never bumps.
-//
-//  SUSPECTS, NOT PROOF (ruling 2026-08-15).  A row says "this file MAY link
-//  there"; precision comes from OPENING the suspect, never from deleting a row
-//  or hopping over the tip.  A removed link therefore leaves a false suspect
-//  behind, which is exactly what keeps the index's never-delete, idempotent
-//  contract intact — the index only narrows the grep.
-//
-//  BEE-007: `bee index` RUNS `scan` (one verb, two marks), so this verb is the
-//  QUERY form — bare it still brings the rows up and reports, as ever.
-//
-//  LAZY, TIP-ONLY, NEW BLOBS ONLY.  A MARK-style row under the RESERVED ref
-//  `hlOfText("lindex")` holds the commit the last scan finished at:
-//   1. the tip is already the mark -> no-op, not one byte written;
-//   2. else `index.js descend` diffs mark..tip and hands back exactly the paths
-//      whose blob MOVED, each with its new tip blob — the same pruning tree
-//      diff the rev derivation rides, so there is no second walk;
-//   3. each such blob is TOKENISED and its `F` tokens read (index/hook.js's
-//      `fTokens` — the ONE recognizer, ruling 2026-08-15: a link is whatever
-//      the DOG-034 lexer fuses, and nothing here re-scans raw bytes);
-//   4. the mark row is the LAST write, so an interrupted scan simply re-scans.
-//  A rewritten history needs no special case: the mark row just jumps, and a
-//  mark commit that no longer reads makes the run a full tip walk.
-//
-//  BEE-002: THE MINT IS TEXT-ONLY.  A ref keys on ITS OWN segments — nothing is
-//  resolved, no index is read and no repo is named — so the indexing ORDER cannot
-//  change a key and a cross-repo target keys the same everywhere.  A ticket code
-//  (`LITE-029`) keys as its own text with both ancestor slots absent.  Anchors
-//  are dropped through `door.js splitRef` — a row names files, not places — and
-//  a ref spelling the carrier's own path mints nothing.
-//
-//  BEE-002: THE QUERY IS A FAN-OUT over the [BEE-001] registry
-//  `$HOME/.config/bee/repos`: every registered index is opened READ-ONLY and
-//  none is brought up, two exact-key seeks each (`fn|0`, the bare-filename ref,
-//  and `fn|par`) off the target's full path, and a row carrying a `gpar` is kept
-//  only when it matches the target's.  No dst repo id is recorded anywhere, so
-//  two repos carrying a same-named file produce FALSE SUSPECTS — which the
-//  suspects contract licenses, and which registering a repo then costs nothing.
-//  Suspects are named back to text per repo (one descent of THAT repo's tip
-//  tree) and print repo-qualified, the local repo first.
+//  index/lindex.js as per LITE-033 + BEE-002: the BACKLINK round of the one index
+//  — "who links to this page", answered as SUSPECTS, NOT PROOF (LITE-033:HV:PS~9), so
+//  rows are never deleted and re-puts write nothing.  RECORD LINK, kind 7:
+//  BEE-002:il:qexI — every slot a TEXT hashlet of the target's own segments, minted
+//  from the ref text alone (BEE-002:nZ:qexI) with no dst repo id (BEE-002:sz:qexI), so
+//  indexing order cannot change a key.  Lazy, tip-only, new blobs, mark row LAST
+//  (LITE-033:Jh:PS~9, LITE-033:Sr:PS~9); the query fans out READ-ONLY over the registry
+//  (BEE-002:yL:qexI, BEE-002:135:qexI).  `bee index` runs the scan too (BEE-007:X2:BNEy).
 "use strict";
 
 const idx = require("./index.js");
@@ -55,10 +13,10 @@ const hk = require("./hook.js");
 const rs = require("./resolve.js");
 const wv = require("./weave.js");
 
-//  Nibble 7: [LITE-006] spends 1..5 and F, [LITE-011] took 6.
+//  Nibble 7: LITE-006:Kk:RcNe spends 1..5 and F, LITE-011:Rn:a9GC took 6.
 const K_LINK = 0x7n;
-//  The RESERVED ref name the incremental mark hangs on.  It is not a ref, so it
-//  can never collide with a real one's [LITE-006] watermark.
+//  The RESERVED ref name the incremental mark hangs on (LITE-033:Sr:PS~9) — not a
+//  ref, so it can never collide with a real one's LITE-006 watermark.
 const LINDEX_REF = "lindex";
 
 const GPAR_MASK = (1n << 20n) - 1n;
@@ -72,9 +30,9 @@ function linkSrc(v) { return v >> 24n; }
 function linkGpar(v) { return (v >> 4n) & GPAR_MASK; }
 
 //  --- the target's own segments ---------------------------------------------
-//  BEE-002: ONE text -> the three ruled slots, hashed by index.js's own [LITE-011]
-//  helpers.  Nothing is resolved here: a path, a partial one and a ticket code
-//  all go down the same three lines, which is what makes the mint order-free.
+//  BEE-002:nZ:qexI: ONE text -> the three ruled slots, hashed by index.js's LITE-011
+//  helpers.  Nothing is resolved: a path, a partial one and a ticket code all go
+//  down the same three lines, which is what makes the mint order-free.
 function slots(text) {
   const segs = [];
   for (const s of String(text === undefined ? "" : text).split("/"))
@@ -87,12 +45,10 @@ function slots(text) {
 }
 
 //  --- the way back to TEXT ---------------------------------------------------
-//  `path_hl` is a one-way 40-bit hash and the index hands back no name
-//  ([INDEXES.mkd] "NO path text"), so the suspects are named the [LITE-011] way:
-//  the index narrows, a REAL TREE OBJECT answers.  One descent of the TIP tree
-//  hashes every path it carries and keeps the ones the rows asked for — no
-//  sidecar record, so the stated gap survives untouched, and a suspect whose
-//  file is gone from the tip simply does not print (it carries no link now).
+//  LITE-033:10S:PS~9: `path_hl` is one-way and the index hands back no name, so the
+//  suspects are named the LITE-011 way — the index narrows, a REAL TREE answers:
+//  one descent of the TIP tree keeps the paths the rows asked for.  No sidecar;
+//  a suspect gone from the tip simply does not print (it carries no link now).
 function namePaths(r, treeSha, prefix, want, out) {
   const ents = idx.readTree(r, treeSha);
   if (ents === null) return;
@@ -157,9 +113,8 @@ function scan(ctx, ix) {
   if (tipC === null || !tipC.tree)
     throw "lindex: cannot read the commit " + tip.slice(0, 8) + " at " + ctx.head.ref;
 
-  //  2. the changed paths of mark..tip, each with its NEW tip blob.  An
-  //  unreadable mark (a rewritten history) simply drops out, and with no base
-  //  left the run walks the whole tip tree — the mark row jumped, no special case.
+  //  2. the changed paths of mark..tip, each with its NEW tip blob; an unreadable
+  //  mark (a rewritten history) drops out and the run walks the whole tip tree.
   const pTrees = [];
   for (const m of marks) {
     const mc = idx.readCommit(r, idx.hexOfHl(m));
@@ -211,10 +166,10 @@ function scan(ctx, ix) {
 }
 
 //  --- the query --------------------------------------------------------------
-//  BEE-002: ONE index's carriers of `q`.  Two EXACT-key seeks — `fn|0` catches a
-//  bare-filename ref, `fn|par` a ref that named the parent — and a row carrying
-//  a grandparent is kept only when it is the target's.  Anything spelled deeper
-//  keys like a 3-segment ref, so depth costs false suspects, never a wider probe.
+//  BEE-002:yL:qexI: ONE index's carriers of `q`.  Two EXACT-key seeks — `fn|0` for a
+//  bare-filename ref, `fn|par` for one naming the parent — and a `gpar` row is
+//  kept only when it is the target's.  Deeper spellings key like a 3-segment
+//  ref, so depth costs false suspects, never a wider probe.
 function carriers(ix, q, want) {
   const keys = q.par === 0n ? [linkKey(q.fn, 0n)]
                             : [linkKey(q.fn, 0n), linkKey(q.fn, q.par)];
@@ -240,7 +195,7 @@ function nameIn(r, treeSha, want) {
   return uniq;
 }
 
-//  BEE-002: ONE registered repo's answer, repo-qualified.  Its index is opened
+//  BEE-002:135:qexI: ONE registered repo's answer, repo-qualified.  Its index is opened
 //  READ-ONLY and never brought up — a stale foreign index answers with fewer
 //  suspects, never a wrong one — and anything unopenable is skipped in silence.
 function foreign(path, q) {
@@ -265,10 +220,9 @@ function foreign(path, q) {
 }
 
 //  suspects(ctx, ix, target, opts) -> the paths that MAY link to `target`,
-//  repo-qualified, the LOCAL repo first and the registered ones after it in
-//  path order.  The target's own full path is resolved LOCALLY (the one thing
-//  a query still descends for); a target several files answer is an ambiguity
-//  the caller must settle, in the plain words index/resolve.js's `pick` uses.
+//  repo-qualified, the LOCAL repo first, registered ones after (BEE-002:16W:qexI).
+//  The target's full path is resolved LOCALLY (the one descent a query keeps);
+//  several files answering is an ambiguity the caller settles, in plain words.
 function suspects(ctx, ix, target, opts) {
   const tipC = idx.readCommit(ctx.r, ctx.head.sha);
   if (tipC === null || !tipC.tree)

@@ -1,24 +1,11 @@
-//  index/mount.js — BEE-003: the REPO is an axis of the TARGET, never process
-//  state.  Two things live here and nothing else:
-//
-//  THE MOUNT TABLE — the [BEE-001] registry `$HOME/.config/bee/repos` read as
-//  `<name> -> <worktree root>`.  A mount is `{ name, root, prefix, top }`: a
-//  registered repo has an empty `prefix` and its NAME (the registry line's
-//  basename) is the one URL prefix it answers to.  A SUBMODULE is an ordinary
-//  repo ([BEE-006]) but not a second name — it is addressed THROUGH its parent
-//  (`/quickjab/dog/abc/TCP.c`, ruling 5), so it carries the parent's name plus
-//  the `prefix` it sits at, and its own registry line (install registers one)
-//  only REDIRECTS to that canonical form.  A family of `git worktree` checkouts
-//  is ONE mount too ([BEE-009]) — a legacy line naming a linked one is folded.
-//
-//  THE AMBIENT `{repo, path, anchor}` — where a run, a request or a view is
-//  positioned.  The process cwd is no longer the repo: it is only the default
-//  the CLI starts from, so `at()` answers the cwd when nothing set a position.
-//
-//  Registry lines are re-read per call (a handful of lines, no git at all) and
-//  path containment alone nests them; the tip-tree submodule WALK — the subs a
-//  registered parent carries that have no line of their own — is memoized per
-//  process, since only the FSEG fan-out pays for it.
+//  index/mount.js as per BEE-003: the REPO is an axis of the TARGET, never
+//  process state (BEE-003:he:xS9Y).  THE MOUNT TABLE is the BEE-001:QC:PoS7 registry read
+//  as `<name> -> <worktree root>`, the basename being the URL prefix (BEE-003:nZ:xS9Y);
+//  a SUBMODULE is addressed THROUGH its parent (BEE-003:121:xS9Y), its own line only
+//  redirects; a `git worktree` family folds to ONE mount (BEE-009:1BN:28Oq).  THE
+//  AMBIENT `{repo, path, anchor}` is where a run/request/view stands, the cwd
+//  only the CLI's default.  Lines are re-read per call; the tip-tree submodule
+//  walk is memoized per process, since only the FSEG fan-out pays for it.
 "use strict";
 
 const idx = require("./index.js");
@@ -41,7 +28,7 @@ function under(outer, inner) {
 //  Does `root` HOLD the path `p` (itself included)?
 function holds(root, p) { return p === root || under(root, p); }
 
-//  BEE-009: a legacy line naming a LINKED WORKTREE must stop competing in the
+//  BEE-009:12c:28Oq: a legacy line naming a LINKED WORKTREE must stop competing in the
 //  fan-out — a family folds to ONE, and the user's file is never rewritten.
 function fold(lines) {
   const here = at();
@@ -59,10 +46,9 @@ function fold(lines) {
   return out;
 }
 
-//  BEE-003: the registry as a mount table.  Lines are realpath'd (a symlinked
-//  line and its target are ONE repo, and `/home/gritzko/src/bee/bee` is a
-//  symlink to its own root) and deduped; a line lying inside another becomes
-//  that one's SUB mount, addressed through it.
+//  BEE-003:nZ:xS9Y: the registry as a mount table.  Lines are realpath'd (a symlinked
+//  line and its target are ONE repo, BEE-003:1hv:xS9Y) and deduped; a line inside
+//  another becomes that one's SUB mount, addressed through it (BEE-003:121:xS9Y).
 //  -> [{ name, root, prefix, own, top, dup }], registry order.
 function list(home) {
   const lines = [], seen = new Set();
@@ -86,7 +72,7 @@ function list(home) {
       ? { name: fam[i].name, root: root, prefix: "", own: own, top: root, dup: false }
       : { name: topName, root: root, prefix: root.slice(top.length + 1),
           own: own, top: top, dup: false };
-    //  RULED OPEN (ruling 6): the basename IS the name.  A second line claiming
+    //  BEE-003:183:xS9Y, open: the basename IS the name.  A second line claiming
     //  a taken name is not reachable by it — no disambiguator is invented here.
     if (m.prefix === "") {
       if (named.has(m.name)) m.dup = true; else named.add(m.name);
@@ -105,7 +91,7 @@ function named(name, home) {
 
 //  BEE-003: an absolute path -> its CANONICAL address `{ mount, rel }` — the
 //  OUTERMOST registered root holding it, so a submodule file is addressed
-//  through its parent (ruling 5).  null = no registered repo holds it.
+//  through its parent (BEE-003:121:xS9Y).  null = no registered repo holds it.
 function canon(abs, home) {
   let best = null;
   for (const m of list(home)) {
@@ -124,7 +110,7 @@ function deepest(abs) { return idx.discover(abs); }
 //  --- the fan-out's mounts ---------------------------------------------------
 //  BEE-003: every worktree a partial may resolve in — the registry's own lines
 //  plus the submodules a registered parent carries WITHOUT a line of their own
-//  ([BEE-006] installs them, an older registry has none).  The tip-tree walk is
+//  (BEE-006:mw:3Bxd installs them, an older registry has none).  The tip-tree walk is
 //  the one costly step here, so it is memoized per root for the process.
 const SUBS = new Map();
 
@@ -183,8 +169,8 @@ function pos() { return POS; }
 //  The repo the ambient sits in — the cwd when nothing set a position.
 function at() { return POS !== null && POS.repo ? POS.repo : io.cwd(); }
 
-//  The DIR OF THE FILE BEING READ (ruling 3's first leg), or the repo root when
-//  the position names no path.  null = no ambient at all.
+//  The DIR OF THE FILE BEING READ (BEE-003:su:xS9Y, the first leg), or the repo root
+//  when the position names no path.  null = no ambient at all.
 function dir() {
   if (POS === null || !POS.repo) return null;
   const p = String(POS.path || "");

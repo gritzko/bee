@@ -301,6 +301,130 @@ if [ "$RC" != 0 ]; then
     echo "--- stderr ---"; cat "$WORK/y.err"
 fi
 
+# --- BEE-014: a TICKET CODE is a mintable ref -----------------------------
+# [BEE-008] made a code a STEM for the DOOR; the minter resolved its targets
+# on its own and never learned the ladder, so `TKT-001:20` minted nothing.
+# Its own repo, so nothing above it can shift: a [/meta/todo] pocket carrying
+# a thin ticket, a fat one, and TWO topics holding the SAME code (ambiguity).
+TKT="$WORK/tkt"
+mkdir -p "$TKT"
+(
+  cd "$TKT" || exit 1
+  git init -q -b master . && git config user.email t@t && git config user.name T || exit 1
+  export GIT_AUTHOR_NAME=T GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=T GIT_COMMITTER_EMAIL=t@t
+  mkdir -p todo/TKT/TKT-005 todo/OTH doc
+  numbered() {                                   # 16-byte lines, as above
+    i=1
+    : > "$2"
+    while [ "$i" -le 40 ]; do
+        printf 'int %s%03d;\n' "$1" "$i" >> "$2"
+        i=$((i + 1))
+    done
+  }
+  numbered TKTMARK todo/TKT/TKT-001.mkd
+  numbered FATMARK todo/TKT/TKT-005/README.mkd
+  printf 'one of two\n' > todo/TKT/TKT-007.mkd
+  printf 'the other\n'  > todo/OTH/TKT-007.mkd
+  printf 'the refs page\n' > doc/refs.mkd
+  git add -A
+  GIT_AUTHOR_DATE="2020-07-01T00:00:00Z" GIT_COMMITTER_DATE="2020-07-01T00:00:00Z" \
+    git commit -q -m "r0 the ticket pocket" || exit 1
+) || { echo "hook: cannot build the ticket repo" >&2; exit 2; }
+k() { git -C "$TKT" "$@"; }
+rtin "$TKT" install > "$WORK/k0" 2>"$WORK/k0e" || true
+B_TKT=$(k rev-parse "HEAD:todo/TKT/TKT-001.mkd") || exit 2
+B_FAT=$(k rev-parse "HEAD:todo/TKT/TKT-005/README.mkd") || exit 2
+
+# Four shapes: a thin code and a fat one must mint, an ambiguous code and one
+# no repo holds must not — the hook never guesses, exactly as for a path.
+cat >> "$TKT/doc/refs.mkd" <<'EOF'
+see TKT-001:20 for the thin one
+fat TKT-005:20 through its README
+many TKT-007:1 names two at once
+gone TKT-999:3 no repo holds
+EOF
+k add -A
+( cd "$TKT" && HOME="$FAKEHOME" \
+  GIT_AUTHOR_NAME=T GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=T GIT_COMMITTER_EMAIL=t@t \
+  GIT_AUTHOR_DATE="2020-08-01T00:00:00Z" GIT_COMMITTER_DATE="2020-08-01T00:00:00Z" \
+  git commit -q -m "r1 ticket-code refs" ) > "$WORK/k1" 2>"$WORK/k1e"; RC=$?
+if [ "$RC" = 0 ]; then ok "the ticket-code commit lands"
+else bad "ticket commit (rc $RC)" "$WORK/k1" "$WORK/k1e"; fi
+
+( cd "$TKT" && HOME="$FAKEHOME" LITE_FIX="$TKT" \
+  LITE_BTKT="$B_TKT" LITE_BFAT="$B_FAT" \
+  "$RT" --eval "require('$CASE/ticket.js')" ) > "$WORK/k.out" 2>"$WORK/k.err"
+RC=$?
+cat "$WORK/k.out"
+if [ "$RC" != 0 ]; then
+    FAILED=$((FAILED + 1))
+    echo "--- stderr ---"; cat "$WORK/k.err"
+fi
+
+# --- BEE-014: a ref whose target lives in ANOTHER REGISTERED REPO ---------
+# The door has fanned out over the mount table since [BEE-003]; the minter
+# never did, so a ref naming a page in a sibling repo stayed transient.  TWO
+# repos, both installed: the CARRIER commits, the TARGET is only ever read.
+XCAR="$WORK/xcar"; XTGT="$WORK/xtgt"
+mkdir -p "$XCAR" "$XTGT"
+(
+  cd "$XTGT" || exit 1
+  git init -q -b master . && git config user.email t@t && git config user.name T || exit 1
+  export GIT_AUTHOR_NAME=T GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=T GIT_COMMITTER_EMAIL=t@t
+  mkdir -p todo/XRT far/deep
+  numbered() {                                   # 16-byte lines, as above
+    i=1
+    : > "$2"
+    while [ "$i" -le 40 ]; do
+        printf 'int %s%03d;\n' "$1" "$i" >> "$2"
+        i=$((i + 1))
+    done
+  }
+  numbered XRTMARK todo/XRT/XRT-001.mkd
+  numbered DEPMARK far/deep/note.mkd
+  git add -A
+  GIT_AUTHOR_DATE="2020-09-01T00:00:00Z" GIT_COMMITTER_DATE="2020-09-01T00:00:00Z" \
+    git commit -q -m "x0 the target repo" || exit 1
+) || { echo "hook: cannot build the target repo" >&2; exit 2; }
+(
+  cd "$XCAR" || exit 1
+  git init -q -b master . && git config user.email t@t && git config user.name T || exit 1
+  export GIT_AUTHOR_NAME=T GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=T GIT_COMMITTER_EMAIL=t@t
+  mkdir -p doc
+  printf 'the refs page\n' > doc/refs.mkd
+  git add -A
+  GIT_AUTHOR_DATE="2020-09-02T00:00:00Z" GIT_COMMITTER_DATE="2020-09-02T00:00:00Z" \
+    git commit -q -m "c0 the carrier repo" || exit 1
+) || { echo "hook: cannot build the carrier repo" >&2; exit 2; }
+rtin "$XTGT" install > "$WORK/x0" 2>"$WORK/x0e" || true
+rtin "$XCAR" install > "$WORK/x1" 2>"$WORK/x1e" || true
+B_CODE=$(git -C "$XTGT" rev-parse "HEAD:todo/XRT/XRT-001.mkd") || exit 2
+B_PATH=$(git -C "$XTGT" rev-parse "HEAD:far/deep/note.mkd") || exit 2
+
+# A code and a path, both answered only by the OTHER repo, plus one nobody holds.
+cat >> "$XCAR/doc/refs.mkd" <<'EOF'
+code XRT-001:20 lives next door
+path far/deep/note.mkd:20 does too
+gone XRT-999:3 nobody holds
+EOF
+git -C "$XCAR" add -A
+( cd "$XCAR" && HOME="$FAKEHOME" \
+  GIT_AUTHOR_NAME=T GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=T GIT_COMMITTER_EMAIL=t@t \
+  GIT_AUTHOR_DATE="2020-09-03T00:00:00Z" GIT_COMMITTER_DATE="2020-09-03T00:00:00Z" \
+  git commit -q -m "c1 cross-repo refs" ) > "$WORK/x2" 2>"$WORK/x2e"; RC=$?
+if [ "$RC" = 0 ]; then ok "the cross-repo commit lands"
+else bad "cross commit (rc $RC)" "$WORK/x2" "$WORK/x2e"; fi
+
+( cd "$XCAR" && HOME="$FAKEHOME" LITE_CARRIER="$XCAR" \
+  LITE_BCODE="$B_CODE" LITE_BPATH="$B_PATH" \
+  "$RT" --eval "require('$CASE/cross.js')" ) > "$WORK/x.out" 2>"$WORK/x.err"
+RC=$?
+cat "$WORK/x.out"
+if [ "$RC" != 0 ]; then
+    FAILED=$((FAILED + 1))
+    echo "--- stderr ---"; cat "$WORK/x.err"
+fi
+
 if [ "$FAILED" = 0 ]; then
     echo "PASS [lite/hook] $CHECKS shell checks, plus hook.js"
 else

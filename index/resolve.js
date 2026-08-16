@@ -1,34 +1,11 @@
-//  index/resolve.js — LITE-011: turn a PARTIAL path (`abc/TCP.c`, or the bare
-//  `TCP.c`) into the full repo-relative path(s) it names IN A GIVEN COMMIT.
-//
-//  The LITE-006 index is hash-only and hands back no text, so it cannot answer
-//  alone: it NARROWS, and a real tree object answers.  The FSEG rows keyed by
-//  the filename hash carry the ancestor segment hashes, which prune a descent
-//  of the commit's tree down to (almost always) one line; the tree entries
-//  carry the real names, so the recovered path is TEXT.
-//
-//  THE DESCENT
-//   1. scan the index for the key prefix — `fn_hl|prnt_hl` (60 bits) when the
-//      partial has a parent, `fn_hl` alone (40 bits) for a bare filename;
-//   2. at level `i` keep only the entries whose name's top-10 hashlet equals
-//      `seg_i`, recursing into those trees and accumulating the real names;
-//   3. below the chain (depth > 6, per `vnib`) the walk goes WIDE for those
-//      levels — the row's depth says so itself;
-//   4. at the bottom verify the parent dir name at 20 bits against `prnt_hl`
-//      and the entry name at 40 against `fn_hl`, then the recovered TEXT
-//      against the partial as typed;
-//   5. survivors carry their full text — that is the answer.
-//
-//  ITERATIVE, NOT RECURSIVE: at 10 bits a 100-entry dir yields ~0.1 false
-//  branches per level, so the descent is a LINE almost always — a loop with a
-//  pending list that holds one state in the common case.  BATCHED: several rows
-//  (a bare `TCP.c`) descend in ONE pass, each branch carrying its still-live row
-//  set down.  Cost is `depth` tree reads and no blob is ever opened, so a
-//  resolution needs no cache and no record of its own.
-//
-//  AMBIGUITY IS THE ANSWER, NOT AN ERROR: two real `TCP.c` under different dirs
-//  come back as two paths.  A hash collision costs one wasted tree read and
-//  never a wrong answer, because the bottom verifies against real names.
+//  index/resolve.js as per LITE-011: turn a PARTIAL path (`abc/TCP.c`, a bare
+//  `TCP.c`) into the full repo-relative path(s) it names IN A GIVEN COMMIT
+//  (LITE-011:12M:a9GC).  The index is hash-only and hands back no text, so it only
+//  NARROWS and a real tree object answers: FSEG rows keyed by the filename hash
+//  carry the ancestor segment hashes that prune the descent (LITE-011:17d:a9GC),
+//  iterative and batched, a LINE almost always (LITE-011:1IV:a9GC, LITE-011:1No:a9GC).
+//  AMBIGUITY IS THE ANSWER, NOT AN ERROR (LITE-011:1Rh:a9GC): a hash collision costs
+//  one tree read, never a wrong path, since the bottom verifies real names.
 "use strict";
 
 const idx = require("./index.js");
@@ -45,8 +22,8 @@ function split(partial) {
            prnt: segs.length > 1 ? idx.segHl(segs[segs.length - 2], 20n) : null };
 }
 
-//  Step 1 — the candidate rows.  The index is unkeyed and a crash can leave a
-//  byte-identical duplicate, so rows are deduped on (key, val).
+//  LITE-011:18V:a9GC, the candidate rows.  The index is unkeyed and a crash can leave
+//  a byte-identical duplicate, so rows are deduped on (key, val).
 function candidates(ix, q) {
   const out = [], seen = new Set();
   const take = function (k, v) {
@@ -70,8 +47,8 @@ function candidates(ix, q) {
   return out;
 }
 
-//  Step 4's text leg: the recovered path must END with the partial as typed,
-//  segment for segment.  This is what makes a hash collision cost a tree read
+//  LITE-011:1ES:a9GC, the text leg: the recovered path must END with the partial as
+//  typed, segment for segment — what makes a hash collision cost a tree read
 //  and never a wrong answer.
 function tailMatches(path, segs) {
   const p = path.split("/");

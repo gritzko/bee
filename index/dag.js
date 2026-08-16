@@ -1,21 +1,10 @@
-//  index/dag.js — BEE-005: the INDEX as a graph reader.  Two graphs live in the
-//  LITE-006 index and neither has ever been read as one: the COMMIT dag (`CPAR`
-//  rows) and, per path, the CONDENSED path-dag (`REV-BLOB`/`REV-CMMT`/`REV-PARS`
-//  rows — only the commits that CHANGE the path, each with its blob, its commit
-//  and its parent revs).  be recomputes both per run (`shared/dag.js`,
-//  `shared/pathdag.js`); bee has them on disk already, so `pathdag.of` is NOT
-//  ported (ruling 7) — the floor is found INSIDE the index, in 20-bit rev space.
-//
-//  Everything here is a KEYED read of the index: no ODB tree is walked, no
-//  commit is parsed.  An ODB read is for BLOB BYTES only, and that one lives in
-//  index/weave.js where the fold needs it.
-//
-//    parentsOf(ix, chl)          the commit's parents, first parent first
-//    ancestors(ix, chl, cap)     its closure, walk-capped (chl included)
-//    mergeBase(ix, a, b)         a MAXIMAL common ancestor, or null
-//    pathRevs(ix, path)            the path's rev rows, rev-ordered
-//    repsOf(ix, index, chl)       the revs a commit's view stands on (ruling 8)
-//    floorRev(index, revs)        the LCA inside the index, and what is above it
+//  index/dag.js as per BEE-005: the INDEX read as two graphs — the COMMIT dag
+//  (CPAR rows) and, per path, the CONDENSED path-dag the REV rows already are
+//  (BEE-005:cU:mJpI), so be's `pathdag.of` is NOT ported (BEE-005:1_Y:mJpI): the floor is
+//  found INSIDE the index, in 20-bit rev space, and a commit that did not touch
+//  the path stands on its parents' revs (BEE-005:1eL:mJpI).  Everything here is a KEYED
+//  read (BEE-005:15J:mJpI): no tree walked, no commit parsed; the one ODB read, blob
+//  bytes, lives in index/weave.js.  Walks are capped (BEE-005:19o:mJpI).
 "use strict";
 
 const idx = require("./index.js");
@@ -77,9 +66,8 @@ function mergeBase(ix, a, b) {
 }
 
 //  --- the path index (REV-*) -------------------------------------------------
-//  ONE path's rev rows, by the key span its `path_hl` owns (index.js loadPath's
-//  own read): every REV row is in [phl<<24, (phl+1)<<24), and the span is
-//  filtered by KIND, never cut short by one.  Returns
+//  ONE path's rev rows off the key span its `path_hl` owns (index.js loadPath's
+//  read, LITE-028:hz:~1EZ), filtered by KIND, never cut short by one.  Returns
 //  { phl, revs: Map(rev -> { rev, blob, commit, pars[] }), order: [rev asc],
 //    byCommit: Map(commit_hl -> rev) }.
 function pathRevs(ix, path) {
@@ -117,10 +105,9 @@ function pathRevs(ix, path) {
   return { phl: phl, revs: revs, order: order, byCommit: byCommit };
 }
 
-//  Ruling 8: the revs a COMMIT's view of the path stands on.  Its own rev when
-//  it changed the path; else the nearest rev up the commit dag, over EVERY
-//  parent — so a merge that took one side's bytes stands on that side's rev and
-//  a merge of two changed views stands on both (the caller joins them).
+//  BEE-005:1eL:mJpI: the revs a COMMIT's view of the path stands on — its own rev when
+//  it changed the path, else the nearest rev up EVERY parent, so a merge that
+//  took one side stands on that side's rev, a merge of two changed views on both.
 function repsOf(ix, index, chl, cap) {
   if (chl === null || chl === undefined) return [];   // no commit on that side
   const lim = cap || WALK_CAP;
@@ -145,11 +132,10 @@ function revAncestors(index, revs) {
   return seen;
 }
 
-//  The FLOOR: the LCA of the given revs INSIDE the index.  Revs are minted
-//  oldest-first as the walk seals commits, so rev order IS a topological order
-//  — the HIGHEST common rev has no common descendant and is therefore maximal.
-//  Returns { floor, above } — `above` is every rev reachable from `reps` that is
-//  NOT at or below the floor, rev-ordered: exactly what folds over the seed.
+//  BEE-005:1_Y:mJpI: the FLOOR, the LCA of the revs INSIDE the index.  Revs are minted
+//  oldest-first, so rev order IS topological and the HIGHEST common rev is
+//  maximal.  -> { floor, above } — `above` is every rev reachable from `reps`
+//  and NOT at or below the floor, rev-ordered: exactly what folds over the seed.
 function floorRev(index, reps) {
   const need = Array.from(new Set(reps));
   for (let round = 0; round <= need.length + 1; round++) {
@@ -168,11 +154,8 @@ function floorRev(index, reps) {
     const below = floor === null ? new Set() : revAncestors(index, [floor]);
     const above = new Set();
     for (const rev of all) if (!below.has(rev)) above.add(rev);
-    //  A rev above the floor whose own PARENT is strictly BELOW it would fold
-    //  against the seed instead of against its parent — churn the emit then
-    //  spells as a change nobody made.  Take that parent as another rep and
-    //  find the floor again: the floor DESCENDS until every folded rev has its
-    //  parents inside the fold.  A linear from->to pair converges at once.
+    //  A folded rev whose PARENT sits below the floor would fold against the seed
+    //  and spell a change nobody made: take that parent as a rep, descend, retry.
     const miss = [];
     for (const rev of above) {
       const e = index.revs.get(rev);

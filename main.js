@@ -91,6 +91,22 @@ function runHook(args) {
   if (note) writeStderr(note + "\n");
 }
 
+//  BEE-016: `bee mint [--dry-run] <file>...` — the VERB half of the minter: the
+//  transient `file:line(:col)` refs of the NAMED files become permalinks, in the
+//  working copy alone.  The hook only ever sees a commit in flight, so refs that
+//  landed transient are reachable no other way ([BEE-015]).  Its arg is the path
+//  LIST, unfused — `bee mint view/*.js` is what the shell globbed, verbatim.
+function runMint(args) {
+  const rest = args.filter(function (a) { return modeOf(a) === null; });
+  const r = require("index/mint.js").mint(rest);
+  if (r.usage) {
+    writeStderr("Usage: bee mint [--dry-run] <file>...\n");
+    throw "BROUSAGE";
+  }
+  if (r.err) writeStderr(r.err);
+  if (r.out) writeFd(1, utf8.Encode(r.out));
+}
+
 //  LITE-034: `bee http [--port <n>]` — the repo browser over HTTP, the same
 //  views the pager shows.  A LONG-RUNNING verb: this returns once the listener
 //  is up and the pol loop takes over, until SIGINT.
@@ -180,7 +196,7 @@ function pageHunks(hunks) {
 //  way), but they are still FLAGS and never a verb's argument.
 const SIDE = {
   index: runIndex, lindex: runLindex, merge: runMerge, install: runInstall,
-  hook: runHook, chat: runChat, http: runHttp, now: runNow,
+  hook: runHook, chat: runChat, http: runHttp, now: runNow, mint: runMint,
 };
 
 function main(argv) {

@@ -1,19 +1,10 @@
-//  index/read.js — LITE-017: what the four READ views (cat / blob / tree /
-//  list) share, so no two of them own a copy: the repo-relative path gate, the
-//  `?<rev>` resolution, the tree descent and the bytes->hunk builder.
-//  index/weave.js is the precedent — one home for what diff and merge both use.
-//
-//  THE ARG IS A URI SLOT SPLIT, NEVER A HAND-ROLLED ONE.  `<path>?<rev>` goes
-//  through the `uri._parse` binding (quickjab/uri.c over abc/URI), the same
-//  8-component split be reads, so nothing here looks for a '?' by hand.
-//
-//  THE PATH IS REPO-RELATIVE AND CONFINED.  A read verb names a path IN THE
-//  REPOSITORY (the `?<rev>` form has no other meaning), so the arg resolves
-//  against the cwd exactly as `lite log`/`lite diff` resolve theirs, and a `..`
-//  climb above the root is REFUSED in plain words — never a silent read of a
-//  sibling tree.  be raises BE-011's NAVESCAPE for this; lite says it in words.
-//  The bare `lite <path>` pager is unchanged: it is a filesystem view and
-//  confines nothing.
+//  index/read.js as per LITE-017: what the four READ views (cat / blob / tree /
+//  list) share, so no two own a copy (LITE-017:yV:CvZh) — the repo-relative path
+//  gate, the `?<rev>` resolution, the tree descent and the bytes->hunk builder.
+//  The arg is a URI slot split through `uri._parse`, never a hand-rolled scan
+//  (LITE-017:12s:CvZh); the path is CONFINED to the repository, a climb above the root
+//  refused in plain words (LITE-017:16J:CvZh, LITE-017:1nD:CvZh) — the bare `bee <path>`
+//  pager is a filesystem view and confines nothing.
 "use strict";
 
 const idx = require("./index.js");
@@ -103,9 +94,8 @@ function textHunk(uriStr, bytes, ext, kind) {
   let toks;
   try { toks = ext ? tok.parse(bytes, ext) : new Uint32Array(0); }
   catch (e) { toks = new Uint32Array(0); }
-  //  LITE-045: a `cat`/`blob` hunk IS the file — on a pipe it writes those
-  //  bytes and NOTHING else, so a `lite cat x | diff -` sees the source.  The
-  //  text needs no `plain` twin: it is already the readable bytes.
+  //  LITE-045:Sa:t2ME: a `cat`/`blob` hunk IS the file — on a pipe it writes those
+  //  bytes and nothing else, so `bee cat x | diff -` sees the source; no `plain` twin.
   return { uri: uriStr, verb: "hunk", text: bytes, toks: toks, kind: kind,
            bare: true };
 }

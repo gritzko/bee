@@ -1,40 +1,11 @@
-//  index/hook.js — LITE-026: the git PRE-COMMIT pass that MINTS permalinks.
-//  `file.c:12:24` is what humans and compilers write; committed text is where
-//  it rots.  A commit is the last moment the ref is still current AND the first
-//  moment every blob's hash is known (the commit id is not — which is why the
-//  [LITE-025] hashlet is blob-only), so the upgrade rides the commit.
-//
-//  THE PASS
-//   1. the paths this commit CHANGES, with the blob the index holds for each —
-//      read off git, because lite has no `.git/index` reader and a pre-commit
-//      hook is exactly where the index is the truth;
-//   2. per changed file, one HEAD->staged fold: a token ALIVE in the staged
-//      blob that the HEAD side does not carry is ADDED TEXT, and an added token
-//      tagged `F` is a fresh reference — the DOG-034 lexer fuses `path:12:24`
-//      into that one token, so nothing here re-scans raw bytes;
-//   3. the ref's path resolves through the LITE-011 descent (the commit's own
-//      new files first, they are in no tree yet); TWO answers is an ambiguity
-//      the hook never guesses through;
-//   4. the target's blob is its STAGED one when this commit changes it, HEAD's
-//      otherwise; the line:col becomes a byte offset in exactly that blob and
-//      the blob's id becomes the hashlet, extended against the path's own
-//      other blobs ([LITE-025] scope: one file, never the repository);
-//   4a. [LITE-027] a hashlet names its target's FINAL bytes, so the carriers are
-//      minted in TOPOLOGICAL order — every target before anything naming it;
-//   5. the rewrite lands in the INDEX — `hash-object -w` then `update-index`,
-//      never the working file used as a proxy for what a commit takes — and the
-//      working file then gets the SAME upgrades ref for ref, so an unstaged
-//      diff never shows a meaningless link-form difference.
-//
-//  THE FIRST COMMIT mints too: a repo with no HEAD has nothing to index and no
-//  blob history to extend a hashlet against, but EVERY path in it is staged, so
-//  the staged set answers every ref by itself and the empty tree is the base.
-//
-//  LEFT ALONE, NEVER GUESSED: a path nothing answers, a path several files
-//  answer, a line past the end of the target, and a ref on a LINK CYCLE — two
-//  files naming each other's text have no final bytes to name, the self-link
-//  ([LITE-025]) being that cycle of one.  Only those refs degrade; the rest of
-//  the commit mints.
+//  index/hook.js as per LITE-026: the git PRE-COMMIT pass that MINTS permalinks —
+//  a fresh `file.c:12:24` in staged text becomes `file.c:k4:d8K3` (LITE-025:Mv:zcD_)
+//  at the last moment the ref is current and the first every blob id is known.
+//  The pass: added text off the weave LITE-026:eN:xoo4, the ruled INDEX write-back
+//  LITE-026:pQ:xoo4, the first commit LITE-026:z3:xoo4, the topo order and per-ref cycle
+//  degrade LITE-027:WX:Few6.  Left alone, never guessed: an unresolved or ambiguous
+//  path, a line past the end, a link cycle (LITE-026:SK:xoo4, LITE-027:My:Few6).  Ticket
+//  stems and the registry fan-out: BEE-014:42; `bee mint` reuses it: BEE-016:34.
 "use strict";
 
 const idx = require("./index.js");
@@ -46,13 +17,10 @@ const wv = require("./weave.js");
 const TAG_F = 0x46;                                //  the lexer's `F` anchor
 const TOK32_F = TAG_F - 65;                        //  the same tag in a tok32
 
-//  --- THE link scanner (LITE-033 factored it out of applySubs) ---------------
-//  Ruling 2026-08-15: link recognition is the TOKENIZER's, and only the
-//  tokenizer's.  The DOG-034 lexer fuses `main.js`, `abc/Makefile:20`,
-//  `LITE-029` and the rest of the [Link] grammar into ONE `F` token, so
-//  everything that wants links asks for those tokens and NOTHING re-scans raw
-//  bytes — no regex, no second recognizer.  `applySubs` below reads them, and
-//  so does index/lindex.js's tip-blob walk.
+//  --- THE link scanner --------------------------------------------------------
+//  LITE-033:a_:PS~9: link recognition is the TOKENIZER's alone — the DOG-034 lexer
+//  fuses `abc/Makefile:20`, `LITE-029` into ONE `F` token, so no regex and no
+//  second recognizer ever re-scans raw bytes.  Shared with lindex.js, mint.js.
 //  -> [{ lo, hi, text }, ...] over `bytes`; an untokenisable source is empty.
 function fTokens(bytes, ext) {
   let toks;
@@ -132,14 +100,13 @@ function allZero(s) {
 }
 
 //  --- what this commit changes ----------------------------------------------
-//  git's EMPTY TREE — the baseline a repo with no HEAD diffs against, so on the
-//  FIRST commit every staged path reads as added.  git knows this object
-//  without anyone having written it.
+//  git's EMPTY TREE, the `diff-index` base on the FIRST commit (LITE-026:z3:xoo4):
+//  every staged path reads as added, and git knows it without a write.
 const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
 //  -> Map rel -> the staged blob id, for every path whose staged blob differs
-//  from HEAD's.  `-z` throughout, so a path with a tab or a quote in it reads
-//  back verbatim.  A deletion (no new blob) and an unmerged slot are skipped.
+//  from HEAD's — asked of git, since bee reads no `.git/index` (LITE-026:1R7:xoo4).
+//  `-z` so odd path bytes read back verbatim; deletions and unmerged skipped.
 function stagedFiles(ctx) {
   const tmp = ctx.gitdir + "/lite-hook." + io.getpid();
   const text = capture(["git", "-C", ctx.root, "diff-index", "--cached", "--raw",
@@ -190,18 +157,58 @@ function freshRefs(rel, was, now) {
 //  --- the target -------------------------------------------------------------
 //  A ref's path -> the ONE repo-relative file it names, or null.  The commit's
 //  own new files answer first (no tree carries them yet), then the LITE-011
-//  descent at HEAD.  Several answers = an ambiguity, and the hook never guesses.
-//  On the FIRST commit the staged set IS the whole tree, so it answers alone —
-//  the descent has nothing to add and there is no index to ask.
+//  descent at HEAD; several answers = an ambiguity, never guessed.  BEE-014:42:
+//  a STEM tries the door's own `refSpellings` ladder, first spelling that answers.
 function targetOf(ctx, ix, staged, partial) {
-  const q = rs.split(partial);
-  if (q === null) return null;
-  const hits = [];
-  for (const rel of staged.keys()) if (rs.tailMatches(rel, q.segs)) hits.push(rel);
-  if (ctx.head && ctx.head.sha)
-    for (const rel of rs.resolveAt(ctx, ix, ctx.head.sha, partial))
-      if (hits.indexOf(rel) < 0) hits.push(rel);
-  return hits.length === 1 ? hits[0] : null;
+  for (const t of require("door.js").refSpellings(partial)) {
+    const q = rs.split(t);
+    if (q === null) continue;
+    const hits = [];
+    for (const rel of staged.keys()) if (rs.tailMatches(rel, q.segs)) hits.push(rel);
+    if (ctx.head && ctx.head.sha)
+      for (const rel of rs.resolveAt(ctx, ix, ctx.head.sha, t))
+        if (hits.indexOf(rel) < 0) hits.push(rel);
+    if (hits.length) return hits.length === 1 ? hits[0] : null;
+  }
+  return foreignTarget(ctx, partial);
+}
+
+//  BEE-014:47: the FAN-OUT over the mount table (index/mount.js) — REGISTERED
+//  IS THE WHOLE PERMISSION.  Each repo opens READ-ONLY, never brought up
+//  (BEE-002:135:qexI); a target no registered repo holds mints NOTHING, never a guess.
+//  -> { root, rel } (a foreign file), or null.
+function foreignTarget(ctx, partial) {
+  const mnt = require("./mount.js");
+  const spellings = require("door.js").refSpellings(partial);
+  let mounts;
+  try { mounts = mnt.mounts(); } catch (e) { return null; }
+  for (const m of mounts) {
+    if (m.root === ctx.root) continue;          // the carrier answered already
+    const hit = inForeign(m.root, spellings);
+    if (hit !== null) return hit.rel === null ? null : { root: m.root, rel: hit.rel };
+  }
+  return null;
+}
+
+//  ONE foreign repo's answer.  null = it holds nothing; { rel: null } = it holds
+//  SEVERAL, which is the ambiguity the hook refuses rather than guesses through.
+function inForeign(root, spellings) {
+  let tctx = null, tix = null;
+  try {
+    tctx = idx.openRepo(root, true);
+    if (!(tctx.head && tctx.head.sha)) return null;
+    tix = idx.openIndex(tctx.gitdir, false, true);
+    for (const t of spellings) {
+      const hits = rs.resolveAt(tctx, tix, tctx.head.sha, t);
+      if (hits.length === 1) return { rel: hits[0] };
+      if (hits.length > 1) return { rel: null };
+    }
+    return null;
+  } catch (e) { return null; }        // an unreadable repo simply does not answer
+  finally {
+    if (tix !== null) { try { tix.close(); } catch (e) {} }
+    if (tctx !== null) idx.closeRepo(tctx);
+  }
 }
 
 //  One ref -> its permalink spelling, or null when it is left alone.  The path
@@ -210,6 +217,9 @@ function targetOf(ctx, ix, staged, partial) {
 function mintRef(ctx, ix, images, ref) {
   const rel = ref.dst;
   if (rel === null) return null;
+  //  BEE-014: a FOREIGN target is scoped to ITS OWN repo — the hashlet names a
+  //  blob in that history, and the carrier's history has nothing to say about it.
+  if (typeof rel === "object") return mintForeign(rel, ref);
   const own = images.has(rel);
   const bytes = own ? images.get(rel) : blobOf(ctx, (headEntry(ctx, rel) || {}).sha);
   if (bytes === null || bytes === undefined) return null;
@@ -223,44 +233,64 @@ function mintRef(ctx, ix, images, ref) {
   return ref.path + ":" + pm.packOffset(off) + ":" + h;
 }
 
-//  The staged bytes of one file with every mintable ref replaced; `bytes` is
-//  null when none of them minted.  Ascending order, so the splice needs no
-//  re-indexing.  `subs` maps each ref AS WRITTEN to its permalink — what the
-//  working copy is upgraded by, so the two halves say exactly the same thing.
-//  A ref whose target sits in the carrier's OWN component is on a cycle: it has
-//  no final bytes to name, so it stays `line:col`.  `stuck` counts only the
-//  REAL cycles — a component of one is the self-link, silent and expected.
+//  BEE-014:49: one FOREIGN ref -> its permalink.  The target repo is opened
+//  READ-ONLY: its HEAD blob is what the anchor names and its own blob history
+//  is the hashlet's scope (core/Link — one file, one repo).  Path as written.
+function mintForeign(dst, ref) {
+  let tctx = null, tix = null;
+  try {
+    tctx = idx.openRepo(dst.root, true);
+    const he = headEntry(tctx, dst.rel);
+    if (he === null) return null;
+    const bytes = blobOf(tctx, he.sha);
+    if (bytes === null) return null;
+    const off = pm.byteAt(bytes, ref.line, ref.col);
+    if (off < 0) return null;                            // no such line there
+    tix = idx.openIndex(tctx.gitdir, false, true);
+    const h = pm.mintHashlet(he.sha, pm.blobHistory(tctx, tix, dst.rel));
+    if (h === null) return null;
+    return ref.path + ":" + pm.packOffset(off) + ":" + h;
+  } catch (e) { return null; }
+  finally {
+    if (tix !== null) { try { tix.close(); } catch (e) {} }
+    if (tctx !== null) idx.closeRepo(tctx);
+  }
+}
+
+//  One file's staged bytes with every mintable ref replaced (`bytes` null when
+//  none minted); `subs` maps ref AS WRITTEN -> permalink, so the working copy
+//  gets the SAME upgrades.  LITE-027:WX:Few6: a target in the carrier's OWN component
+//  is a cycle and stays `line:col`; `left` is what `bee mint` reports (BEE-016:28).
 function rewrite(ctx, ix, images, comp, rel, src, refs) {
-  const parts = [], subs = new Map();
+  const parts = [], subs = new Map(), left = [];
   let at = 0, minted = 0, stuck = 0;
   const mine = comp.get(rel);
   for (const ref of refs) {
     if (ref.dst !== null && comp.get(ref.dst) === mine) {
       if (mine.length > 1) stuck++;
+      left.push(ref);
       continue;
     }
     const s = mintRef(ctx, ix, images, ref);
-    if (s === null) continue;
+    if (s === null) { if (ref.dst !== null) left.push(ref); continue; }
     parts.push(src.slice(at, ref.lo));
     parts.push(utf8.Encode(s));
     subs.set(utf8.Decode(src.slice(ref.lo, ref.hi)), s);
     at = ref.hi;
     minted++;
   }
-  if (minted === 0) return { bytes: null, minted: 0, subs: null, stuck: stuck };
+  if (minted === 0)
+    return { bytes: null, minted: 0, subs: null, stuck: stuck, left: left };
   parts.push(src.slice(at));
-  return { bytes: concat(parts), minted: minted, subs: subs, stuck: stuck };
+  return { bytes: concat(parts), minted: minted, subs: subs, stuck: stuck,
+           left: left };
 }
 
 //  --- the link graph ---------------------------------------------------------
-//  [LITE-027] Carrier -> target edges, over the files this commit REWRITES: a
-//  target no rewrite touches is already final and is no edge at all.  Tarjan
-//  answers with the strongly connected components in SINK-FIRST order — which is
-//  exactly the mint order, every target settled before anything naming it — and
-//  a component of more than one file is a link cycle.  A self-link puts a file
-//  in its own component with an edge to itself, so both cases read the same:
-//  carrier and target in ONE component means the ref cannot be minted.
-//  -> [[rel, ...], ...], sinks first.
+//  LITE-027:WX:Few6: carrier -> target edges over the files this commit REWRITES (an
+//  untouched target is final, no edge).  Tarjan yields the SCCs SINK-FIRST = the
+//  mint order; a component of >1 file is a cycle, a self-link its own component
+//  with a self-edge, so both read the same.  -> [[rel, ...], ...], sinks first.
 function components(nodes, edges) {
   const seen = new Map(), low = new Map(), on = new Set();
   const path = [], out = [];
@@ -295,9 +325,9 @@ function components(nodes, edges) {
 }
 
 //  --- the write-back ---------------------------------------------------------
-//  Store the rewritten bytes as a blob and point the INDEX entry at them.
-//  `--no-filters`: these bytes already ARE index-side content (they came off the
-//  ODB), so no clean filter may run over them a second time.
+//  LITE-026:pQ:xoo4: the rewrite lands in the INDEX — a blob, then the entry pointed
+//  at it.  `--no-filters`: the bytes came off the ODB and already ARE index-side
+//  content, so no clean filter may run over them twice.
 function stageBytes(ctx, rel, mode, bytes) {
   const tmp = ctx.gitdir + "/lite-hook.blob." + io.getpid();
   writeFile(tmp, bytes);
@@ -311,11 +341,10 @@ function stageBytes(ctx, rel, mode, bytes) {
               mode + "," + id + "," + rel]) === 0;
 }
 
-//  The SAME upgrades over the WORKING file: an `F` token that IS one of the refs
-//  just minted becomes its permalink, wherever it sits in the dirty content;
-//  every other byte, the unstaged edits included, is untouched.  Token equality,
-//  never a substring hunt — `FSW.c:9` is a prefix of `FSW.c:90`.
-//  A ref that exists ONLY on disk was not part of this commit: it waits its turn.
+//  LITE-026:vN:xoo4: the SAME upgrades over the WORKING file, by TOKEN equality (a
+//  substring hunt would eat `FSW.c:1j:Udys` out of `FSW.c:dG:Udys`) — every other byte,
+//  unstaged edits included, stays.  A ref only on disk was not part of this
+//  commit and waits its turn.
 function applySubs(bytes, ext, subs) {
   if (!subs || subs.size === 0) return null;
   const parts = [];
@@ -335,10 +364,9 @@ function applySubs(bytes, ext, subs) {
 }
 
 //  --- the pass ---------------------------------------------------------------
-//  The handle openRepo builds, MINUS its HEAD gate — a repo with no commits has
-//  no HEAD to index, and the FIRST commit needs only the ODB and the two paths.
-//  `head` is null, which every leg below reads as "the empty tree is the base".
-//  openRepo itself is shared by every verb and stays as it is.
+//  LITE-026:z3:xoo4: openRepo's handle MINUS its HEAD gate — the FIRST commit needs
+//  only the ODB and the two paths.  `head` is null, which every leg reads as
+//  "the empty tree is the base"; openRepo itself is every verb's and stays.
 function openUnborn(arg) {
   let repo = null;
   try { repo = io.realpath(arg); } catch (e) { return null; }
@@ -422,10 +450,8 @@ function pass(ctx, ix, staged) {
       stuck.join(", ");
   if (minted === 0) return note;
 
-  //  The STAGED content is what a commit takes, so the rewrite lands in the
-  //  INDEX — never through the working file as a proxy for it.  The working
-  //  file then gets the SAME upgrades ref for ref, so the unstaged diff never
-  //  shows a meaningless link-form difference.
+  //  LITE-026:pQ:xoo4: the INDEX takes the rewrite (never the working file as a proxy),
+  //  then the working file the SAME upgrades — no meaningless link-form diff.
   const done = [];
   for (const [rel, bytes] of images) {
     if (wv.bytesEq(bytes, base.get(rel))) continue;
@@ -447,9 +473,9 @@ function pass(ctx, ix, staged) {
 }
 
 //  --- the plant --------------------------------------------------------------
-//  Our line goes FIRST, right after the shebang, rather than at the end: an
-//  existing hook that gates on its own `exit 0` would never reach an appended
-//  line, and a linter later in the file should see the rewritten text.
+//  LITE-026:lx:xoo4: our line goes FIRST, after the shebang — an existing hook gating
+//  on its own `exit 0` never reaches an appended line, and a later linter should
+//  see the rewritten text.
 const MARK = "#  Beagle-lite (LITE-026): fresh `file:line` refs -> permalinks.";
 function hookLine(self) { return "\"" + self + "\" hook || exit $?"; }
 
@@ -480,4 +506,9 @@ function plant(gitdir, self) {
 module.exports = { precommit: precommit, plant: plant, openUnborn: openUnborn,
                    freshRefs: freshRefs, stagedFiles: stagedFiles,
                    //  LITE-033: the ONE link scanner, shared with index/lindex.js.
-                   fTokens: fTokens };
+                   fTokens: fTokens,
+                   //  BEE-016:34: THE MINTER ITSELF, shared with index/mint.js —
+                   //  the verb is this pass with another scan and write-back.
+                   targetOf: targetOf, rewrite: rewrite, components: components,
+                   readFile: readFile, writeFile: writeFile, blobOf: blobOf,
+                   headEntry: headEntry };

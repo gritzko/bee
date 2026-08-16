@@ -1,12 +1,10 @@
-//  index/weave.js — LITE-014: the CRDT 3-way weave MERGE, ported from
-//  be/shared/weave.js (`weave3`/`mergedLive`/`fold`/`merge`) over the same
-//  `abc.ram("CFOLD")` container lite already links.  The DAG half of be's
-//  module (build/buildDag/foldCommit) is NOT here: a git merge driver is handed
-//  three BLOBS, so there is no history to walk and no store reader to carry.
-//
-//  This file is also THE source-size policy home (view/diff.js imports it, so
-//  the caps live in one place as they do in be) and the one "can we weave it"
-//  gate: over the cap or binary => the caller falls back, never silent-ours.
+//  index/weave.js as per LITE-014: the CRDT 3-way weave MERGE ported from
+//  be/shared/weave.js over the `abc.ram("CFOLD")` container (LITE-014:14u:ELgi), plus
+//  BEE-005's file weave RECONSTRUCTION off the REV index — one weave per path,
+//  seeded at the LCA floor, every rev above folded once (BEE-005:1Jz:mJpI, BEE-005:1_Y:mJpI).
+//  Also THE source-size policy home and the one "can we weave it" gate: over the
+//  cap or binary => the caller falls back LOUDLY, never silent-ours (LITE-014:ta:ELgi,
+//  LITE-014:1BB:ELgi).  Conflicts render MARKERLESS with spans (PATCH-025:XS:_wAC).
 "use strict";
 
 //  A source larger than this is a BLOB: not tokenised, not woven.  One place
@@ -58,14 +56,10 @@ function merge(base, hash, ancestors) {
   return w;
 }
 
-//  PATCH-025 (DIS-080): the MARKERLESS merged render — the RGA reading of the
-//  weave at `rev` (every alive token in document order, NO fences).
-//  `groupIds` is one hashlet-id array per side; returns { bytes, spans } —
-//  spans are the [from,to) byte ranges that conflict.  Membership is BLAME:
-//  the cursor yields body offsets (identity), blame(off) names the inserter.
-//  A run of non-shared tokens CONFLICTS iff two of its membership masks are
-//  disjoint; a conflicting run whose groups spell EQUAL bytes collapses to
-//  one copy (content re-absorbed under another birth id — never a conflict).
+//  PATCH-025:XS:_wAC (DIS-080): the MARKERLESS merged render — the RGA reading of the
+//  weave at `rev`, no fences; `groupIds` one hashlet-id array per side.
+//  -> { bytes, spans }, spans the conflicting [from,to) byte ranges: a run of
+//  non-shared tokens conflicts iff two membership masks (by BLAME) are disjoint.
 function mergedLive(wm, rev, groupIds) {
   const ng = groupIds.length;
   const spine = ng >= 32 ? 0xFFFFFFFF : ((1 << ng) - 1);
@@ -113,7 +107,8 @@ function mergedLive(wm, rev, groupIds) {
       let allEq = true;
       for (let g = 1; g < seen.length && allEq; g++)
         if (!bytesEq(g0, gather(i, hi, seen[g]))) allEq = false;
-      if (allEq) { put(g0); i = hi; continue; }   // re-absorbed, not a conflict
+      //  equal bytes under other birth ids: re-absorbed content, not a conflict
+      if (allEq) { put(g0); i = hi; continue; }
     }
     const from = at;
     for (let j = i; j < hi; j++) if (live[j]) put(text[j]);
@@ -127,12 +122,10 @@ function mergedLive(wm, rev, groupIds) {
   return { bytes: bytes, spans: spans };
 }
 
-//  GET-056b: the 3-blob weave merge — base, then ours and theirs as CONCURRENT
-//  folds on it (each diffs against the base, NOT sequentially), then a
-//  contentless merge over all three.  Disjoint edits coexist cleanly; a
-//  divergent region reads back markerless with conflict spans (PATCH-025).
-//  Returns null for an unweavable input (binary or over the source cap) — the
-//  caller falls back LOUDLY, never silent-ours.
+//  GET-056b:29: the 3-blob weave merge — base, then ours and theirs as
+//  CONCURRENT folds on it, then a contentless merge over all three, so disjoint
+//  edits coexist and a divergent region reads back markerless with spans.
+//  null = unweavable (binary, over cap): the caller falls back LOUDLY (LITE-014:ta:ELgi).
 const _W3_BASE = "0000000000000001", _W3_OURS = "0000000000000002",
       _W3_THRS = "0000000000000003", _W3_MRG = "0000000000000004";
 function weave3(base, ours, theirs, ext) {
@@ -156,14 +149,11 @@ function weave3(base, ours, theirs, ext) {
   return mergedLive(wm, _W3_MRG, [[_W3_BASE, _W3_OURS], [_W3_BASE, _W3_THRS]]);
 }
 
-//  ===========================================================================
-//  BEE-005: the file weave RECONSTRUCTION — be/shared/weave.js `buildDag` over
-//  bee's REV index instead of be's recomputed pathdag.  ONE weave per path: the
-//  path's blob at the LCA FLOOR of the tips folded first (as the floor's own
-//  commit), then every rev above it once, in rev order, each folded with its
-//  ancestor closure.  Shared history is folded ONCE for every tip.
-//  ===========================================================================
-
+//  --- BEE-005: the file weave RECONSTRUCTION ----------------------------------
+//  be/shared/weave.js `buildDag` over bee's REV index (BEE-005:NK:mJpI, BEE-005:1_Y:mJpI):
+//  ONE weave per path, the blob at the LCA FLOOR folded first as the floor's own
+//  commit (BEE-005:1Jz:mJpI), then every rev above it once, in rev order, with its
+//  ancestor closure — shared history is folded ONCE for every tip.
 const ln = require("./dag.js");
 const idx = require("./index.js");
 
@@ -171,9 +161,8 @@ const idx = require("./index.js");
 //  bits of the commit sha, so the id is that hashlet SHIFTED — the low nibble
 //  is always 0, which is what keeps the reserved ids below off the commit space.
 function layerId(chl) { return idx.hexOfHl(chl) + "0"; }
-//  The seed layer when the tips have NO common rev at all (the path is an
-//  addition on one side): an EMPTY first layer under a reserved id, over which
-//  the first real rev reads as a plain insert (BEE-005 ruling 4).
+//  BEE-005:1QN:mJpI: the seed when the tips have NO common rev (an addition on one
+//  side) — an EMPTY first layer, so the first real rev reads as a plain insert.
 const LAYER_NIL = "0000000000000005";
 //  BE-010: the worktree's on-disk edit rides as a FINAL synthetic layer.
 const WT_SRC = "00000000005774ed";
@@ -191,16 +180,10 @@ function blobOf(r, bhl) {
   return o.bytes.length > MAX_SOURCE_SIZE ? undefined : o.bytes;
 }
 
-//  weaveDiff(r, ix, path, tips, ext) -> the ONE weave and one READING per tip.
-//  `tips` are `{ chl, blob }` — the commit hashlet and the blob sha the tip's
-//  TREE carries there (undefined = the path is not there at all), the FROM side
-//  first.  The result is be's `build` shape:
-//    weave           the CFOLD container every rev reads out of
-//    views[i]        -> { rev, ids } the layer id that tip's view stands on
-//    idToHl          layer id -> the commit hashlet that folded it (blame)
-//  A tip the path is absent at gets an EMPTY layer of its own, so an addition
-//  is a plain insert above the floor and a deletion a plain removal: neither
-//  needs the inverted 2-layer fold a blob pair does (ruling 4).
+//  weaveDiff(r, ix, path, tips, ext) -> the ONE weave and one READING per tip:
+//  be's `build` shape — `weave`, `views[i] -> { rev, ids }`, `idToHl` (blame).
+//  `tips` are `{ chl, blob }`, FROM first; an absent tip (blob undefined) gets an
+//  EMPTY layer, so add/delete are plain insert/removal (BEE-005:1QN:mJpI).
 function weaveDiff(r, ix, path, tips, ext) {
   const pr = ln.pathRevs(ix, path);
   const reps = new Map();
@@ -210,9 +193,8 @@ function weaveDiff(r, ix, path, tips, ext) {
     reps.set(t.chl, rs);
     for (const rev of rs) if (all.indexOf(rev) < 0) all.push(rev);
   }
-  //  The index knows no rev of this path (nothing above it was ever indexed):
-  //  the tips still fold their OWN blobs over an empty seed, under their own
-  //  commit ids — a degraded weave, never a silently missing file.
+  //  No rev of this path in the index: the tips still fold their OWN blobs over
+  //  an empty seed under their own ids — degraded, never a silently missing file.
   let f = all.length ? ln.floorRev(pr, all) : { floor: null, above: [] };
   if (f.above.length > LAYER_CAP) {
     //  Too deep to fold rev by rev: re-root at the from side's own rev, in
@@ -267,8 +249,6 @@ function weaveDiff(r, ix, path, tips, ext) {
 
   //  be `viewAt`: a tip stands on ONE rev, or JOINS several under its own id —
   //  a merge that touched no path of its own has no rev to stand on otherwise.
-  //  An ABSENT path folds an empty layer, a tip the index has no rev for folds
-  //  its own blob: either way the tip's view is a real layer, never a guess.
   const views = [];
   for (const t of tips) {
     const rs = reps.get(t.chl);
@@ -292,7 +272,8 @@ function weaveDiff(r, ix, path, tips, ext) {
     const own = t.blob === undefined ? new Uint8Array(0)
               : (rev === null ? blobOf(r, idx.hlOfSha(t.blob)) : null);
     if (own !== null && own !== undefined && tid !== seedId && rev !== tid) {
-      //  absent (fold empty = the delete) or unrepresented (fold its bytes).
+      //  absent (fold empty = the delete) or unrepresented (fold its bytes):
+      //  either way the tip's view is a real layer, never a guess.
       w = fold(w, own, ext, tid, Array.from(rev === null ? seedIds : ids));
       idToHl.set(tid, t.chl);
       ids.add(tid);
@@ -305,11 +286,10 @@ function weaveDiff(r, ix, path, tips, ext) {
            seed: seedId, revs: pr };
 }
 
-//  BEE-005: a PARENT->CHILD pair needs no index at all — the merge base of a
-//  commit and its own parent IS that parent, and nothing lies between them, so
-//  the weave is the parent's blob as the seed and the child's as the one layer
-//  above it.  Same shape as `weaveDiff`, same real commit ids, no rev read: it
-//  is what keeps `bee commit` an ODB-only view (ruling, test/commit).
+//  BEE-005: a PARENT->CHILD pair needs no index — the merge base of a commit and
+//  its parent IS that parent, so the weave is the parent's blob as the seed and
+//  the child's as the one layer above.  Same shape and real commit ids as
+//  `weaveDiff`, no rev read: what keeps `bee commit` an ODB-only view.
 function blobDiff(from, to, ext) {
   const idToHl = new Map();
   const fid = from.chl === null ? LAYER_NIL : layerId(from.chl);

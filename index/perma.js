@@ -1,30 +1,11 @@
-//  index/perma.js — LITE-025: FOLLOW a permalink `file.c:k4:d8K3`.  Segment 1 is
-//  a ron64 BYTE OFFSET into the file's blob AS THE ANCHORED VERSION HAD IT,
-//  segment 2 a ron64 BLOB HASHLET — a blob id prefix and NOTHING ELSE (ruled
-//  2026-08-14: no commit-id tier).  Minting lives elsewhere; this file walks.
-//
-//  BLOB OFFSET, NEVER A WEAVE OFFSET (ruled): the fold's ranges are
-//  tokenizer-dependent, so a weave rebuild under a new lexer would re-point every
-//  link; blob bytes are canonical git ground.
-//
-//  THE WALK
-//   1. the hashlet's ron64 pairs unpack to a HEX PREFIX — 12 bits a pair, three
-//      hex digits, big-endian — which is what the named blob's sha1 carries;
-//   2. the SCOPE IS ONE FILE, never repo-wide (that is what keeps a hashlet four
-//      characters long): the blobs this path itself ever held, EARLIEST in the
-//      path's history order, then its staged/working blob — a link minted on
-//      content no commit carries yet;
-//   3. the anchored blob is folded, then the CURRENT worktree bytes are folded
-//      ON TOP — one CFOLD pair, exactly what view/diff.js does;
-//   4. walking the weave AT THE ANCHOR names the token covering the byte (its
-//      body offset IS its identity), walking AT THE HEAD says where that same
-//      token sits today: the anchored line, wherever later commits pushed it;
-//   5. a token later DELETED still has a place in the weave — the follow lands
-//      where it stood and the caller says which commit took it.
-//
-//  EARLIEST WINS, in the path's own history order: a file reverted to an older
-//  version carries that older blob AGAIN, and the link means the first of them —
-//  a younger blob sharing the prefix was minted a longer hashlet of its own.
+//  index/perma.js as per LITE-025: FOLLOW a permalink `file.c:k4:d8K3` — a ron64
+//  BYTE OFFSET into the anchored blob plus a BLOB HASHLET, blob-only (LITE-025:3L:zcD_;
+//  blob offset over weave offset LITE-025:yU:zcD_).  Scope is ONE file's blob history,
+//  EARLIEST match wins (LITE-025:SA:zcD_, LITE-025:UT:zcD_); the walk is one CFOLD pair,
+//  anchored blob then today's bytes, token identity carrying the byte across
+//  (LITE-025:1Gw:zcD_).  The MINT half lives here too so one file owns the ron64 packing
+//  both ways (LITE-026:1cG:xoo4).  A stem path takes the door's ladder and the follow
+//  fans out over the mount table like the minter (BEE-014:44, BEE-014:51).
 "use strict";
 
 const idx = require("./index.js");
@@ -100,10 +81,10 @@ function offsetOf(s) {
 function packPair(v) { return ron.encode(BigInt(v)).padStart(2, "0"); }
 function packOffset(n) { const s = ron.encode(BigInt(n)); return s === "" ? "0" : s; }
 
-//  A blob sha1 (hex) -> the SHORTEST hashlet that names it among `others` — the
-//  path's own other blobs, which is the whole scope.  Min 4 chars, EVEN (12 bits
-//  a pair), one non-digit (that is what tells segment 2 from a column), extended
-//  BY 2 until unique.  null = even 10 chars collide, so nothing is minted.
+//  LITE-025:PW:zcD_: a blob sha1 (hex) -> the SHORTEST hashlet naming it among
+//  `others`, the path's own blobs — min 4 chars, EVEN, one non-digit (what tells
+//  segment 2 from a column), extended BY 2 until unique.  null = 10 chars still
+//  collide, so nothing is minted.
 function mintHashlet(sha, others) {
   for (let pairs = 2; pairs <= 5; pairs++) {
     const hexn = pairs * 3;
@@ -201,8 +182,8 @@ function blobsFor(ctx, ix, rel, hexpfx) {
   return out;
 }
 
-//  The WORKING copy's own blob id — a link minted on content no commit carries.  (lite never reads `.git/index`, so a
-//  staged-only change reads as a worktree one — view/diff.js's own stance.)
+//  The WORKING copy's own blob id — a link minted on content no commit carries
+//  (bee reads no `.git/index`, so staged-only reads as worktree: LITE-025:1s_:zcD_).
 function blobIdOf(bytes) {
   const head = utf8.Encode("blob " + bytes.length);   // then the NUL git puts
   const all = new Uint8Array(head.length + 1 + bytes.length);
@@ -368,14 +349,19 @@ function follow(partial, offSeg, hash, from) {
     const ix = idx.openIndex(ctx.gitdir);
     try {
       idx.bringUp(ctx, ix, { track: false });       // the lazy contract, as ever
-      //  The path is named the way every other lite reference is — the LITE-011
-      //  descent at HEAD, so `FSW.c`, `abc/FSW.c` and the full spelling all work.
-      //  A chooser row hands back the ABSOLUTE path it painted; inside this repo
-      //  that is the root-relative one, which is what the descent reads.
+      //  A chooser row hands back the ABSOLUTE path it painted; the LITE-011
+      //  descent reads the root-relative one, so the root prefix is shed first.
       let p = String(partial);
       const pre = ctx.root + "/";
       if (p.slice(0, pre.length) === pre) p = p.slice(pre.length);
-      const rels = require("./resolve.js").resolveAt(ctx, ix, ctx.head.sha, p);
+      //  BEE-014: a permalink's path may be a STEM — the minter keeps the path
+      //  AS WRITTEN, so a ticket code stays a code and needs the door's ladder.
+      const rsv = require("./resolve.js");
+      let rels = [];
+      for (const t of require("door.js").refSpellings(p)) {
+        rels = rsv.resolveAt(ctx, ix, ctx.head.sha, t);
+        if (rels.length) break;
+      }
       const hits = [], seats = [];
       for (const rel of rels) {
         const seat = land(ctx, ix, rel, hexpfx, off);
@@ -383,12 +369,48 @@ function follow(partial, offSeg, hash, from) {
         hits.push({ rel: rel, full: ctx.root + "/" + rel });
         seats.push(seat);
       }
-      if (hits.length === 0) return null;
+      //  BEE-014: the minter fans out over the mount table, so the follower
+      //  must too — a permalink minted against a sibling repo lands THERE.
+      if (hits.length === 0) return foreignFollow(ctx, p, hexpfx, off);
       if (hits.length > 1) return { rels: hits };
       return seats[0];
     } finally { try { ix.close(); } catch (e) {} }
   } catch (e) { return null; }
   finally { idx.closeRepo(ctx); }
+}
+
+//  BEE-014:51: the follow's FAN-OUT, the minter's mirror — every OTHER registered
+//  repo opened READ-ONLY, never brought up; the first that spells the path AND
+//  carries the anchored blob is the landing, a path-only answer is no answer.
+function foreignFollow(home, partial, hexpfx, off) {
+  const mnt = require("./mount.js");
+  const spellings = require("door.js").refSpellings(partial);
+  let mounts;
+  try { mounts = mnt.mounts(); } catch (e) { return null; }
+  for (const m of mounts) {
+    if (m.root === home.root) continue;         // already asked, and it missed
+    let tctx = null, tix = null;
+    try {
+      tctx = idx.openRepo(m.root, true);
+      if (!(tctx.head && tctx.head.sha)) continue;
+      tix = idx.openIndex(tctx.gitdir, false, true);
+      const rsv = require("./resolve.js");
+      for (const t of spellings) {
+        const rels = rsv.resolveAt(tctx, tix, tctx.head.sha, t);
+        if (rels.length === 0) continue;
+        for (const rel of rels) {
+          const seat = land(tctx, tix, rel, hexpfx, off);
+          if (seat !== null) return seat;
+        }
+        break;                                  // that spelling answered; no other will
+      }
+    } catch (e) { /* an unreadable repo simply does not answer */ }
+    finally {
+      if (tix !== null) { try { tix.close(); } catch (e) {} }
+      if (tctx !== null) idx.closeRepo(tctx);
+    }
+  }
+  return null;
 }
 
 //  The anchored version: the path's own blob history first (EARLIEST match), the

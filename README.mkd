@@ -53,6 +53,9 @@ picks the sink, `--plain` (also what a pipe defaults to), `--color`, `--html`:
  -  `bee cat <path>[?<rev>]` — the file's own bytes, syntax-painted
  -  `bee tree [<hex>|<path>][?<rev>]` — raw git-tree rows, `..` row when descended
  -  `bee blob <hexlet>` — a blob by object name
+ -  `bee see [-C<n>] <ref>...` — the chunk each reference names, two lines of context each way; the only CLI door onto a permalink
+     1. every shape `door.js` resolves: permalink, path, partial, ticket code, pocket page, another registered repo
+     2. one hunk per ref, in the order given; a miss names the repos searched, an ambiguity shows the chooser, neither ends the batch
  -  `bee http [--port <n>]` — the same views over HTTP on localhost:8034, read-only, EVERY registered repo
      1. `/<repo>/<path>` is the file itself, `/<repo>/<verb>/<path>` a named view; a repo-less URL 301s to the prefixed form
      2. a `.md` URL renders as a page, links resolved; `.mkd` stays painted
@@ -64,6 +67,9 @@ picks the sink, `--plain` (also what a pipe defaults to), `--color`, `--html`:
      1. a LINKED WORKTREE is refused: a repo is known by its path (`bee index` redirects to the original instead)
      2. a SUBMODULE is an ordinary repo: each initialised one is registered, indexed and lindexed too
  -  `bee hook [<repo>]` — the pre-commit pass: fresh `file:line(:col)` refs in the staged text become `file:OFF:HASHLET` permalinks, re-staged
+ -  `bee mint [--dry-run] <file>...` — the same upgrade for refs that ALREADY landed transient, in the working copy only; the hook cannot reach those
+     1. the file list names the CARRIERS: refs written in them, pointing anywhere; a target not listed must be clean, or it is refused
+     2. everything left alone is reported, one line per ref — unresolved, ambiguous, past the end, on a link cycle
  -  `bee merge <base> <ours> <theirs> [-o <out>] [-p <path>]` — CRDT 3-way file merge
      1. clean: merged bytes over `<ours>` (or `<out>`), exit 0
      2. conflict: markerless weave, exit 1
