@@ -1,45 +1,11 @@
-//  view/log.js — LITE-007: `quickjab log [<hex>|<path>]`, the commit and file
-//  logs read OFF the LITE-006 index.
-//
-//  Three forms, one arg, the ruled classification: 6..40 hex = a commit, any
-//  other arg = a path, no arg = the live tip.
-//
-//    log          commits reachable from the live tip, newest first
-//    log <hex>    the same from that commit
-//    log <path>   the commits that AMENDED that file, newest first
-//
-//  LAZY BY CONSTRUCTION: the verb opens the repo, brings the index up to date
-//  itself (LITE-006's mark check -> gap walk -> mark), and only then queries.
-//  A user never runs `index` first, and `log` writes NOTHING but that index
-//  update — not even a repo-list line.
-//
-//  WHERE THE DATA COMES FROM
-//   -  the commit DAG is the index's CPAR rows (`commit_hl -> parent_hl|ord`);
-//      no ODB ancestry walk happens at query time;
-//   -  a file's history is ONE prefix scan of its `path_hl`, taking the
-//      REV-CMMT row of each rev — the LITE-006 "one file's log = one prefix
-//      scan" claim, cashed in;
-//   -  date / author / message come from the ODB through `git.parseCommit`,
-//      addressed by the row's own 15-hex hashlet60 (ODBHex takes any 6..40
-//      hexlet, so a hashlet is a perfectly good object name).
-//
-//  THE STRAIGHT CHAIN (LITE-020).  A commit log is mostly noise merged in from
-//  side branches, so the SPINE — the first-parent (CPAR ord-0) chain from the
-//  walked tip — keeps its normal columns and every other row renders GREY, whole
-//  row, the way be/views/log/log.js does with `TAG_Q`.  The spine is MEMBERSHIP
-//  marked over the rows the walk already collected (O(rows), no second history
-//  walk), display order is untouched, and `--plain` is unaffected: greying is
-//  paint, not text.
-//
-//  ORDER (LITE-013).  A CAPPED walk is git's OWN DEFAULT order: a MAX heap on
-//  the committer date seeded with the tip, pop -> emit -> push the popped
-//  commit's parents.  It is lazy — it touches ~max commits, not the history —
-//  and, exactly like git's default, under clock skew a parent can print before
-//  a child that has not been discovered yet.  An UNCAPPED walk (`log 0`, the
-//  piped dump) keeps the exact reverse Kahn: no parent before ALL of its
-//  children, otherwise newest committer date first — strict `--date-order`,
-//  affordable because the whole history is being materialized anyway.
-//  The DISPLAYED date is the AUTHOR date, as git and be log both show.
+//  view/log.js — LITE-007: `bee log [<n>] [<hex>|<path>][?<rev>]`, the commit
+//  and file logs read OFF the LITE-006 index — the CPAR DAG for a commit, ONE
+//  `path_hl` prefix scan for a file, no ODB walk at query time.  LAZY: the verb
+//  brings the index up itself, so `index` is never run first.
+//  LITE-020: the SPINE (first-parent) keeps its columns, every other row greys
+//  whole (TAG_Q); LITE-013: capped = git's default heap order, uncapped = the
+//  strict reverse Kahn.  BEE-020 lands be's three missing legs — `?<rev>` tips
+//  (BEE-020:30), the submodule descent (BEE-020:31) and ticket `F` spans (BEE-020:33).
 "use strict";
 
 const idx = require("index/index.js");
@@ -102,9 +68,30 @@ const TAG_U = 20;
 //  LITE-020: the OFF-SPINE slot — be's own `TAG_Q` (LOG-001), the dir/unk grey
 //  of dog/THEME that LITE-017 already added to lite's table (`Q: aFgB(90)`).
 const TAG_Q = 16;
+//  BEE-020:33: the `F` slot a REFERENCE wears — a ticket code in a summary is
+//  one, and the pager/door/http already follow an `F` (pager.js:5tZ:ttJQ:tt).
+const TAG_F = 5;
 function tok32(tag, end) { return ((tag & 0x1f) << 27) | (end & 0xffffff); }
 
-function hunk(uriStr, parts) {
+//  BEE-020:33: a summary -> its S/F/S runs, cut by the DOG-034 lexer's own `F`
+//  tokens (index/hook.js:MO:sEz2:sE, the ONE scanner — no regex over summary bytes).
+//  BEE-020:56: EVERY `F` it mints spans, resolved or not; the door refuses an
+//  unanswered code at follow time and http gives it no href.
+function putSummary(put, tag, summary) {
+  const src = utf8.Encode(summary);
+  let cur = 0;
+  for (const t of require("index/hook.js").fTokens(src, "txt")) {
+    if (t.lo < cur || t.hi <= t.lo) continue;
+    if (t.lo > cur) put(tag, utf8.Decode(src.slice(cur, t.lo)));
+    put(TAG_F, t.text);
+    cur = t.hi;
+  }
+  if (cur < src.length || cur === 0) put(tag, utf8.Decode(src.slice(cur)));
+}
+
+//  `pos` is the AMBIENT the rows were walked in (BEE-020:55) — the SUB for a
+//  descended log — and the pager hands it to the door with the row's target.
+function hunk(uriStr, parts, pos) {
   //  ONE growing Buf; feedStr encodes each span straight into IDLE, so there
   //  is no string concat (`text +=` recopied the whole text: O(n^2)-slow).
   const b = io.buf(1 << 16);
@@ -127,7 +114,7 @@ function hunk(uriStr, parts) {
     put(t(TAG_G), " ");
     put(t(TAG_L), p.date7);
     put(t(TAG_G), " ");
-    put(t(TAG_S), p.summary);
+    putSummary(put, t(TAG_S), p.summary);
     put(t(TAG_D), p.authTail);
     put(TAG_S, "\n");
   }
@@ -139,7 +126,7 @@ function hunk(uriStr, parts) {
   const lines = [];
   for (const p of parts) lines.push(rowLine(p));
   return { uri: uriStr, verb: "hunk", text: b.data(), toks: toks,
-           kind: "log", bare: true,
+           kind: "log", bare: true, pos: pos,
            plain: utf8.Encode(lines.length ? lines.join("\n") + "\n" : "") };
 }
 
@@ -326,37 +313,62 @@ function relOf(root, arg) {
 }
 
 //  --- the verb --------------------------------------------------------------
-//  log(arg, opts) -> { rows[], rec, form, capped }.  `opts.from` is the dir to
-//  find the repo above (the cwd by default); `opts.max` (0/absent = all) caps
-//  the walk — a capped walk reads ~max commits off the ODB, not the history.
+//  log(arg, opts) -> { rows[], parts[], rec, form, capped, pos }.  `opts.from`
+//  is the dir to find the repo above (the cwd by default); `opts.max` (0/absent
+//  = all) caps the walk — a capped walk reads ~max commits off the ODB.
+//  BEE-020:31: `log <sub>/<path>` opens the SUB, not the parent's gitlink line.
 function log(arg, opts) {
   opts = opts || {};
+  const rd = require("index/read.js");        // BEE-020: lazy — read.js needs us
+  const mnt = require("index/mount.js");
   const max = opts.max || 0;
-  const ctx = idx.openRepo(opts.from || io.cwd(), true);
+  //  BEE-020:30: `<path>?<rev>`, the cat/list/tree spelling.  An arg the URI
+  //  leaf refuses (a raw space in a name) is ALL PATH — http.js:2E0:dXIx:dX's own out.
+  let a;
+  try { a = rd.argSplit(arg); }
+  catch (e) { a = { path: arg === undefined || arg === null ? "" : String(arg), rev: "" }; }
+  const hexArg = a.path !== "" && HEXARG.test(a.path);
+  let ctx = idx.openRepo(opts.from || io.cwd(), true);
   try {
+    //  BEE-020:54: THE DESCENT — the deepest worktree holding the path IS the
+    //  repo the view opens; the arg is re-rooted and the walk runs unchanged.
+    let rel = null;
+    if (a.path !== "" && !hexArg) {
+      rel = rd.repoRel("log", ctx, a.path, opts.from);
+      const deep = mnt.serves(ctx.root, rel);
+      if (deep !== null && deep !== ctx.root && mnt.under(ctx.root, deep)) {
+        rel = (ctx.root + "/" + rel).slice(deep.length + 1);
+        idx.closeRepo(ctx);
+        ctx = idx.openRepo(deep, true);
+      }
+    }
     const ix = idx.openIndex(ctx.gitdir);
     try {
+      //  BEE-020:30: `?<rev>` names the tip — a branch, tag or hexlet through
+      //  the ONE resolver — and it is brought UP, never refused (BEE-005).
+      const c = a.rev ? rd.revCommit("log", ctx, a.rev) : null;
       //  LAZY: the index brings ITSELF up to date before a single row is read.
-      const rec = idx.bringUp(ctx, ix, { track: false });
+      const rec = idx.bringUp(ctx, ix, { track: false, tip: c ? c.sha : undefined });
       const r = ctx.r;
       let w, form, seed;
-      if (arg === undefined || arg === null || arg === "") {
-        form = "tip";
-        seed = idx.hlOfSha(ctx.head.sha);
-        w = ancestry(ix, r, seed, max);
-      } else if (HEXARG.test(arg)) {
+      if (hexArg) {
         form = "commit";
-        seed = seedOf(ctx, ix, arg);
+        seed = seedOf(ctx, ix, a.path);
+        w = ancestry(ix, r, seed, max);
+      } else if (rel === null || rel === "") {
+        form = "tip";
+        seed = idx.hlOfSha(c ? c.sha : ctx.head.sha);
         w = ancestry(ix, r, seed, max);
       } else {
         form = "path";
         //  LITE-011: the full spelling first (it is exact); nothing there and
         //  the arg may be PARTIAL, so let the FSEG rows name it against the tip.
-        w = fileLog(ix, r, relOf(ctx.root, arg), max);
+        w = fileLog(ix, r, rel, c ? 0 : max);
         if (w.hls.length === 0) {
-          const hit = require("index/resolve.js").pick("log", ix, ctx, arg);
-          if (hit !== null) w = fileLog(ix, r, hit, max);
+          const hit = require("index/resolve.js").pick("log", ix, ctx, a.path);
+          if (hit !== null) { rel = hit; w = fileLog(ix, r, hit, c ? 0 : max); }
         }
+        if (c) w = reachable(ix, r, idx.hlOfSha(c.sha), w, max);
       }
       //  LITE-020: a DAG listing is split spine / off-spine; `log <path>` is a
       //  file's revisions, not a DAG, so every one of its rows paints normally.
@@ -370,9 +382,20 @@ function log(arg, opts) {
         rows.push(rowLine(p));
       }
       return { rows: rows, parts: parts, rec: rec, form: form, capped: w.more,
+               pos: { repo: ctx.root, path: rel || "", anchor: "" },
                uri: "log" + (arg ? " " + arg : "") };
     } finally { try { ix.close(); } catch (e) {} }
   } finally { idx.closeRepo(ctx); }
+}
+
+//  BEE-020:30: `log <path>?<rev>` is the file's revisions REACHABLE from that
+//  tip — the index holds every brought-up branch's, so the tip's own CPAR
+//  closure sieves them.  Only a `?<rev>` pays for it; the bare form does not.
+function reachable(ix, r, seed, w, max) {
+  const have = new Set(ancestry(ix, r, seed, 0).hls);
+  const out = [];
+  for (const hl of w.hls) if (have.has(hl)) out.push(hl);
+  return { hls: max ? out.slice(0, max) : out, more: max ? out.length > max : w.more };
 }
 
 //  A `<hex>` arg -> the hashlet60 the CPAR walk seeds on.  A hexlet of 15 or
@@ -425,7 +448,7 @@ function view(arg, opts) {
   //  default cap does not rename the view.
   const uri = q.max === null ? o.uri
             : "log " + q.max + (q.target ? " " + q.target : "");
-  return [hunk(uri, o.parts)];
+  return [hunk(uri, o.parts, o.pos)];
 }
 
 //  `log [<n>] [<hex>|<path>]` — a 1..5-digit decimal token is the COUNT, no

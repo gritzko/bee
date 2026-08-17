@@ -107,6 +107,22 @@ function canon(abs, home) {
 //  or not — `discover`'s own climb, a plain fs probe and no registry at all.
 function deepest(abs) { return idx.discover(abs); }
 
+//  BEE-020:55: the worktree that SERVES `rel` under `root`.  `deepest` realpaths
+//  and so answers null for a path that does not exist — a hexlet, a file gone at
+//  that rev — while the SUB it belongs to is still perfectly nameable, so the
+//  probe climbs to the nearest live ancestor.  null = no repo above it at all.
+function serves(root, rel) {
+  let abs = rel === "" ? root : root + "/" + rel;
+  while (abs.length >= root.length) {
+    const d = deepest(abs);
+    if (d !== null) return d;
+    const cut = abs.lastIndexOf("/");
+    if (cut < 0) break;
+    abs = abs.slice(0, cut);
+  }
+  return null;
+}
+
 //  --- the fan-out's mounts ---------------------------------------------------
 //  BEE-003: every worktree a partial may resolve in — the registry's own lines
 //  plus the submodules a registered parent carries WITHOUT a line of their own
@@ -181,6 +197,7 @@ function dir() {
 }
 
 module.exports = { list: list, named: named, canon: canon, deepest: deepest,
+                   serves: serves,
                    mounts: mounts, subsOf: subsOf, basename: basename,
                    under: under,
                    within: within, pos: pos, at: at, dir: dir };

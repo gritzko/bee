@@ -2,6 +2,8 @@
 
 This project implements beagle-bee functionality for git repos.
 
+##  Build
+
 Build: bundle with the quickjab runtime for a standalone binary.
 That carries dog/ (libdog), dog/abc/ (libabc) and test/ (the
 jab-shared API suite) as submodules:
@@ -23,6 +25,8 @@ a target like any other — `door.js` tries `ABC-123`, then
 `.mkd` `.md` `.txt`, then `ABC-123/README.mkd` `README.md`, first hit wins —
 so a code clicks through to its ticket in any registered repo.
 
+##  Usage
+
 Usage — a terminal with no flag pages coloured hunks; otherwise one mode flag
 picks the sink, `--plain` (also what a pipe defaults to), `--color`, `--html`:
 
@@ -38,10 +42,13 @@ picks the sink, `--plain` (also what a pipe defaults to), `--color`, `--html`:
      2. `<target>`: the paths that may link to a file or a ticket code, looked
         up in EVERY repo of `~/.config/bee/repos` (read-only) and printed
         repo-qualified, the local repo first
- -  `bee log [<hex>|<path>]` — commit log, newest first; off-mainline rows grey
-     1. bare: the checked-out tip's ancestry
+ -  `bee log [<n>] [<hex>|<path>][?<rev>]` — commit log, newest first; off-mainline rows grey
+     1. bare: the checked-out tip's ancestry; `<n>` caps the rows, `0` = all
      2. `<hex>`: that commit's ancestry
      3. `<path>`: the file's revisions
+     4. `?<rev>`: a branch, tag or hexlet names the tip — `log ?main`, `log f.c?v2`
+     5. `<sub>/<path>`: the SUBMODULE's own history, its rows opening in the sub
+     6. a ticket code in a summary is a link, like any other reference
  -  `bee commit [<hex>]` — one commit, header + message; tree/parent hashes are links
  -  `bee diff [<hex> [<hex>]|<path>]` — the token-level diff: one weave per path,
     seeded at the two revisions' merge base, every token naming its own commit

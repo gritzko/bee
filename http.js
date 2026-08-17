@@ -91,9 +91,6 @@ function mimeOf(path) {
 //  Percent-decoding goes through the abc/URI leaf, never a hand-rolled scan.
 function unesc(s) { try { return URI.unescape(s); } catch (e) { return s; } }
 
-//  An object NAME (a 6..40 hexlet), the views' own spelling — not a path.
-const HEXARG = /^[0-9a-fA-F]{6,40}$/;
-
 //  A request URI -> { repo, head, verb, arg, raw, query }.  The split is
 //  `uri._parse`'s — path and query are its slots; only the path SEGMENTS are
 //  joined back by hand.
@@ -179,8 +176,10 @@ function repoRel(root, full) {
 function pathIn(pg, path) {
   const p = String(path);
   if (p.charAt(0) !== "/") {
-    //  A HEXLET is an object name, not a path — it takes no mount prefix.
-    const pre = pg.prefix && !HEXARG.test(p) ? pg.prefix + "/" : "";
+    //  BEE-020:55: the prefix rides a HEXLET too — a sub page's `commit <hex>`
+    //  names a commit of the SUB, so its href must re-enter the sub (the router
+    //  re-roots `<prefix>/<hexlet>` through `mnt.serves`), not land in the parent.
+    const pre = pg.prefix ? pg.prefix + "/" : "";
     return { name: pg.name, rel: p === "" ? "" : pre + p };
   }
   const c = mnt.canon(p);
@@ -507,7 +506,9 @@ function handle(req, sock, st) {
   let arg = r.arg, from = mount.root, prefix = "", verb = r.verb;
   const p0 = argPath(arg), rev = argRev(arg);
   if (p0 !== "" && p0.charAt(0) !== "/") {
-    const deep = mnt.deepest(mount.root + "/" + p0);
+    //  BEE-020:55: `serves`, not `deepest` — a path the worktree does not carry
+    //  (a hexlet, a file gone at that rev) still names the sub it belongs to.
+    const deep = mnt.serves(mount.root, p0);
     if (deep !== null && deep !== mount.root && mnt.under(mount.root, deep)) {
       from = deep;
       prefix = deep.slice(mount.root.length + 1);

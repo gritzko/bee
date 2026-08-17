@@ -493,9 +493,12 @@ Pager.prototype._seatCur = function (rows, span) {
 //  (its rows are relative to the dir it lists); elsewhere the token's bytes go
 //  to the door verbatim (LITE-015) with the dir of the file being read as the
 //  ambient (BEE-003) — a ref written next to its target resolves there first.
+//  BEE-020:55: a hunk that NAMES its own ambient (a log carries the repo it
+//  walked) is followed THERE — the view path's dir is no address for a `log …`.
 Pager.prototype._follow = function (hunk, name) {
   if (!hunk) { this.message = "(nothing to follow)"; return; }
   if (hunk.kind === "dir") { this._openPush(resolvePath(hunk.uri || "", name)); return; }
+  if (hunk.pos) { this._openPush(name, hunk.pos); return; }
   const dir = this._viewDir();
   this._openPush(name, dir ? dir + "/" : undefined);
 };
@@ -508,8 +511,10 @@ Pager.prototype._followRow = function (ri) {
   if (!r || r.banner) { this.message = "(nothing to follow)"; return; }
   //  A `U` target on the row's FIRST token (a log row's sha8) opens verbatim;
   //  only a dir listing joins its entry name to the hunk's own path.
+  //  BEE-020:55: in the hunk's OWN ambient — a descended log's `commit <hex>`
+  //  resolves in the submodule it walked, never in the parent.
   const target = this._targetAt(r.hunk, r.off);
-  if (target) { this._openPush(target); return; }
+  if (target) { this._openPush(target, r.hunk.pos); return; }
   const name = this._uriAt(r.hunk, r.off);
   if (!name) { this.message = "(nothing to follow)"; return; }
   this._follow(r.hunk, name);
@@ -562,7 +567,7 @@ Pager.prototype._followCur = function () {
     const span = this._curSpan(r);
     if (span.lo >= 0) {
       const target = this._targetAt(r.hunk, span.lo);
-      if (target) { this._openPush(target); return; }
+      if (target) { this._openPush(target, r.hunk.pos); return; }
       const name = this._uriAt(r.hunk, span.lo);
       if (name) { this._follow(r.hunk, name); return; }
     }
@@ -750,7 +755,7 @@ Pager.prototype._mouse = function (seq, press) {
   }
   if (hit) {
     const target = this._targetAt(hit.hunk, hit.off);   // a `U` click-target
-    if (target) { this._openPush(target); return; }
+    if (target) { this._openPush(target, hit.hunk.pos); return; }
     const name = this._uriAt(hit.hunk, hit.off);
     if (name) { this._follow(hit.hunk, name); return; }
   }
