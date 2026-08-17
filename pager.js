@@ -205,7 +205,8 @@ Pager.prototype._rowToks = function (r) {
     const start = ti > 0 ? (toks[ti - 1] & 0xffffff) : 0;
     if (start >= r.end) break;
     const tag = String.fromCharCode(65 + ((toks[ti] >>> 27) & 0x1f));
-    if (tag === "U" || tag === "O") continue;    // hidden bytes take no column
+    //  hidden bytes take no column (BEE-021: nor does a split pass's other side)
+    if (wrap.passHides(tag, r.pass, (toks[ti] >>> 24) & 3)) continue;
     const s = start > r.off ? start : r.off;
     const e = (toks[ti] & 0xffffff) < r.end ? (toks[ti] & 0xffffff) : r.end;
     if (e <= s || text[s] === 0x0a) continue;    // empty / the row terminator
@@ -777,10 +778,11 @@ Pager.prototype._screenToByte = function (row, col) {
   let cp = 1, pos = r.off;
   while (pos < r.end) {
     while (ti < toks.length && (toks[ti] & 0xffffff) <= pos) ti++;
-    const tag = ti < toks.length ? String.fromCharCode(65 + ((toks[ti] >>> 27) & 0x1f)) : "S";
+    const w = ti < toks.length ? toks[ti] : 0;
+    const tag = ti < toks.length ? String.fromCharCode(65 + ((w >>> 27) & 0x1f)) : "S";
     let clen = UTF8_LEN[text[pos] >> 4];
     if (clen === 0 || pos + clen > r.end) clen = 1;
-    if (tag !== "U" && tag !== "O") {             // hidden cells take no column
+    if (!wrap.passHides(tag, r.pass, (w >>> 24) & 3)) {   // hidden cells take no column
       if (cp === col) return { hunk: hunk, off: pos };
       cp++;
     }

@@ -223,6 +223,8 @@ check("every theme slot has a rule", missing === "", "missing " + missing);
 check("the banner band is spelled", css.indexOf(".banner{color:#000000;background:#ffffd7}") >= 0);
 check("the diff wash is spelled",
       css.indexOf(".side-in{background:#afffaf}") >= 0 &&
+      css.indexOf(".side-in.pale{background:#d7ffd7}") >= 0 &&
+      css.indexOf(".side-rm.pale{background:#ffd7d7}") >= 0 &&
       css.indexOf(".side-rm{background:#ffafaf}") >= 0);
 //  LITE-034: the LANDED token of a followed reference wears the theme's band.
 check("the landed token has a :target rule",
@@ -275,11 +277,23 @@ check("anchorId spells both forms",
       html.anchorId(0, 54) === "b54" && html.anchorId(2, 54) === "b2-54");
 
 //  A diff hunk: the tok32 SIDE bits become the wash classes, both ways.
+//  BEE-021: a whole-line swap SPLITS — the rm row, then the in row, each hiding
+//  the other side; the row's '\n' is the row terminator, not a span.
 const D = hunkOf("X1X0\n", [["S", 2, 1], ["S", 4, 2], ["S", 5, 0]], "diff");
 const dout = html.hunkHtml(D, link);
 check("the to-side washes in", dout.indexOf('<span class="tok-S side-in" id="b0">X1</span>') >= 0, dout);
 check("the from-side washes out", dout.indexOf('<span class="tok-S side-rm" id="b2">X0</span>') >= 0, dout);
-check("an EQ token takes no wash", dout.indexOf('<span class="tok-S" id="b4">\n</span>') >= 0, dout);
+check("a full-line swap splits, rm row first",
+      dout.indexOf('id="b2">X0</span>\n<span class="tok-S side-in" id="b0">X1</span>\n') >= 0, dout);
+//  A light edit stays ONE row, both sides pale in place; an EQ token takes no wash.
+const E = hunkOf("a-b+ and a long unchanged rest\n",
+                 [["S", 1, 0], ["S", 2, 2], ["S", 3, 0], ["S", 4, 1], ["S", 31, 0]], "diff");
+const eout = html.hunkHtml(E, link);
+check("an inline edit paints both sides PALE on one row",
+      eout.indexOf('<span class="tok-S side-rm pale" id="b1">-</span>') >= 0 &&
+      eout.indexOf('<span class="tok-S side-in pale" id="b3">+</span>') >= 0 &&
+      eout.indexOf("\n") === eout.lastIndexOf("\n"), eout);
+check("an EQ token takes no wash", eout.indexOf('<span class="tok-S" id="b4"> and a long') >= 0, eout);
 
 //  An `F` token with no `U` behind it IS a reference (LITE-015).  With no door
 //  behind the page it resolves to nothing, so it stays PLAIN PAINTED TEXT.

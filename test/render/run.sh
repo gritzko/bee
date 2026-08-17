@@ -209,5 +209,18 @@ else
     bad "headless leg (rc $RC)" "$WORK/m.out"
 fi
 
+# ==========================================================================
+# leg 5 — BEE-021: inline vs whole-line diff rows (hand-built weaves)
+# ==========================================================================
+( cd "$LITE" && HOME="$FAKEHOME" \
+  "$RT" --eval "require('$CASE/split.js')" ) > "$WORK/s.out" 2>"$WORK/s.err"; RC=$?
+if [ "$RC" = 0 ] && grep -q '^DONE' "$WORK/s.out" && ! grep -q '^FAIL' "$WORK/s.out"; then
+    N=$(grep -c '^ok' "$WORK/s.out"); CHECKS=$((CHECKS + N))
+    ok "split leg: $N checks (the inline/split classifier, the two-pass rows)"
+else
+    cat "$WORK/s.out"; head -5 "$WORK/s.err"
+    bad "split leg (rc $RC)" "$WORK/s.out"
+fi
+
 if [ "$FAILED" = 0 ]; then echo "PASS [lite/render] $CHECKS checks, runtime $RT"; exit 0
 else echo "FAIL [lite/render] $FAILED of $CHECKS checks failed"; exit 1; fi

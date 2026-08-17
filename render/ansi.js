@@ -55,13 +55,15 @@ const THEME_BANNER = { fm: 2, fg: 0, bm: 2, bg: 230, fl: 0 };
 
 //  LITE-010: the diff WASH.  A tok32's side lives in bits [25..24] — 1 = the
 //  to-side (inserted), 2 = the from-side (removed) — and a changed token takes
-//  a 256-colour BACKGROUND over its syntax colour: be/view/theme.js's own
-//  `inWash` 157 (salad green) and `rmWash` 217 (salmon), which is exactly what
-//  the C HUNK colour render paints.  lite has ONE pass, so there is no pale
-//  other-pass tint and no patch-provenance family: two slots, both ways.
-const SIDE_EQ = 0, SIDE_IN = 1, SIDE_RM = 2;
+//  a 256-colour BACKGROUND over its syntax colour: be/view/theme.js:126 `inWash`
+//  157 (salad green) / `rmWash` 217 (salmon) on its OWN pass, the PALE 194/224
+//  when seen from the other pass or inline (BEE-021, be bro.js:184 WASH I/O/J/K).
+//  No patched-in family: bee stamps no provenance bit 26 (DIFF-016).
+const SIDE_EQ = wrap.SIDE_EQ, SIDE_IN = wrap.SIDE_IN, SIDE_RM = wrap.SIDE_RM;
+const PASS_NORMAL = wrap.PASS_NORMAL, PASS_RM = wrap.PASS_RM, PASS_IN = wrap.PASS_IN;
 function aBg256(n) { return { fm: 0, fg: 0, bm: 2, bg: n, fl: 0 }; }
 const WASH_IN = aBg256(157), WASH_RM = aBg256(217);
+const WASH_IN_PALE = aBg256(194), WASH_RM_PALE = aBg256(224);
 
 //  LITE-023: the CURSOR wash — the active line and the active token take a bg
 //  LIGHTNESS shift (steps DOWN the 256 cube / the grey ramp), never a hue: an
@@ -111,13 +113,15 @@ function deltaSGR(want, prev) {
 function resetSGR(cur) { return aEq(cur, A0) ? "" : ESC + "[0m"; }
 
 //  --- bro_cell_ansi: (fg tag, pass, side) -> ansi64 ------------------------
-//  PASS_NORMAL only (lite never splits a row into an rm-pass and an in-pass);
-//  a diff hunk's side ORs the wash on, a file hunk's side is EQ and gets none.
+//  Inline (NORMAL) paints both sides PALE; a split pass paints its own side
+//  in the strong wash and the other side's stray tokens pale (be bro.js:347).
+//  A file hunk's side is EQ and gets none.
 function cellAnsi(tag, pass, side) {
   const want = themeAt(tag);
-  if (side === SIDE_IN) return aOr(want, WASH_IN);
-  if (side === SIDE_RM) return aOr(want, WASH_RM);
-  return want;
+  if (side === SIDE_EQ) return want;
+  if (pass === PASS_RM) return aOr(want, side === SIDE_RM ? WASH_RM : WASH_IN_PALE);
+  if (pass === PASS_IN) return aOr(want, side === SIDE_IN ? WASH_IN : WASH_RM_PALE);
+  return aOr(want, side === SIDE_IN ? WASH_IN_PALE : WASH_RM_PALE);
 }
 
 //  BRO-011: emit one row to a BYTE sink — `enc` appends SGR/ASCII, `raw(lo,hi)` the
@@ -139,14 +143,15 @@ function emitBody(hunk, off, end, color, pass, enc, raw, wash) {
     //  painter's inner loop keeps them inline.
     while (ti < toks.length && (toks[ti] & 0xffffff) <= pos) ti++;
     const tag = ti < toks.length ? String.fromCharCode(65 + ((toks[ti] >>> 27) & 0x1f)) : "S";
+    //  LITE-010: the token's diff SIDE (tok32 [25..24]) rides along — EQ for
+    //  every file/dir/log hunk, IN/RM inside a diff hunk's weave.
+    const side = ti < toks.length ? ((toks[ti] >>> 24) & 3) : SIDE_EQ;
     let clen = UTF8_LEN[text[pos] >> 4];
     if (clen === 0 || pos + clen > end) clen = 1;
-    if (tag === "U" || tag === "O") { if (runLo >= 0) { raw(runLo, pos); runLo = -1; } pos += clen; continue; }
+    if (wrap.passHides(tag, pass, side)) {       // BEE-021: a split pass hides the other side
+      if (runLo >= 0) { raw(runLo, pos); runLo = -1; } pos += clen; continue; }
     if (color) {
-      //  LITE-010: the token's diff SIDE (tok32 [25..24]) rides along — EQ for
-      //  every file/dir/log hunk, IN/RM inside a diff hunk's weave.
-      const side = ti < toks.length ? ((toks[ti] >>> 24) & 3) : SIDE_EQ;
-      let want = cellAnsi(tag, pass, side);    // PASS_NORMAL
+      let want = cellAnsi(tag, pass, side);
       if (wash) want = aWash(want, pos >= wash.lo && pos < wash.hi
                                       ? WASH_CUR_TOK : WASH_CUR_LINE);
       if (!aEq(want, cur)) {
@@ -243,6 +248,7 @@ module.exports = {
   //  LITE-010: the diff wash slots + the tok32 side vocabulary.
   SIDE_EQ: SIDE_EQ, SIDE_IN: SIDE_IN, SIDE_RM: SIDE_RM,
   WASH_IN: WASH_IN, WASH_RM: WASH_RM,
+  WASH_IN_PALE: WASH_IN_PALE, WASH_RM_PALE: WASH_RM_PALE,
   //  LITE-023: the cursor wash — the shifts + the compose the pager paints with.
   WASH_CUR_LINE: WASH_CUR_LINE, WASH_CUR_TOK: WASH_CUR_TOK,
   aWash: aWash,

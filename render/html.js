@@ -93,6 +93,8 @@ function stylesheet(thm) {
   }
   out.push(".side-in{" + sgrCss(thm.washIn) + "}");
   out.push(".side-rm{" + sgrCss(thm.washRm) + "}");
+  out.push(".side-in.pale{" + sgrCss(thm.washInPale) + "}");
+  out.push(".side-rm.pale{" + sgrCss(thm.washRmPale) + "}");
   //  LITE-034: the LANDED token — a reference's `#b<offset>` — wears the theme's
   //  own band, which is how the pager marks where a landing put the cursor.
   out.push("pre.body span:target{" + sgrCss(thm.banner) + "}");
@@ -116,40 +118,67 @@ function dec(bytes, lo, hi) { return utf8.Decode(bytes.slice(lo, hi)); }
 //  ordinal (`b1-<off>`), so ids stay unique and `#b<off>` names the first hunk.
 function anchorId(ord, lo) { return "b" + (ord ? ord + "-" : "") + lo; }
 
-function hunkHtml(hunk, link, ord) {
-  ord = ord || 0;
+//  BEE-021: the wash class of a changed token — strong on its own split pass,
+//  pale inline or seen from the other pass (the ansi cellAnsi slots).
+function sideClass(side, pass) {
+  if (side === wrap.SIDE_IN) return pass === wrap.PASS_IN ? " side-in" : " side-in pale";
+  if (side === wrap.SIDE_RM) return pass === wrap.PASS_RM ? " side-rm" : " side-rm pale";
+  return "";
+}
+
+//  The spans of the byte window [from, to) in `pass` (a token is clipped to
+//  the window; the pass hides the other diff side).  `seen` keeps a token's
+//  anchor id on its FIRST emission — a split block shows its eq bytes twice.
+function spansHtml(hunk, from, to, pass, link, ord, seen, out) {
   const text = hunk.text, toks = hunk.toks || new Uint32Array(0);
-  const out = ['<div class="hunk"><div class="banner">', esc(hunk.uri || ""),
-               '</div><pre class="body">'];
-  let prev = 0;
-  for (let i = 0; i < toks.length; i++) {
-    const tag = TOK_TAG(toks[i]), end = TOK_END(toks[i]), lo = prev;
+  let lo = 0, hi = toks.length;
+  while (lo < hi) { const m = (lo + hi) >> 1;
+    if (TOK_END(toks[m]) <= from) lo = m + 1; else hi = m; }
+  let prev = lo > 0 ? TOK_END(toks[lo - 1]) : 0;
+  for (let i = lo; i < toks.length && prev < to; i++) {
+    const tag = TOK_TAG(toks[i]), end = TOK_END(toks[i]), start = prev;
     prev = end;
-    if (tag === "U" || tag === "O") continue;   // hidden bytes: a target, not text
-    if (end <= lo) continue;
-    let cls = "tok-" + tag;
     const side = TOK_SIDE(toks[i]);
-    if (side === 1) cls += " side-in";
-    else if (side === 2) cls += " side-rm";
+    if (wrap.passHides(tag, pass, side)) continue;   // a target / the other side
+    const s = start > from ? start : from, e = end < to ? end : to;
+    if (e <= s) continue;
     //  The target, exactly as pager.js reads it: a hidden `U` span right
     //  behind this one, else an `F` token's own bytes — a reference (LITE-015).
     let target = "";
     if (i + 1 < toks.length && TOK_TAG(toks[i + 1]) === "U")
       target = dec(text, end, TOK_END(toks[i + 1]));
     else if (tag === "F" && hunk.kind !== "dir")
-      target = dec(text, lo, end);
+      target = dec(text, start, end);
     const href = (target && link) ? link(target) : "";
-    const span = '<span class="' + cls + '" id="' + anchorId(ord, lo) + '">' +
-                 esc(dec(text, lo, end)) + "</span>";
+    const id = seen.has(start) ? "" : ' id="' + anchorId(ord, start) + '"';
+    seen.add(start);
+    const span = '<span class="tok-' + tag + sideClass(side, pass) + '"' + id + '>' +
+                 esc(dec(text, s, e)) + "</span>";
     //  A reference that resolves to nothing is PLAIN PAINTED TEXT — never a
     //  link that 404s (ruling 2026-08-15).
     out.push(href ? '<a href="' + esc(href) + '">' + span + '</a>' : span);
   }
   //  Bytes past the last token — an untokenised tail, or a whole hunk with no
   //  toks (a blob, an unknown extension) — paint as one anchorable plain span.
-  if (prev < text.length)
-    out.push('<span class="tok-S" id="' + anchorId(ord, prev) + '">' +
-             esc(dec(text, prev, text.length)) + "</span>");
+  const tail = prev > from ? prev : from;
+  if (tail < to)
+    out.push('<span class="tok-S" id="' + anchorId(ord, tail) + '">' +
+             esc(dec(text, tail, to)) + "</span>");
+}
+
+function hunkHtml(hunk, link, ord) {
+  ord = ord || 0;
+  const out = ['<div class="hunk"><div class="banner">', esc(hunk.uri || ""),
+               '</div><pre class="body">'];
+  const seen = new Set();
+  if (wrap.hasDiffSides(hunk.toks)) {
+    //  BEE-021: a diff hunk is painted ROW by row — an inline row in place, a
+    //  split block as its rm rows then its in rows (the pager's very index).
+    for (const r of wrap.indexRows(hunk, 1 << 24, false)) {
+      spansHtml(hunk, r.off, r.end, r.pass, link, ord, seen, out);
+      out.push("\n");
+    }
+  } else spansHtml(hunk, 0, hunk.text.length, wrap.PASS_NORMAL, link, ord, seen, out);
   out.push('</pre></div>');
   return out.join("");
 }

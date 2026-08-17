@@ -49,6 +49,9 @@ const BANNER_SGR = "38;5;0;48;5;230";
 //  to-side, salmon on the from-side.  LITE-034's HTML painter spells its
 //  stylesheet out of THIS module alone, so the wash is named here too.
 const WASH_IN_SGR = "48;5;157", WASH_RM_SGR = "48;5;217";
+//  BEE-021: the PALE pair — a changed token painted inline, or seen from the
+//  other split pass (be view/theme.js:126 inPale/rmPale).
+const WASH_IN_PALE_SGR = "48;5;194", WASH_RM_PALE_SGR = "48;5;224";
 
 //  --- a theme object ------------------------------------------------------
 //  paint(slotLetter)  → ESC[<sgr>m for that slot, or "" (default/no paint).
@@ -81,6 +84,8 @@ function makeTheme(name, slots) {
     banner: BANNER_SGR,
     washIn: WASH_IN_SGR,
     washRm: WASH_RM_SGR,
+    washInPale: WASH_IN_PALE_SGR,
+    washRmPale: WASH_RM_PALE_SGR,
     paint: paint,
     reset: reset,
     bannerOpen: bannerOpen,

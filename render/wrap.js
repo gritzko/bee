@@ -3,9 +3,8 @@
 //  which token covers a byte, and where a `line:col` landing sits are the
 //  output.  No colour, no markup, no fs: every renderer (plain, ansi, html) and
 //  the pager index the same hunk the same way, so a row is a row in all three.
-//
-//  Carved out of the old view/bro.js (LITE-001), which mixed this with the
-//  painter, the plain sink and the hunk builders.
+//  BEE-021: a diff hunk's rows carry a PASS — inline or split — the be
+//  bro_walk_hunk heuristics decide which.  Carved out of view/bro.js (LITE-001).
 "use strict";
 
 //  tok32 bit layout (dog/tok/TOK.h, mirrored by tok.TokStream):
@@ -19,20 +18,32 @@ const TOK_END = (w) => w & 0xffffff;
 //  UTF8_LEN[b>>4]: bytes in the codepoint a lead byte starts (abc UTF8_LEN).
 const UTF8_LEN = [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 2, 2, 3, 4];
 
-//  The one render pass: PASS_NORMAL, every token side EQ (a row carries it so
-//  a pass-aware consumer maps 1:1 onto the be/ row shape).
-const PASS_NORMAL = 0;
+//  BEE-021: the render PASS a row carries.  NORMAL paints both diff sides in
+//  place (an inline row); RM/IN are the two rows a whole-line change splits
+//  into, each HIDING the other side's bytes (be bro.js:174, BRO-009).
+const PASS_NORMAL = 0, PASS_RM = 1, PASS_IN = 2;
+const SIDE_EQ = 0, SIDE_IN = 1, SIDE_RM = 2;
 
-//  ---- row index (BROAppendLines, NORMAL pass) -----------------------------
+//  A byte the row does not SHOW: a click target ('U'/'O'), or the other diff
+//  side in a split pass.  The one predicate every row walker (index, paint,
+//  screen->byte) reads, so a hidden byte takes no column anywhere.
+function passHides(tag, pass, side) {
+  return tag === "U" || tag === "O" ||
+         (pass === PASS_RM && side === SIDE_IN) ||
+         (pass === PASS_IN && side === SIDE_RM);
+}
+
+//  ---- row index (BROAppendLines) ------------------------------------------
 //  One row per logical line, codepoint soft-wrapped at `cols` (default 80 when
-//  not a tty).  A row = { off, end } byte span over the hunk text (the '\n' is
-//  the row terminator and excluded).
+//  not a tty).  A row = { off, end, pass } byte span over the hunk text (the
+//  '\n' is the row terminator and excluded).
 
-//  Codepoint end of one display row starting at byte `off` (BROAppendLines/
-//  bro_row_end_pass for PASS_NORMAL): advance until a visible '\n' or `cols`
-//  columns consumed; 'U'/'O'-tagged bytes are skipped (invisible, no column).
-function rowEnd(hunk, off, cols) {
+//  Codepoint end of one display row starting at byte `off` (bro_row_end_pass):
+//  advance until a '\n' this pass sees or `cols` columns consumed; bytes the
+//  pass hides advance but take no column.  `pass` defaults to NORMAL.
+function rowEnd(hunk, off, cols, pass) {
   const text = hunk.text, tlen = text.length, toks = hunk.toks;
+  pass = pass | 0;
   //  toks are sorted by byte end: bisect to the tok covering `off` — a linear
   //  scan from 0 made indexing O(rows*toks), minutes on a 100k-tok log hunk.
   let lo = 0, hi = toks.length;
@@ -41,13 +52,14 @@ function rowEnd(hunk, off, cols) {
   let ti = lo;
   let cp = 0, pos = off;
   while (pos < tlen && cp < cols) {
-    //  Per-BYTE: the end mask is spelled inline here, not through TOK_END — a
+    //  Per-BYTE: the masks are spelled inline here, not through TOK_END — a
     //  call per byte cost minutes on a 100k-tok log hunk.
     while (ti < toks.length && (toks[ti] & 0xffffff) <= pos) ti++;
-    const tag = ti < toks.length ? TOK_TAG(toks[ti]) : "S";
+    const w = ti < toks.length ? toks[ti] : 0;
+    const tag = ti < toks.length ? TOK_TAG(w) : "S";
     const ch = text[pos];
-    const hidden = tag === "U" || tag === "O";   // click-target bytes take no column
-    if (ch === 0x0a && !hidden) break;       // visible '\n' ends the row
+    const hidden = passHides(tag, pass, (w >>> 24) & 3);
+    if (ch === 0x0a && !hidden) break;       // a '\n' this pass sees ends the row
     let clen = UTF8_LEN[ch >> 4];
     if (clen === 0 || pos + clen > tlen) clen = 1;
     pos += clen;
@@ -56,11 +68,130 @@ function rowEnd(hunk, off, cols) {
   return pos;
 }
 
-//  Walk one hunk's text into display rows (one per soft-wrap segment), all
-//  PASS_NORMAL.  `wrap` boolean — false (no-wrap) emits ONE row per logical
-//  line, clamped by rowEnd to `cols`, then skips the tail to the next '\n';
-//  true (or undefined, the default) soft-wraps.
+//  ---- BEE-021: inline vs whole-line (the be bro_walk_hunk twin) -----------
+//  A diff hunk's text is the WEAVE, both sides interleaved.  Per '\n'-delimited
+//  segment, tally the visible bytes by side; a lightly edited line is painted
+//  in place (NORMAL), a heavier one splits into an rm row and an in row.
+//  Ported from be view/bro.js:393-491 (BRO-009, BRO-041); DIFF-017's glue/
+//  whitespace refinement never landed there and is not here either.
+
+//  A hunk is a diff hunk iff any visible tok carries a side != EQ.
+function hasDiffSides(toks) {
+  if (!toks) return false;
+  for (let i = 0; i < toks.length; i++)
+    if (TOK_SIDE(toks[i]) !== SIDE_EQ && TOK_TAG(toks[i]) !== "U") return true;
+  return false;
+}
+
+//  Per segment: {lo, hi, inB, rmB, eqB, bnd} — the byte span (hi = the '\n',
+//  or tlen), visible byte tallies by side, and `bnd` the side of the '\n'
+//  itself (which pass sees the break).
+function classifyLines(text, toks) {
+  const tlen = text.length, ntoks = toks.length;
+  const out = [];
+  let lineLo = 0, ti = 0, inB = 0, rmB = 0, eqB = 0;
+  for (let off = 0; off < tlen; off++) {
+    while (ti < ntoks && (toks[ti] & 0xffffff) <= off) ti++;
+    const w = ti < ntoks ? toks[ti] : 0;
+    const side = (w >>> 24) & 3;
+    const tag = ti < ntoks ? TOK_TAG(w) : "S";
+    if (tag === "U" || tag === "O") continue;
+    if (text[off] === 0x0a) {
+      out.push({ lo: lineLo, hi: off, inB: inB, rmB: rmB, eqB: eqB, bnd: side });
+      lineLo = off + 1; inB = rmB = eqB = 0;
+    } else if (side === SIDE_IN) inB++;
+    else if (side === SIDE_RM) rmB++;
+    else eqB++;
+  }
+  if (lineLo < tlen)
+    out.push({ lo: lineLo, hi: tlen, inB: inB, rmB: rmB, eqB: eqB, bnd: SIDE_EQ });
+  return out;
+}
+
+//  The mode decision.  BRO-041: an edit weighs max(in,rm), not in+rm — a
+//  symmetric token swap must not be charged twice against the 4x inline gate.
+const K_EQ = 0, K_PURE_IN = 1, K_PURE_RM = 2, K_MOD_INLINE = 3, K_MOD_SPLIT = 4;
+function lineKind(li) {
+  const changed = Math.max(li.inB, li.rmB);
+  if (changed === 0) return K_EQ;
+  if (li.eqB === 0) {
+    if (li.inB > 0 && li.rmB > 0) return K_MOD_SPLIT;
+    return li.inB > 0 ? K_PURE_IN : K_PURE_RM;
+  }
+  return changed * 4 < changed + li.eqB ? K_MOD_INLINE : K_MOD_SPLIT;
+}
+//  A one-sided '\n' with the other side present: the segment bleeds into the
+//  next one, so a change region is not split at a break one pass cannot see.
+function lineContinues(li) {
+  if (li.bnd === SIDE_IN) return li.rmB > 0;
+  if (li.bnd === SIDE_RM) return li.inB > 0;
+  return false;
+}
+function passSeesNL(pass, bnd) {
+  if (pass === PASS_NORMAL) return true;
+  return pass === PASS_RM ? bnd !== SIDE_IN : bnd !== SIDE_RM;
+}
+
+//  Drive `emit(lo, hi, pass)` per logical row: an EQ/INLINE segment with an
+//  EQ boundary is one NORMAL row; anything else opens a block that runs to the
+//  next such segment, emitted twice — RM rows then IN rows, each grouped
+//  across the '\n's its pass cannot see, empty rows dropped.
+function walkHunk(text, toks, emit) {
+  const info = classifyLines(text, toks);
+  const nl = info.length;
+  let i = 0;
+  while (i < nl) {
+    const k = lineKind(info[i]);
+    if ((k === K_EQ || k === K_MOD_INLINE) && info[i].bnd === SIDE_EQ) {
+      emit(info[i].lo, info[i].hi, PASS_NORMAL);
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j < nl) {
+      const kj = lineKind(info[j]);
+      if (info[j].bnd === SIDE_EQ && (kj === K_EQ || kj === K_MOD_INLINE) &&
+          (j === i || !lineContinues(info[j - 1]))) break;
+      j++;
+    }
+    const blockHi = info[j - 1].hi;
+    for (const pass of [PASS_RM, PASS_IN]) {
+      let rowStart = info[i].lo, own = 0, eq = 0;
+      for (let m = i; m < j; m++) {
+        own += pass === PASS_RM ? info[m].rmB : info[m].inB; eq += info[m].eqB;
+        if (passSeesNL(pass, info[m].bnd)) {
+          if (own > 0 || eq > 0) emit(rowStart, info[m].hi, pass);
+          rowStart = info[m].hi + 1; own = eq = 0;
+        }
+      }
+      if (own > 0 || eq > 0) emit(rowStart, blockHi, pass);
+    }
+    i = j;
+  }
+}
+
+//  A diff hunk's row index: walkHunk's logical rows, each soft-wrapped by the
+//  pass-aware rowEnd (or one clamped row when `wrap` is false).
+function indexDiffRows(hunk, cols, wrap) {
+  const rows = [];
+  walkHunk(hunk.text, hunk.toks, function (lo, endNl, pass) {
+    let off = lo;
+    while (off <= endNl) {
+      const end = rowEnd(hunk, off, cols, pass);
+      rows.push({ off: off, end: end < endNl ? end : endNl, pass: pass });
+      if (end >= endNl || wrap === false) break;
+      off = end;
+    }
+  });
+  return rows;
+}
+
+//  Walk one hunk's text into display rows (one per soft-wrap segment); a diff
+//  hunk (tok sides) takes the two-pass index.  `wrap` boolean — false (no-wrap)
+//  emits ONE row per logical line, clamped by rowEnd to `cols`, then skips the
+//  tail to the next '\n'; true (or undefined, the default) soft-wraps.
 function indexRows(hunk, cols, wrap) {
+  if (hasDiffSides(hunk.toks)) return indexDiffRows(hunk, cols, wrap);
   const rows = [];
   const text = hunk.text, tlen = text.length;
   let off = 0;
@@ -146,9 +277,16 @@ function statusPos(scroll, nrows, viewRows) {
 module.exports = {
   TOK_TAG: TOK_TAG, TOK_SIDE: TOK_SIDE, TOK_END: TOK_END,
   UTF8_LEN: UTF8_LEN,
-  PASS_NORMAL: PASS_NORMAL,
+  PASS_NORMAL: PASS_NORMAL, PASS_RM: PASS_RM, PASS_IN: PASS_IN,
+  SIDE_EQ: SIDE_EQ, SIDE_IN: SIDE_IN, SIDE_RM: SIDE_RM,
+  passHides: passHides,
   indexRows: indexRows,
   rowEnd: rowEnd,
+  //  BEE-021: the inline/split classifier, exported for the render tests.
+  hasDiffSides: hasDiffSides,
+  classifyLines: classifyLines, lineKind: lineKind, walkHunk: walkHunk,
+  K_EQ: K_EQ, K_PURE_IN: K_PURE_IN, K_PURE_RM: K_PURE_RM,
+  K_MOD_INLINE: K_MOD_INLINE, K_MOD_SPLIT: K_MOD_SPLIT,
   landAt: landAt,
   tokSpanAt: tokSpanAt,
   statusURI: statusURI,
