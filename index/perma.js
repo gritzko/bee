@@ -1,11 +1,17 @@
 //  index/perma.js as per LITE-025: FOLLOW a permalink `file.c:58:mJ` — the LINE in
-//  the anchored blob plus that BLOB's HASHLET, blob-only (LITE-025:11:zc; the line
-//  over the byte offset BEE-019:33).  Scope is ONE file's blob history, EARLIEST
-//  match wins (LITE-025:21:zc, LITE-025:22:zc); the walk is one CFOLD pair,
-//  anchored blob then today's bytes, token identity carrying the byte across
-//  (LITE-025:69:zc).  The MINT half lives here too so one file owns the ron64 packing
+//  the anchored blob plus that BLOB's HASHLET (see LITE-025:11:zc, BEE-019:33:Xc).  
+//  Scope is ONE file's blob history, EARLIEST match wins (see LITE-025:21:zc, 
+//  LITE-025:22:zc); the walk is one CFOLD pair,
+//
+//  ^^^ What Claude wanted to say here: just writing `file.js:58` will go off target
+//  after `file.js` edits. To make it durable, we add `:mJ` the prefix of a git blob
+//  hash so the line is relative to that historical blob. Then, `bee` can find what
+//  the line was and show it in any other revision where it exists.
+//  Use `bee mint` to turn links into permalinks. Use `bee see` to find the target.
+//
+//  The MINT half lives here too so one file owns the ron64 packing
 //  both ways (LITE-026:102:xo).  A stem path takes the door's ladder and the follow
-//  fans out over the mount table like the minter (BEE-014:44, BEE-014:51).
+//  fans out over the mount table like the minter (BEE-014:44:P7, BEE-014:51:P7).
 "use strict";
 
 const idx = require("./index.js");
@@ -43,7 +49,7 @@ function allDigits(s) {
   return true;
 }
 
-//  Is this pair of segments a permalink?  BEE-019:33: segment 1 is the LINE, in
+//  Is this pair of segments a permalink?  BEE-019:33:Xc: segment 1 is the LINE, in
 //  decimal as typed, and segment 2 a HASHLET — 2..10 ron64 chars carrying a
 //  non-digit; an all-digit segment 2 is a COLUMN and the ref stays line:col.
 function isHashlet(s) {
@@ -53,7 +59,7 @@ function isHashlet(s) {
 function isLine(s) { return allDigits(s) && s.length <= 10; }
 
 //  The hashlet -> the sha1 BIT PREFIX it names: 6 bits a ron64 char, so k chars
-//  are the top 6k bits and an ODD length means something (BEE-019:55).
+//  are the top 6k bits and an ODD length means something (BEE-019:55:Xc).
 function hashletBits(h) {
   if (!isHashlet(h)) return null;
   let v;
@@ -69,7 +75,7 @@ function shaBits(sha, bits) {
 function hasBits(sha, hb) { return shaBits(sha, hb.bits) === hb.val; }
 
 //  --- the mint (LITE-026) ---------------------------------------------------
-//  BEE-019:55: a blob sha1 (hex) -> the SHORTEST hashlet naming it among
+//  BEE-019:55:Xc: a blob sha1 (hex) -> the SHORTEST hashlet naming it among
 //  `others`, the path's own blobs — from 2 chars up, ONE at a time, until no
 //  other blob shares those bits AND it holds a non-digit (what tells segment 2
 //  from a column).  null = 10 chars still collide, so nothing is minted.
@@ -364,7 +370,7 @@ function follow(partial, lineSeg, hash, from) {
   finally { idx.closeRepo(ctx); }
 }
 
-//  BEE-014:51: the follow's FAN-OUT, the minter's mirror — every OTHER registered
+//  BEE-014:51:P7: the follow's FAN-OUT, the minter's mirror — every OTHER registered
 //  repo opened READ-ONLY, never brought up; the first that spells the path AND
 //  carries the anchored blob is the landing, a path-only answer is no answer.
 function foreignFollow(home, partial, hb, line) {
@@ -419,7 +425,7 @@ function land(ctx, ix, rel, hb, line) {
   const a = anchorOf(ctx, ix, rel, full, hb);
   if (a === null) return null;
   const anchor = a.commit, was = a.was;
-  //  BEE-019:34: the LINE is what the ref names; its first byte is how the walk
+  //  BEE-019:34:Xc: the LINE is what the ref names; its first byte is how the walk
   //  below carries it across.  No such line in the anchored blob = no landing.
   const off = byteAt(was, line, 1);
   if (off < 0) return null;

@@ -1,29 +1,30 @@
-#   Be (Beagle-lite)
+#   Bee (Beagle-lite)
 
-This project implements beagle-bee functionality for git repos.
+This project implements some of Beagle SCM functionality for regular git repos.
+The work is ongoing, so far it can do:
+
+ 1. CRDT merges (use `bee install` to add a hook to a git repo),
+ 2. TUI repo browser (use `bee ./file` to open),
+ 3. HTML browser (use `bee http --port 8888` to run, 
+    then open `http://localhost:8888/myproject` in a browser),
+ 4. token-level diffs (may start with `bee log` or 
+    `http://localhost:8888/myproject/log` then click around),
+ 5. permalink support, version-aware links that survive edits 
+    (e.g. `index/perma.js:6:ur`, see them in the pager/browser, 
+    `bee see` for CLI use, commit hook or `be mint` to create)
+
+Reproducing Beagle's smooth worktree workflows turned difficult so far,
+as git submodule and git worktree implementations are rather abrasive.
 
 ##  Build
 
-Build: bundle with the quickjab runtime for a standalone binary.
+Build: bundle with the [quickjab][q] runtime for a standalone binary.
 That carries dog/ (libdog), dog/abc/ (libabc) and test/ (the
 jab-shared API suite) as submodules:
 
     cmake -S <quickjab> -B build -GNinja \
         -DJAB_JSRC=<js bundle tree> -DQUICKJAB_JSRC_PACK=ON
     ninja -C build quickjab
-
-Layout: `index/` reads the index and the ODB, `view/` turns an arg into hunks
-(one module per verb), `render/` turns hunks into bytes (`plain` `ansi` `html`
-over `wrap` + `theme`), `blob/` holds the site's static bytes (`style.css`, the
-frame `render/html.js` themes; `favicon.ico`), `door.js` turns a target into a
-view, and `main.js`
-`pager.js` `http.js` `merge.js` `chat.js` are the apps.  The REPO is an axis of
-the target, not the cwd: `index/mount.js` reads `~/.config/bee/repos` as the
-mount table and carries the ambient `{repo, path, anchor}` a view reads in — a
-family of `git worktree` checkouts folds to ONE mount there.  A TICKET CODE is
-a target like any other — `door.js` tries `ABC-123`, then
-`.mkd` `.md` `.txt`, then `ABC-123/README.mkd` `README.md`, first hit wins —
-so a code clicks through to its ticket in any registered repo.
 
 ##  Usage
 
