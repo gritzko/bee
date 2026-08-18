@@ -1,4 +1,4 @@
-#   Bee (Beagle-lite)
+#   Bee: CRDT magic for git repos
 
 This project implements some of Beagle SCM functionality for regular git repos.
 The work is ongoing, so far it can do:

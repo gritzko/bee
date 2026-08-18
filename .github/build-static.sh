@@ -9,9 +9,11 @@ set -eu
 OUT=$1
 SRC=$PWD
 
+# tzdata is not build input: alpine ships no zoneinfo, musl then resolves every
+# zone to UTC, and the chat suite pins a local-time stamp (test/chat/run.sh:104:cy).
 apk add -q build-base cmake samurai git file curl-dev \
     libsodium-dev libsodium-static zlib-dev zlib-static lz4-dev lz4-static \
-    linux-headers
+    linux-headers tzdata
 
 # Only dog/ is fetched — quickjab's test/ submodule feeds its own ctest suite,
 # which we never run, and a blanket --recurse-submodules dies on its pin.
@@ -23,12 +25,25 @@ git -C quickjab-src submodule update -q --init --recursive dog
 mkdir -p bee-jsrc
 git archive HEAD | tar -x -C bee-jsrc
 
+# find_library would hand -static the .so and ld would refuse, so make every
+# lookup in the tree try .a first.  CMakeGenericSystem.cmake re-sets these with
+# a plain set(), which shadows a -D, so inject after project() instead.
+# .so stays as the fallback for libcurl, which has no archive on alpine and
+# never reaches the link line anyway (abc's curl group is outside abc-core).
+mkdir -p qj-build
+echo 'set(CMAKE_FIND_LIBRARY_SUFFIXES ".a" ".so")' > qj-build/prefer-static.cmake
+
 # abc's curl group sits outside abc-core, so build the binary target only:
 # a curl-linking test TU would break -static.
 cmake -S quickjab-src -B qj-build -GNinja -DCMAKE_BUILD_TYPE=Release \
     "-DJAB_JSRC=$SRC/bee-jsrc" -DQUICKJAB_JSRC_PACK=ON -DJAB_BIN=bee \
-    -DCMAKE_EXE_LINKER_FLAGS=-static
+    -DCMAKE_EXE_LINKER_FLAGS=-static \
+    "-DCMAKE_PROJECT_INCLUDE=$SRC/qj-build/prefer-static.cmake"
 ninja -C qj-build quickjab
+
+# The suites before the strip, so a musl-only regression cannot ship.
+ctest --test-dir qj-build -R '^JSRC' --output-on-failure
+
 strip qj-build/bin/bee
 cp qj-build/bin/bee "$OUT"
 

@@ -125,9 +125,8 @@ jobs:
             ${{ matrix.asset }}-*.tar.gz
             ${{ matrix.asset }}-*.tar.gz.sha256
 
-  # musl-static x86_64: one binary for ANY Linux, glibc or not.  Only the
-  # floor smoke runs here — the suites are already gated on glibc, and busybox
-  # is not the shell they are written against.
+  # musl-static x86_64: one binary for ANY Linux, glibc or not.  The script
+  # runs the suites itself, so the musl build is covered like the glibc ones.
   static:
     needs: release
     runs-on: ubuntu-latest
