@@ -138,15 +138,15 @@ then ok "...with no escape byte anywhere in it"
 else bad "escape bytes in plain output" "$WORK/out"; fi
 
 # The commit rows: the same vocabulary one level up.
-if grep -q '^\.o\.\. ?.*#C2 local only' "$WORK/out"
+if grep -q '^\.o\.\. [0-9a-f]\{8\} C2 local only' "$WORK/out"
 then ok "a local unposted commit is \`.o..\`"
 else bad "no ahead commit row" "$WORK/out"; fi
-if grep -q '^o\.\.\. ?.*#C1 upstream only' "$WORK/out"
+if grep -q '^o\.\.\. [0-9a-f]\{8\} C1 upstream only' "$WORK/out"
 then ok "an unabsorbed upstream commit is \`o...\`"
 else bad "no behind commit row" "$WORK/out"; fi
 
 # The summary line: the branch, its upstream, the per-column tallies.
-if tail -1 "$WORK/out" | grep -q '^master?origin/master	.*upstream.*head.*stage.*wt'
+if tail -1 "$WORK/out" | grep -q '^master\.\.\.origin/master	.*upstream.*head.*stage.*wt'
 then ok "the summary names the branch, the upstream and the tallies"
 else bad "summary line" "$WORK/out"; fi
 

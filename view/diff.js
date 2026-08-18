@@ -1,49 +1,25 @@
-//  view/diff.js — LITE-010 / BEE-005: `lite diff`, the CFOLD diff view PORTED
-//  from be/views/diff/diff.js (`diffFile`/`emitHunks`/`provList`) and
-//  be/shared/weave.js (`buildDag`/`foldWt`) over the same quickjab containers
-//  lite already links: `abc.ram("CFOLD")` folds the path's whole weave,
-//  `abc.ram("HUNK")` takes the emitted records, `pager.js` paints them.
-//
-//  It lives in index/ beside log.js because the SOURCES are what differ from
-//  be, not the render: a lite diff reads the ODB (`git.tree` walk, `git.getHex`)
-//  and the worktree (`io.mmap`/`io.readlink`), while view/ stays pure paint.
-//
-//  Four forms, one arg, log.js's ruled classification (6..40 hex = a commit):
-//
-//    diff              the worktree against HEAD, over the TRACKED paths
-//    diff <path>       that path only — a file whole (emitFull), a dir scoped
-//    diff <hex>        that commit against its FIRST parent
-//    diff <hex> <hex>  BEE-005: any two revisions, rooted at their merge base
-//
-//  BEE-005: a diff is a PROJECTION of ONE weave per path, seeded with the path's
-//  blob at the LCA FLOOR of the two tips and folding every path-changing commit
-//  above it under its own COMMIT hashlet — not a fold of two loose blobs under
-//  two fake layer ids.  So it READS THE INDEX: the changed-path SET still comes
-//  off the trees (`treePairs`), but the floor, the seed, the layers and their
-//  edges all come off the REV index, and a commit the index lacks is BROUGHT UP,
-//  never worked around.  The bare form is `git diff HEAD` in reach, not `git
-//  diff`: lite never reads `.git/index`, so a STAGED-only change reads as a
-//  worktree one.
-//
-//  What be's diff.js drags in and lite has no equivalent of — the ulog/patch
-//  EXPECTED third layer, sub recursion, wtlog, classify, nav re-baking — is
-//  simply absent here: a lite diff has ONE axis, from vs to.
+//  view/diff.js — `bee diff [<path>|<hex>|<hex> <hex>]`, the CFOLD diff view
+//  ported from be/views/diff/diff.js and be/shared/weave.js (LITE-010,
+//  BEE-005): `abc.ram("CFOLD")` folds a path's whole weave, `abc.ram("HUNK")`
+//  takes the emitted records, the pager paints them.  A diff is a projection
+//  of one weave per path (BEE-005:10:mJ), seeded at the LCA floor of the two tips
+//  with every path-changing commit as a layer, so that the emitted tokens carry
+//  real provenance; hence it reads the index and brings up a commit it lacks.
+//  The bare form is `git diff HEAD`, since `.git/index` is never read.
 "use strict";
 
 const idx = require("index/index.js");
 const lg = require("./log.js");
 const wv = require("index/weave.js");
 
-//  LITE-014: the source-size policy, the binary gate and the lexer key live in
-//  index/weave.js now — ONE home for both the diff and the merge, as be has.
+//  The source-size policy, the binary gate and the lexer key live in
+//  index/weave.js, one home for both the diff and the merge (LITE-014:19:EL).
 const MAX_SOURCE_SIZE = wv.MAX_SOURCE_SIZE;        // 4 MB
 const MAX_SOURCE_MARKED_UP = wv.MAX_SOURCE_MARKED_UP;
 const isBinary = wv.isBinary, extOf = wv.extOf, bytesEq = wv.bytesEq;
 
-//  --- the emit scratch ------------------------------------------------------
-//  The WEAVE is index/weave.js's now (one per path, a layer per rev); the HUNK
-//  container a fold emits into is still allocated ONCE per run and reused —
-//  every emitted record is copied out before the next path folds.
+//  The HUNK container a fold emits into, allocated once per run; every emitted
+//  record is copied out before the next path folds.
 let _hd = null;
 function scratch() {
   if (_hd === null) _hd = abc.ram("HUNK", MAX_SOURCE_MARKED_UP);
@@ -51,9 +27,8 @@ function scratch() {
   return _hd;
 }
 
-//  --- the record render (be diff.js `renderRecord`) -------------------------
-//  The plain render scales with the RECORD, so no fixed buffer holds — seed off
-//  the record (4x: markup) and double on "out full".
+//  The plain render of a record (be diff.js `renderRecord`) scales with the
+//  record: seed the buffer at 4x for the markup and double on "out full".
 const RENDER_MIN = 1 << 16;                        // 64 KB
 const RENDER_MAX = MAX_SOURCE_MARKED_UP * 16;      // 256 MB hard cap
 function renderRecord(hd, color) {
@@ -65,37 +40,23 @@ function renderRecord(hd, color) {
     try { if (color) hd.color(o); else hd.plain(o); return o; }
     catch (err) {
       if (!("" + err).includes("full")) throw err;
-      //  A record the C render REFUSES at every size (an 800-byte record still
-      //  says "out full" at 256 MB — a HUNK render defect, see the report) must
-      //  not take the whole diff down with it: say so and keep going.
+      //  A record the C render refuses at every size (a HUNK defect) must not
+      //  take the whole diff down, so say so and keep going.
       if (n >= RENDER_MAX) return null;
       n = 2 * n > RENDER_MAX ? RENDER_MAX : 2 * n;
     }
   }
 }
 
-//  --- one path, ONE weave (BEE-005) -----------------------------------------
-//  A diff is a PROJECTION of one CFOLD weave (index/weave.js `weaveDiff`): the
-//  path's blob at the LCA FLOOR of the two tips is the seed, every path-changing
-//  commit above it folds as its own layer under its COMMIT hashlet, and the two
-//  sides are `emitDiff(at(FROM), at(TO))`.  There is no blob pair and no fake
-//  layer id left, so every emitted token names the commit that inserted it.
-//
-//  `from`/`to` are `{ chl, sha, bytes }` — a commit hashlet60 (null = no commit
-//  on that side, a root commit's parent), the blob sha the tip's TREE carries
-//  (undefined = the path is not there) and its bytes.  The wt side passes
-//  `wt: true` instead of a chl: its bytes ride as the final synthetic layer.
-//  from==to → skip (byte-identical); binary either side → skip; over the source
-//  cap → a BLOB, skip.
-//
-//  A hunk is lite-shaped — { uri, verb, text, toks } the pager takes unchanged
-//  — plus `plain`, the C unified render of that record (the `--plain` bytes),
-//  plus `who`, BEE-005's per-token provenance (the inserting commit).
+//  One path, one weave (BEE-005:10:mJ): the diff is a projection of one CFOLD
+//  weave (index/weave.js weaveDiff) seeded at the LCA floor, each commit a
+//  layer under its hashlet, so that every token names its inserting commit.
+//  A side is `{ chl, sha, bytes }` or `wt: true`; a hunk adds `plain` and `who`.
 function diffPath(env, name, from, to, full, out) {
   const f = from.bytes || new Uint8Array(0);
   const t = to.bytes || new Uint8Array(0);
-  if (f.length === t.length && bytesEq(f, t)) return;         // from==to skip
-  if (isBinary(f) || isBinary(t)) {                           // binary skip
+  if (f.length === t.length && bytesEq(f, t)) return;         // identical: skip
+  if (isBinary(f) || isBinary(t)) {                           // binary: skip
     out.push(noteHunk(name, "binary files differ"));
     return;
   }
@@ -103,10 +64,8 @@ function diffPath(env, name, from, to, full, out) {
     out.push(noteHunk(name, "the file is too big to diff (over 4 MB)"));
     return;
   }
-  //  The fold/emit buffers are fixed at MAX_SOURCE_MARKED_UP.  A (sub-cap but
-  //  token-dense) source that overflows even that is refolded under the PLAIN
-  //  lexer — the binding masks a lexer defect as "out full" too (be DIFF-015),
-  //  and a changed file must never silently VANISH.
+  //  A token-dense source overflowing the fixed fold buffers is refolded under
+  //  the plain lexer, so that a changed file never silently vanishes (DIFF-015:5:1D).
   let r;
   try {
     r = weaveEmit(env, name, from, to, full, extOf(name));
@@ -120,13 +79,13 @@ function diffPath(env, name, from, to, full, out) {
   emitHunks(r.hd, out, r.prov);
 }
 
-//  Fold the path's weave and emit the from->to window (or the whole file) into
-//  the run's HUNK container.  null when the index knows nothing of the path.
+//  Fold the path's weave and emit the from->to window, or the whole file, into
+//  the run's HUNK container; null when the index knows nothing of the path.
 function weaveEmit(env, name, from, to, full, ext) {
   const tips = [{ chl: from.chl, blob: from.sha }];
   if (!to.wt) tips.push({ chl: to.chl, blob: to.sha });
-  //  BEE-005: a parent->child pair is its own floor, so it folds the two blobs
-  //  and reads no index (env.blob) — that is `commit`'s ODB-only leg.
+  //  A parent->child pair is its own floor, so it folds the two blobs and
+  //  reads no index (env.blob); that is `commit`'s ODB-only leg (BEE-005:36:mJ).
   const b = env.blob ? wv.blobDiff(from, to, ext)
                      : wv.weaveDiff(env.ctx.r, env.ix, name, tips, ext);
   if (b === null) return null;
@@ -134,10 +93,10 @@ function weaveEmit(env, name, from, to, full, ext) {
   const fromRev = b.views[0].rev;
   let toRev;
   if (to.wt) {
-    //  BE-010: the worktree bytes as the LAST layer over the head's view.
+    //  The worktree bytes ride as the last layer over the head's view (BE-010).
     const g = wv.foldWt(w, fromRev, b.views[0].ids,
                             to.bytes || new Uint8Array(0), ext);
-    if (!g.layered) return null;                   // adjacent-equal: nothing to say
+    if (!g.layered) return null;                   // adjacent and equal: skip
     w = g.weave; toRev = wv.WT_SRC;
   } else toRev = b.views[1].rev;
   const hd = scratch();
@@ -150,16 +109,10 @@ function weaveEmit(env, name, from, to, full, ext) {
                              { rev: toRev, ids: toIds }, b.idToHl) };
 }
 
-//  --- provenance (BEE-005 stage 7, be diff.js `provList`/`markRecord`) ------
-//  The weave's EMITTED token sequence — every token visible in from ∪ to, in
-//  weave order — each carrying the COMMIT that inserted it (`blame`), as byte
-//  extents: the emit may SPLIT a weave atom, so a text zip desyncs where the
-//  byte extents always agree.  `who` holds one commit hashlet (15 hex) per
-//  atom, "" where the layer is synthetic (the wt, an empty side).
-//  The two sides can be CONCURRENT layers now, so neither rev's own cursor sees
-//  the other's tokens: the walk rides a contentless JOIN of both closures (be's
-//  `mergedLive` reading), and a token is emitted iff it is alive on EITHER side.
 const JOIN_ID = "0000000000000006";
+//  Provenance (BEE-005:21:mJ): the weave's emitted tokens with the commit that
+//  inserted each, as byte extents since the emit may split an atom.  Both
+//  sides may be concurrent layers, so the walk rides a contentless join of both.
 function aliveAt(w, rev) {
   const live = new Set();
   w.rewind(rev);
@@ -175,7 +128,7 @@ function provList(w, fromV, toV, idToHl) {
   wj.rewind(JOIN_ID);
   while (wj.next()) {
     const tk = wj.tok, off = tk.off;
-    if (!liveF.has(off) && !liveT.has(off)) continue;   // on neither side
+    if (!liveF.has(off) && !liveT.has(off)) continue;   // alive on neither side
     const by = wj.blame(off);
     texts.push(tk.text.slice());
     const hl = idToHl.get(by);
@@ -190,10 +143,10 @@ function provList(w, fromV, toV, idToHl) {
   return { body: body, offs: offs, who: ins };
 }
 
-//  Mark ONE record's tokens against `prov` (of which the record is a contiguous
-//  byte window at or after `from`): `who[i]` names the commit that inserted
+//  Mark one record's tokens against `prov`, of which the record is a contiguous
+//  byte window at or after `from`: `who[i]` names the commit that inserted
 //  token i, "" when no single atom covers it.  Returns the byte cursor past the
-//  matched window; an unalignable record is left unattributed, never wrong.
+//  matched window; an unalignable record is left unattributed rather than wrong.
 function markRecord(prov, from, text, toks) {
   const n = toks.length;
   const who = new Array(n).fill("");
@@ -217,12 +170,10 @@ function markRecord(prov, from, text, toks) {
   return { who: who, at: s + end };
 }
 
-//  Drain every record of the container into lite hunks.  `text`/`toks` are the
-//  WEAVE bytes (both sides interleaved, each token's tok32 carrying its diff
-//  side) — what the pager paints; `plain` is the same record through the C
-//  `diff:`-URI unified render — what `--plain` writes.  The record's own uri is
-//  `diff:<name>#L<n>`; a lite uri is a path, so the scheme comes off.
-//  BEE-005: `who` rides along, one inserting-commit hashlet per token.
+//  Drain every record of the container into hunks: `text`/`toks` are the weave
+//  bytes the pager paints, both sides interleaved with each tok32 carrying its
+//  side; `plain` is the C unified render that `--plain` writes; `who` is one
+//  inserting-commit hashlet per token (BEE-005:37:mJ).
 function emitHunks(hd, out, prov) {
   hd.rewind();
   let at = 0;
@@ -244,17 +195,16 @@ function emitHunks(hd, out, prov) {
   }
 }
 
-//  A TEXT-ONLY hunk (no toks): the one line lite has to say about a pair it
-//  will not weave — a binary or over-cap file (be renders the same case as a
-//  text-only gitlink hunk).  It reads the same in the pager and under --plain.
+//  A text-only hunk with no spans: the one line to say about a pair that will
+//  not weave, a binary or over-cap file.  It reads the same in the pager and
+//  under --plain.
 function noteHunk(name, why) {
   const text = utf8.Encode(name + ": " + why + "\n");
   return { uri: name, verb: "hunk", text: text, toks: new Uint32Array(0),
            plain: text, kind: "diff" };
 }
 
-//  --- the ODB sources -------------------------------------------------------
-//  Blob bytes at a tree leaf sha, or undefined (missing / not a blob).
+//  Blob bytes at a tree leaf sha, or undefined when missing or not a blob.
 function blobBytes(r, sha) {
   if (!sha) return undefined;
   const o = idx.object(r, sha);
@@ -262,11 +212,10 @@ function blobBytes(r, sha) {
   return o.bytes;
 }
 
-//  Pair two trees by path.  A subtree whose sha is EQUAL on both sides is
-//  pruned whole — that is what makes a big-repo diff cheap.  Gitlinks never
-//  reach here: index.js's readTree drops them (a submodule's commit lives in
-//  another ODB), so a lite diff says nothing about a pin bump.
-//  Emits { path, from, to } (a blob sha or undefined) into `out`.
+//  Pair two trees by path into { path, from, to }, a blob sha or undefined.
+//  A subtree with an equal sha on both sides is pruned whole, which is what
+//  makes a big-repo diff cheap.  Gitlinks never reach here, since index.js
+//  readTree drops them, so a diff says nothing about a pin bump.
 function treePairs(r, fromTree, toTree, prefix, out) {
   if (fromTree && fromTree === toTree) return;                // unchanged
   const F = idx.readTree(r, fromTree), T = idx.readTree(r, toTree);
@@ -278,8 +227,8 @@ function treePairs(r, fromTree, toTree, prefix, out) {
     const path = prefix + name;
     const fd = f !== undefined && f.dir, td = t !== undefined && t.dir;
     if (fd || td) {
-      //  A dir on either side: descend it.  A dir REPLACED by a file (or the
-      //  reverse) is both — every leaf under the dir goes, the file arrives.
+      //  A dir on either side is descended.  A dir replaced by a file, or the
+      //  reverse, is both: every leaf under the dir goes and the file arrives.
       treePairs(r, fd ? f.sha : null, td ? t.sha : null, path + "/", out);
       if (!fd && f !== undefined) out.push({ path: path, from: f.sha, to: undefined });
       if (!td && t !== undefined) out.push({ path: path, from: undefined, to: t.sha });
@@ -292,8 +241,8 @@ function treePairs(r, fromTree, toTree, prefix, out) {
   }
 }
 
-//  Every blob leaf of a tree, as { path, sha }.  `scope` (a "dir/" prefix or
-//  "") prunes subtrees that cannot hold it.
+//  Every blob leaf of a tree as { path, sha }.  `scope`, a "dir/" prefix or
+//  "", prunes the subtrees that cannot hold it.
 function treeLeaves(r, tree, prefix, scope, out) {
   const M = idx.readTree(r, tree);
   if (M === null) return;
@@ -310,10 +259,9 @@ function treeLeaves(r, tree, prefix, scope, out) {
   }
 }
 
-//  --- the worktree source ---------------------------------------------------
-//  A tracked file's CURRENT bytes, or undefined when it is gone.  A symlink is
-//  read with lstat/readlink — its TARGET STRING is the git blob body — and is
-//  never mmap'd, which would follow the link and leak the target's bytes.
+//  A tracked file's current bytes, or undefined when it is gone.  A symlink is
+//  read with lstat/readlink, since its target string is the git blob body, and
+//  never mmapped, which would follow the link and read the target's bytes.
 function wtBytes(abs) {
   let st;
   try { st = io.lstat(abs); } catch (e) { return undefined; }
@@ -324,8 +272,8 @@ function wtBytes(abs) {
   try { return io.mmap(abs, "r").data(); } catch (e) { return undefined; }
 }
 
-//  The git blob sha of some bytes ("blob <len>\0" + bytes), so an unchanged
-//  tracked file is skipped without ever inflating its ODB blob.
+//  The git blob sha of some bytes ("blob <len>\0" + bytes), so that an
+//  unchanged tracked file is skipped without ever inflating its ODB blob.
 function blobSha(bytes) {
   const hdr = utf8.Encode("blob " + bytes.length + "\0");
   const b = io.buf(hdr.length + bytes.length + 8);
@@ -333,18 +281,16 @@ function blobSha(bytes) {
   return hex.encode(sha1(b.data()));
 }
 
-//  --- the forms -------------------------------------------------------------
-//  The worktree against a tree, over the TRACKED paths (the tree's own leaves):
-//  a file that is gone diffs against empty, one whose blob sha still matches is
-//  skipped, everything else is a pair.  An UNTRACKED file is not here at all —
-//  `git diff HEAD` does not show one either.
+//  The worktree against a tree, over the tracked paths: a gone file diffs
+//  against empty, a matching blob sha is skipped, the rest are pairs.  An
+//  untracked file is not here, as `git diff HEAD` does not show one either.
 function diffWt(env, headSha, tree, scope, full, out, exact) {
   const ctx = env.ctx, chl = idx.hlOfSha(headSha);
   const leaves = [];
   treeLeaves(ctx.r, tree, "", scope, leaves);
   leaves.sort(function (a, b) { return a.path < b.path ? -1 : a.path > b.path ? 1 : 0; });
   for (const leaf of leaves) {
-    if (exact && leaf.path !== scope) continue;    // a FILE arg, not a prefix
+    if (exact && leaf.path !== scope) continue;    // a file argument, not a prefix
     const wt = wtBytes(ctx.root + "/" + leaf.path);
     if (wt !== undefined && blobSha(wt) === leaf.sha) continue;   // unchanged
     const from = { chl: chl, sha: leaf.sha, bytes: blobBytes(ctx.r, leaf.sha) };
@@ -352,7 +298,7 @@ function diffWt(env, headSha, tree, scope, full, out, exact) {
   }
 }
 
-//  Tree vs tree, in path order — the two tips of ONE weave per changed path.
+//  Tree against tree in path order: the two tips of one weave per changed path.
 function diffTrees(env, fromSha, fromTree, toSha, toTree, scope, out) {
   const ctx = env.ctx;
   const pairs = [];
@@ -368,13 +314,10 @@ function diffTrees(env, fromSha, fromTree, toSha, toTree, scope, out) {
   }
 }
 
-//  One COMMIT's file hunks, against its FIRST parent — what `lite commit` shows
-//  under the metadata (LITE-009).  A changed or added file gets its diff hunks;
-//  a REMOVED file gets an EMPTY hunk, the banner alone, since the bytes that
-//  went are already in the parent.  A root commit's files are all additions.
-//  BEE-005: the two sides are a commit and its FIRST PARENT, whose merge base
-//  is that parent and between which nothing lies — so the weave is the pair
-//  itself (`env.blob`) and this view opens NO index, as it never did.
+//  One commit's file hunks against its first parent, what `bee commit` shows
+//  under the metadata (LITE-009): a changed or added file gets its diff, a
+//  removed one an empty hunk, and a root commit's files are all additions.
+//  Parent->child is its own floor, so this opens no index (BEE-005:36:mJ).
 function commitHunks(ctx, m, out, sha) {
   const par = m.parents.length ? idx.readCommit(ctx.r, m.parents[0]) : null;
   const pairs = [];
@@ -392,15 +335,15 @@ function commitHunks(ctx, m, out, sha) {
   return out;
 }
 
-//  The removed file's hunk: a banner and nothing else.  plainHunk writes the
-//  `hunk <path>` line alone for it, and the pager paints a bare band.
+//  The removed file's hunk: a banner and nothing else, since the bytes that
+//  went are already in the parent.  The pager paints it as a bare band.
 function emptyHunk(name) {
   return { uri: name, verb: "hunk", text: new Uint8Array(0),
            toks: new Uint32Array(0), plain: new Uint8Array(0), kind: "diff" };
 }
 
-//  LITE-011: is `rel` a leaf of this tree?  A file DELETED in the worktree
-//  still is, so `diff <deleted file>` never has to touch the index.
+//  Is `rel` a leaf of this tree?  A file deleted in the worktree still is, so
+//  `diff <deleted file>` never has to touch the index (LITE-011).
 function inTree(r, tree, rel) {
   const segs = rel === "" ? [] : rel.split("/");
   let t = tree;
@@ -416,14 +359,14 @@ function inTree(r, tree, rel) {
   return false;
 }
 
-//  LITE-011: a PARTIAL path arg, resolved off the index the diff already holds.
+//  A partial path argument, resolved off the index the diff holds (LITE-011:9:a9).
 function resolvePartial(env, arg) {
   return require("index/resolve.js").pick("diff", env.ix, env.ctx, arg);
 }
 
-//  A `<hex>` arg -> { sha, m } for the commit it names, refused in plain words
-//  when it names nothing (or something that is not a commit).  A short hexlet
-//  is re-framed to its own sha (LITE-007 `seedOf`), since the weave keys on it.
+//  A `<hex>` argument -> { sha, m } for the commit it names, refused in plain
+//  words when it names nothing or a non-commit.  A short hexlet is re-framed
+//  to its full sha (view/log.js frameSha), since the weave keys on it.
 function commitOf(ctx, hexarg) {
   const name = hexarg.toLowerCase();
   const o = idx.object(ctx.r, name);
@@ -433,28 +376,24 @@ function commitOf(ctx, hexarg) {
   return { sha: sha, m: m };
 }
 
-//  BEE-005: `diff <hexA> <hexB>` — the two-tip form.  A verb's words arrive
-//  fused into one string (main.js), so two hexlets are ONE arg with a space.
+//  `diff <hexA> <hexB>`, the two-tip form (BEE-005).  A verb's words arrive
+//  fused into one string (main.js), so two hexlets are one argument with a space.
 function twoHex(arg) {
   const w = String(arg).split(/\s+/).filter(function (s) { return s !== ""; });
   return (w.length === 2 && lg.HEXARG.test(w[0]) && lg.HEXARG.test(w[1])) ? w : null;
 }
 
-//  --- the verb --------------------------------------------------------------
-//  diff(arg, opts) -> { hunks, form, uri }.  `opts.from` is the dir to find the
-//  repo above (the cwd by default).
-//  BEE-005: a form whose two sides are ADJACENT — the worktree over HEAD, a
-//  commit over its first parent — is its own floor: nothing lies between them,
-//  so it folds the pair and reads NO index (`env.blob`).  Only the two-tip form
-//  spans history, and there the index is brought up to the NAMED tips first —
-//  an unindexed commit is not a fallback case but a bring-up.
+//  diff(arg, opts) -> { hunks, form, uri }.  A form whose sides are adjacent
+//  (the worktree over head, a commit over its first parent) is its own floor
+//  and folds the pair off the ODB (`env.blob`, BEE-005:36:mJ); only the two-tip
+//  form spans history, and it brings the index up rather than working around it.
 function diff(arg, opts) {
   opts = opts || {};
   const ctx = idx.openRepo(opts.from || io.cwd(), true);
   let ix = null;
   const env = { ctx: ctx, ix: null, blob: true };
-  //  The index is opened only where a form needs it: the two-tip fold, and the
-  //  LITE-011 partial-path resolve.  An adjacent form opens nothing.
+  //  The index is opened only where a form needs it, the two-tip fold and the
+  //  partial-path resolve (LITE-011); an adjacent form opens nothing.
   const index = function () {
     if (ix === null) { ix = idx.openIndex(ctx.gitdir); env.ix = ix; }
     return ix;
@@ -482,8 +421,8 @@ function diff(arg, opts) {
       const c = commitOf(ctx, arg);
       const m = c.m;
       const par = m.parents.length ? idx.readCommit(ctx.r, m.parents[0]) : null;
-      //  A MERGE's first parent is the floor, but the tokens the OTHER side
-      //  brought are the whole point of `diff <hex>` — so this form weaves.
+      //  A merge's first parent is the floor, but the tokens the other side
+      //  brought are the whole point of `diff <hex>`, so this form weaves.
       spanning();
       idx.bringUp(ctx, ix, { track: false, tip: c.sha });
       diffTrees(env, m.parents.length ? m.parents[0] : null, par ? par.tree : null,
@@ -494,15 +433,15 @@ function diff(arg, opts) {
       let rel = lg.relOf(ctx.root, arg);
       let dir = false, here = true;
       try { dir = io.stat(ctx.root + "/" + rel).kind === "dir"; } catch (e) { here = false; }
-      //  LITE-011: neither in the worktree nor in HEAD's tree — the arg may be
-      //  PARTIAL, so ask the index (and only then) to name it.
+      //  Neither in the worktree nor in head's tree: the argument may be
+      //  partial, so ask the index, and only then, to name it (LITE-011).
       if (!here && !inTree(ctx.r, headTree, rel)) {
-        //  LITE-011's FSEG descent is an INDEX read (the fold below is not).
+        //  The FSEG descent is an index read, unlike the fold below.
         idx.bringUp(ctx, index(), { track: false });
         const hit = resolvePartial(env, arg);
         if (hit !== null) rel = hit;
       }
-      //  A DIR scopes the worktree diff to that subtree; a FILE gets the
+      //  A dir scopes the worktree diff to that subtree; a file gets the
       //  whole-file view (emitFull), which is what `be diff <file>` shows.
       if (dir) diffWt(env, ctx.head.sha, headTree, rel === "" ? "" : rel + "/", false, out);
       else diffWt(env, ctx.head.sha, headTree, rel, true, out, true);

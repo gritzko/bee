@@ -1,20 +1,9 @@
-//  view/blob.js — LITE-017: `lite blob <hexlet>`, ported from
-//  be/views/blob/blob.js (JAB-007).
-//
-//  THE RULING (gritzko, JAB-007): blob emits a HUNK, the way cat does — never a
-//  raw dump.  So this is cat's by-OBJECT-SHA twin and nothing else: where cat
-//  reads a file by path, blob reads a blob by the sha a 6..40 hexlet names, and
-//  the bytes then take the SAME road — verbatim under `--plain`, one pager hunk
-//  at a terminal, banner `blob <sha40>`.
-//
-//  The banner is the RESOLVED full sha in every case, so a short hexlet and the
-//  full 40 produce byte-identical output (be's JS-082 leg).  lite has no
-//  short-prefix scanner of its own to get wrong: `git.getHex` takes any 6..40
-//  name, and the full sha comes back from framing the bytes — diff.js's own
-//  blobSha, which is the git object-name rule and not a second copy of it.
-//
-//  PURE ODB: no index, no `bringUp`, so blob answers in a repo whose `.git/be`
-//  was never built.  An EMPTY blob emits nothing at all (cat's own case).
+//  view/blob.js — `bee blob <hexlet>`: a blob by object name, emitted as a
+//  hunk the way cat does, never as a raw dump (the ruling at LITE-017:14:Cv).
+//  The banner carries the resolved sha40, so a short hexlet and the full name
+//  print identical bytes; the sha comes from framing the bytes (view/diff.js
+//  blobSha) rather than from a second prefix scanner.  Only the ODB is read,
+//  so the verb works in a repo whose .git/be was never built.
 "use strict";
 
 const idx = require("index/index.js");
@@ -22,7 +11,7 @@ const df = require("./diff.js");
 const lg = require("./log.js");
 const rd = require("index/read.js");
 
-//  blob(arg, opts) -> { uri, sha, hunks }.
+//  blob(arg, opts) -> { uri, sha, hunks }; an empty blob yields no hunk.
 function blob(arg, opts) {
   opts = opts || {};
   const hexlet = String(arg === undefined || arg === null ? "" : arg);

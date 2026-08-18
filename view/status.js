@@ -1,15 +1,11 @@
-//  view/status.js — BEE-022: `bee status`, the quad ([/wiki/Status]) over a
-//  plain git repo.  ONE row per interesting path, four chars wide:
-//
-//      <quad4> <path>                    a file row
-//      <quad4> ?<hashlet>#<subject>      a commit row (ahead `.o..`, behind `o...`)
-//      <branch>?<upstream>\t<counts>     the summary line, last
-//
-//  The columns are UPSTREAM / HEAD / STAGE / WORKTREE, a LADDER read rung by
-//  rung (view/quad.js owns the pure merge); this file is the GATHER — the four
-//  listings, the [GIT-032] stage reader, the worktree axis over `dog._igno_*`
-//  and the CPAR divergence — plus the painter.
-//  Read-only and derived: nothing here writes a ref, an index or a lock.
+//  view/status.js — `bee status`, the quad ([/wiki/Status], BEE-022) over a
+//  plain git repo: `<quad4> <path>` per interesting file, `<quad4> <sha8>
+//  <subject>` per ahead/behind commit, and a `<branch>...<upstream>\t<counts>`
+//  summary last, in git's own `-sb` spelling since bee rows carry no beagle
+//  URIs.  The columns upstream / head / stage / worktree form a ladder
+//  (BEE-022:76:wX); view/quad.js owns the pure merge, while this file gathers the
+//  inputs (the tree listings, the GIT-032 stage reader, the worktree axis over
+//  `dog._igno_*`, the CPAR divergence) and paints.  It writes no ref or lock.
 "use strict";
 
 const idx = require("index/index.js");
@@ -19,12 +15,11 @@ const rd = require("index/read.js");
 const df = require("./diff.js");
 const quad = require("./quad.js");
 
-const UNTRACKED = "?";                  // a sha no tree entry can ever carry
+const UNTRACKED = "?";                  // a "sha" no tree entry can ever carry
 
-//  --- the tree columns ------------------------------------------------------
-//  A commit's leaves as a sorted `[{ path, sha }]`.  A GITLINK is a leaf like
-//  any blob ([/wiki/Status]: an advanced submodule is a `v`), so the walk takes
-//  both maps; the `.gitmodules` gate keeps a repo without subs off that path.
+//  A commit's leaves as a sorted `[{ path, sha }]`.  A gitlink is a leaf like
+//  any blob, since an advanced submodule reads `v` ([/wiki/Status]), so the
+//  walk takes both maps; the `.gitmodules` gate spares a repo without subs.
 function leaves(r, tree) {
   const out = [];
   if (!tree) return out;
@@ -44,18 +39,18 @@ function leaves(r, tree) {
   return out;
 }
 
-//  A commit sha (or hashlet) -> its tree's leaves; an unreadable commit reads
-//  as the EMPTY tree, the same tolerance the index walks carry.
+//  A commit sha or hashlet -> its tree's leaves; an unreadable commit reads
+//  as the empty tree, the same tolerance the index walks carry.
 function leavesAt(ctx, name) {
   if (!name) return [];
   const m = idx.readCommit(ctx.r, name);
   return m === null ? [] : leaves(ctx.r, m.tree);
 }
 
-//  --- the STAGE column ([GIT-032]) ------------------------------------------
-//  `dog.readIndex` is NOT landed everywhere: feature-detect, and on its absence
-//  answer `{ rows: null, note }` so the view still runs with the column all-`.`
-//  and SAYS so (the ticket's constraint) — never silently wrong.
+//  The stage column (GIT-032).  `dog.readIndex` is not in every build, so it
+//  is feature-detected; without it the answer is `{ rows: null, note }` and
+//  the view still runs with an all-`.` column, saying so rather than being
+//  silently wrong (BEE-022:64:wX).
 function stageOf(ctx) {
   if (typeof dog === "undefined" || typeof dog.readIndex !== "function")
     return { rows: null,
@@ -66,8 +61,8 @@ function stageOf(ctx) {
   if (ix === null) return { rows: [], con: new Set(), cache: new Map(), note: "" };
   const rows = [], con = new Set(), cache = new Map();
   for (const e of ix.entries) {
-    //  Slots 1/2/3 ARE the conflict — read, never deduced.  The `ours` slot
-    //  stands in for the column; a plain entry is the column and the stat cache.
+    //  Stage slots 1/2/3 are the conflict, read rather than deduced; the `ours`
+    //  slot stands in for the column, a plain entry feeds column and stat cache.
     if (e.stage !== 0) {
       con.add(e.path);
       if (e.stage === 2) rows.push({ path: e.path, sha: e.sha });
@@ -79,10 +74,10 @@ function stageOf(ctx) {
   return { rows: rows, con: con, cache: cache, note: "" };
 }
 
-//  --- the WORKTREE column ---------------------------------------------------
-//  git's stat cache in ron60: `io.lstat` hands a LOCALTIME-aligned ron60
-//  (abc/FILE.c ron60_of_timespec) and DIRC hands epoch seconds + ns, so the
-//  entry's stamp is re-spelled the same way before the two are compared.
+//  The worktree column.  `io.lstat` hands a localtime-aligned ron60
+//  (abc/FILE.c:405 ron60_of_timespec) while the index entry carries epoch
+//  seconds plus ns, so the entry's stamp is respelled the same way before the
+//  two are compared.
 function ronOf(secs, ns) {
   const d = new Date(secs * 1000);
   const y = d.getFullYear() - 2000;
@@ -96,10 +91,10 @@ function ronOf(secs, ns) {
   return r;
 }
 
-//  Is this file byte-identical to its index entry, on the stat cache alone?
-//  Size AND stamp must match, and a RACILY-CLEAN entry (stamped no earlier than
-//  the index file itself) is rehashed — git's own rule, so a same-second edit
-//  cannot read clean.
+//  Is this file byte-identical to its index entry, by the stat cache alone?
+//  Size and stamp must both match, and a racily clean entry (stamped no earlier
+//  than the index file itself) is rehashed, git's own rule, so that a
+//  same-second edit cannot read clean.
 function statClean(st, e, idxRon) {
   if (e === undefined || st.size !== e.size) return false;
   if (e.assumeValid || e.skipWorktree) return true;
@@ -108,9 +103,9 @@ function statClean(st, e, idxRon) {
   return !(idxRon && ron >= idxRon);
 }
 
-//  The bytes on disk at one tracked path -> its blob sha, or null when it is
-//  gone.  A GITLINK answers with the submodule's OWN HEAD (the `adv` case);
-//  an uninitialised one reads as unchanged rather than as a removal.
+//  The bytes on disk at one tracked path -> its blob sha, or null when gone.
+//  A gitlink answers with the submodule's own head, so an advanced one reads
+//  `v`; an uninitialised one reads as unchanged rather than as removed.
 function wtSha(ctx, path, sub, e, st, idxRon) {
   if (sub) {
     const hd = refs.head(idx.gitdirOf(ctx.root + "/" + path) || "");
@@ -122,14 +117,14 @@ function wtSha(ctx, path, sub, e, st, idxRon) {
   return bytes === undefined ? null : df.blobSha(bytes);
 }
 
-//  wtOf(ctx, base, stage) -> the 4th listing.  TRACKED paths (the union of the
-//  HEAD tree and the index) are measured file by file; everything else on disk
-//  is UNTRACKED and rides `scanUntracked` below, so a build tree never becomes
-//  the output.
+//  wtOf(ctx, base, stage) -> the fourth listing.  Tracked paths (the union of
+//  the head tree and the index) are measured file by file; everything else on
+//  disk is untracked and goes through `scanUntracked`, so that a build tree
+//  never floods the output.
 function wtOf(ctx, base, stage, cache) {
   let idxRon = 0n;
   try { idxRon = io.lstat(ctx.gitdir + "/index").mtime; } catch (e) { idxRon = 0n; }
-  const tracked = new Map();                       // path -> is it a gitlink
+  const tracked = new Map();                       // path -> is it a gitlink?
   for (const e of base) tracked.set(e.path, e.sub === true);
   for (const e of (stage || []))
     if (!tracked.has(e.path)) tracked.set(e.path, false);
@@ -147,14 +142,12 @@ function wtOf(ctx, base, stage, cache) {
   return out;
 }
 
-//  --- the ignore chain ------------------------------------------------------
-//  STATUS-020's `dog._igno_open/_match/_close` is ONE mmapped `.gitignore`; the
-//  CHAIN is JS's, and here it is the descent itself — every dir pushes its own
-//  file and pops it on the way out, so a deeper rule overrides a shallower one
-//  and a path is tested relative to each file's OWN dir.  `.git/info/exclude`
-//  rides as the root level's second set.
+//  The ignore chain.  `dog._igno_*` (STATUS-020) matches one mmapped
+//  `.gitignore`; the chain is the descent itself, each dir pushing its file
+//  and popping it on the way out, so that a deeper rule wins and a path is
+//  tested relative to each file's own dir.
 function ignoStack(ctx) {
-  const sets = [];                                 // [{ h, at }] shallow -> deep
+  const sets = [];                                 // [{ h, at }], shallow to deep
   const open = function (path, at) {
     const h = dog._igno_open(path);
     if (h) sets.push({ h: h, at: at });
@@ -181,9 +174,9 @@ function ignoStack(ctx) {
   };
 }
 
-//  Every file on disk that no tree and no index knows — the UNTRACKED rows.
-//  An ignored dir is pruned WHOLE (which is what makes this cheap), and `.git`
-//  is never entered at all.
+//  Every file on disk that no tree and no index knows: the untracked rows.  An
+//  ignored dir is pruned whole, which is what keeps this cheap, and `.git` is
+//  never entered.
 function scanUntracked(ctx, tracked, out) {
   if (typeof dog === "undefined" || typeof dog._igno_open !== "function") return;
   const ig = ignoStack(ctx);
@@ -213,11 +206,8 @@ function scanUntracked(ctx, tracked, out) {
   } finally { ig.close(); }
 }
 
-//  --- the commit rows -------------------------------------------------------
-//  Ahead/behind is the CPAR walk the index already serves: the ancestor set of
-//  each tip (`index/dag.js`, capped there), and the rows are the two SET
-//  DIFFERENCES — no merge base is computed and none is needed, so two tips that
-//  never met simply read as all-ahead and all-behind.
+//  Ahead/behind are two set differences over the index/dag.js ancestor sets,
+//  so no merge base is needed and tips that never met read all ahead/behind.
 const COMMIT_CAP = 4096;
 
 function divergence(ctx, ix, mineHl, theirsHl) {
@@ -236,33 +226,26 @@ function divergence(ctx, ix, mineHl, theirsHl) {
   return { ahead: only(mine, theirs), behind: only(theirs, mine) };
 }
 
-//  --- the paint -------------------------------------------------------------
-//  PLAIN keeps the greppable ASCII canon and spells a conflict `!` on the wt
-//  char; a tty substitutes the [BRO-030] glyphs and paints one CELL per column
-//  (view/quadrender.js's rules, render/ansi.js carries the slots).
+//  Plain output keeps the greppable ASCII canon, a conflict spelled `!` on the
+//  wt char; a tty substitutes the BRO-030:32:re glyphs, one cell per column.
 const TTY = { ".": ".", "x": "∅", "o": "●", "v": "↑" };
 const TTY_COMMIT = { ".": ".", "x": "∅", "o": "✔", "v": "↑" };
-//  The per-column cell tags — FOUR SLOTS OF THE QUAD'S OWN (ruling
-//  2026-08-18), never a syntax or status tag on loan, so nothing else in the
-//  palette can move a status column: I blue upstream, J green head, K amber
-//  stage, V orange worktree, and M red for a conflict and nothing else.
-//  '.' is unpainted ('S'), so position stays authoritative.
+//  Four cell tags of the quad's own (I J K V, M for a conflict), never a
+//  syntax tag on loan, so no other palette change can move a status column.
 const CELL = ["I", "J", "K", "V"], CELL_CON = "M";
 
 function plainQuad(q, con) {
   return con ? q.slice(0, 3) + "!" : q;
 }
 
-//  --- the rows --------------------------------------------------------------
-//  rowsOf(model, ctx) -> [{ quad, con, text, nav }]: commit rows first (newest
-//  first, as the model orders them), then the file rows lex by path.  A row
-//  clicks where its quad points: a commit row into `commit`, a path bee has
-//  never seen into `cat`, everything else into the `diff` that shows the char.
+//  rowsOf(model, ctx) -> [{ quad, con, text, nav }]: commit rows first, then
+//  file rows by path.  A row clicks to where its quad points: a commit row
+//  into `commit`, a path git never saw into `cat`, the rest into `diff`.
 function rowsOf(model, ctx) {
   const out = [];
   for (const c of model.commits)
     out.push({ quad: c.quad, con: false, commit: true,
-               text: "?" + c.hashlet + (c.subject ? "#" + c.subject : ""),
+               text: c.hashlet.slice(0, 8) + (c.subject ? " " + c.subject : ""),
                nav: "commit " + c.hashlet });
   for (const r of model.rows)
     out.push({ quad: r.quad, con: r.con, commit: false, text: r.path,
@@ -272,8 +255,8 @@ function rowsOf(model, ctx) {
   return out;
 }
 
-//  The summary line: what HEAD is, what it tracks, and the per-column tallies
-//  (zeros omitted) — plus the WORDS when a column could not be read.
+//  The summary line: what head is, what it tracks, the per-column tallies with
+//  zeros omitted, and the words when a column could not be read.
 function summaryOf(model, s) {
   const seg = [];
   const c = model.counts;
@@ -282,7 +265,7 @@ function summaryOf(model, s) {
   if (c.stage) seg.push(c.stage + " stage");
   if (c.wt) seg.push(c.wt + " wt");
   if (c.con) seg.push(c.con + " con");
-  return s.branch + (s.track ? "?" + s.track : "") + "\t" +
+  return s.branch + (s.track ? "..." + s.track : "") + "\t" +
          (seg.length ? seg.join(", ") : "clean") + (s.note ? "\t" + s.note : "");
 }
 
@@ -292,14 +275,14 @@ function plainOf(rows, summary) {
   return utf8.Encode(out + summary + "\n");
 }
 
-//  tok32 (dog/tok/TOK.h): [31..27] tag, [23..0] end byte offset.
+//  tok32 (dog/tok/TOK.h): tag in bits 31..27, end byte offset in 23..0.
 function tagCode(letter) { return letter.charCodeAt(0) - 65; }
 function tok32(tag, end) { return ((tag & 0x1f) << 27) | (end & 0xffffff); }
 const TAG_U = 20, TAG_S = 18, TAG_F = 5, TAG_D = 3, TAG_Q = 16, TAG_N = 13;
 
-//  The pager hunk: the GLYPH row, one tok span per quad cell, the click target
-//  riding a hidden `U` span (view/list.js's own shape, so the pager stays
-//  arg-blind).  `plain` carries the ASCII canon, so a pipe never sees a glyph.
+//  The pager hunk: the glyph row, one span per quad cell, the click target
+//  under a hidden `U` span as in view/list.js, so the pager stays verb-blind.
+//  `plain` carries the ASCII canon, so a pipe never sees a glyph.
 function hunkOf(uriStr, rows, summary) {
   const b = io.buf(1 << 14);
   const spans = [];
@@ -319,7 +302,7 @@ function hunkOf(uriStr, rows, summary) {
     }
     put(TAG_U, r.nav);
     put(TAG_S, " ");
-    //  A declared submodule's path reads BOLD on a tty; plain is untouched.
+    //  A declared submodule's path reads bold on a tty; plain is untouched.
     put(r.commit ? TAG_D : r.gitlink ? TAG_N : TAG_F, r.text);
     put(TAG_U, r.nav);
     put(TAG_S, "\n");
@@ -332,13 +315,10 @@ function hunkOf(uriStr, rows, summary) {
            plain: plainOf(rows, summary), bare: true };
 }
 
-//  --- the verb --------------------------------------------------------------
-//  status(arg, opts) -> { uri, model, rows, hunks }.  The tips first: HEAD is
-//  the base and the upstream is `index/refs.js upstream` (no second resolver);
-//  detached or untracked => track = HEAD, an all-`.` first column.  Column 1
-//  stands on the FORK POINT (ruling 2026-08-18b), so the root tree is the
-//  merge base's; two tips that never met have none and it lists as EMPTY,
-//  which reads every upstream path `o` rather than refusing.
+//  status(arg, opts) -> { uri, model, rows, hunks }.  Head is the base and
+//  the upstream comes off index/refs.js (detached or untracked: track = head).
+//  The root tree is the merge base's, since column 1 stands on the fork
+//  (BEE-022:76:wX); tips that never met list an empty root rather than refusing.
 function status(arg, opts) {
   opts = opts || {};
   const ctx = idx.openRepo(opts.from || io.cwd(), true);
@@ -348,7 +328,7 @@ function status(arg, opts) {
     const track = up === null ? base : up.sha;
     const ix = idx.openIndex(ctx.gitdir, idx.fresh(ctx.gitdir));
     let div = { ahead: [], behind: [] };
-    let rootSha = base;                 // no upstream: the fork IS HEAD
+    let rootSha = base;                 // no upstream: the fork is head itself
     try {
       idx.bringUp(ctx, ix, { track: false });
       if (track !== base) {
@@ -374,7 +354,7 @@ function status(arg, opts) {
                  : ctx.head.ref.slice(0, 11) === "refs/heads/"
                    ? ctx.head.ref.slice(11) : ctx.head.ref;
     const rows = rowsOf(model, ctx);
-    //  The degrade path SAYS both halves of what it lost: the column, and the
+    //  The degraded run says both halves of what it lost: the column, and the
     //  neighbour the worktree rung had to stand on instead.
     const note = st.note ? st.note + "; the worktree column reads against HEAD" : "";
     const summary = summaryOf(model, { branch: branch, track: up ? up.short : "",

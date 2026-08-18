@@ -1,23 +1,10 @@
-//  view/cat.js — LITE-017: `lite cat <path>[?<rev>]`, ported from
-//  be/views/cat/cat.js (JAB-020).
-//
-//  THE RULING (gritzko, JAB-020): cat shows the file's OWN bytes.  There is no
-//  diff in it — for a diff there is `lite diff`.  So `--plain` (and a pipe) is
-//  the bytes VERBATIM, nothing prepended, which makes `lite cat --plain f` and
-//  `cat f` the same bytes; at a terminal those same bytes ride the pager as one
-//  syntax-painted hunk under the banner `cat <path>`.
-//
-//  Two sources, one arg:
-//    cat <path>          the WORKTREE file — the pager's own mmap+tokenize path
-//    cat <path>?<rev>    the blob at that rev, off the ODB (a branch name or
-//                        any 6..40 hexlet), so a file DELETED from the checkout
-//                        still reads.  A path absent AT THAT REV fails LOUD, in
-//                        plain words — never the silent-empty be fixed in
-//                        BRO-029.
-//
-//  be's per-token `U` click-targets (BRO-006's `grep #<word>`) are NOT carried
-//  over: lite has no grep verb, and it does not need one here — LITE-015 already
-//  makes any `F` token in a file hunk a REFERENCE the pager's door resolves.
+//  view/cat.js — `bee cat <path>[?<rev>]`: the file's own bytes with no diff
+//  in them (the ruling at LITE-017:14:Cv).  `--plain` writes the bytes
+//  verbatim, so it equals cat(1); at a tty the same bytes ride the pager as
+//  one painted hunk.  `?<rev>` reads the blob off the ODB, so a deleted file
+//  still reads; a path absent at that rev fails in plain words rather than
+//  silently empty (BRO-029:13:J7).  be's per-token grep targets are not ported,
+//  since any `F` token is already a reference the door resolves (LITE-015:11:q3).
 "use strict";
 
 const idx = require("index/index.js");
@@ -25,9 +12,9 @@ const df = require("./diff.js");
 const fs = require("view/fs.js");
 const rd = require("index/read.js");
 
-//  A worktree file's bytes.  An EMPTY regular file short-circuits (mmap of zero
-//  bytes has nothing to map); everything else is diff.js's own reader, which
-//  reads a symlink's TARGET STRING rather than following it.
+//  A worktree file's bytes.  An empty regular file short-circuits, since an
+//  mmap of zero bytes has nothing to map; everything else goes through
+//  view/diff.js wtBytes, which reads a symlink's target string, not the target.
 function wtBytes(abs) {
   let st = null;
   try { st = io.lstat(abs); } catch (e) { st = null; }
@@ -38,9 +25,8 @@ function wtBytes(abs) {
   return b === undefined ? null : b;
 }
 
-//  --- the verb --------------------------------------------------------------
 //  cat(arg, opts) -> { uri, rel, hunks }.  `hunks` is empty for an empty
-//  file, which is be's own no-banner-for-nothing case.
+//  file: no banner for nothing, as in be.
 function cat(arg, opts) {
   opts = opts || {};
   const ctx = idx.openRepo(opts.from || io.cwd(), true);

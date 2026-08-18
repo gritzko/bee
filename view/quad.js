@@ -1,20 +1,17 @@
-//  view/quad.js — BEE-022: the PURE quad model.  A path's whole story in four
-//  chars, each column read against what it stands on —
-//    1 UPSTREAM  the tracked tip   vs the FORK POINT (ruling 2026-08-18b)
-//    2 HEAD      the base commit   vs the tracked tip
-//    3 STAGE     `.git/index`      vs HEAD
-//    4 WORKTREE  the bytes on disk vs the index
-//  Column 1 stands on the fork so it says what the UPSTREAM did since the two
-//  parted: a commit only YOU made leaves it `.`, which is the whole point of
-//  the re-ruling — measured against HEAD it lit on every unpushed commit.
-//  A missing fork (two tips that never met) is an EMPTY listing, not an error:
-//  every path upstream carries then reads `o`.  The canon is `.` same, `x`
-//  removed, `o` created, `v` advanced; an all-`.` row is dropped.
+//  view/quad.js — the pure quad model (BEE-022): a path's whole story in four
+//  chars, each column read against the one it stands on: upstream (the tracked
+//  tip against the fork point), head (against the tracked tip), stage (against
+//  head), worktree (against the index).  Column 1 stands on the fork so that
+//  it says what upstream did since the two parted, and a commit only you made
+//  leaves it `.` (BEE-022:76:wX).  Without a fork the upstream listing is empty,
+//  so every path there reads `o`.  The canon is `.` same, `x` removed, `o`
+//  created, `v` advanced ([/wiki/Status]); an all-`.` row is dropped.
 "use strict";
 
 const CH = { same: ".", removed: "x", created: "o", advanced: "v" };
 
-//  One column's relation to the neighbour it stands on (`null` = path absent).
+//  One column's relation to the neighbour it stands on; null means the path
+//  is absent on that side.
 function rel(refSha, colSha) {
   if (refSha == null && colSha == null) return CH.same;
   if (refSha == null) return CH.created;
@@ -22,7 +19,7 @@ function rel(refSha, colSha) {
   return refSha === colSha ? CH.same : CH.advanced;
 }
 
-//  A pull cursor over one sorted `[{ path, sha }]` listing: `cur()` or null.
+//  A pull cursor over one sorted `[{ path, sha }]` listing, for the k-way merge.
 function cursor(rows) {
   const a = rows || [];
   let i = 0;
@@ -32,11 +29,10 @@ function cursor(rows) {
   };
 }
 
-//  quadModel(inp) -> { rows, commits, counts, noStage } — the k-way cursor
-//  merge, pure: no repo, no ambient globals.  `root`/`track`/`base`/`stage`/`wt`
-//  are listings sorted lex by path (`stage` null = no [GIT-032] reader, so
-//  column 3 is all-`.` and column 4 falls back to HEAD); `con` is the set of
-//  paths the index holds in stage slots 1/2/3; `ahead`/`behind` are commits.
+//  quadModel(inp) -> { rows, commits, counts, noStage }: a k-way cursor merge
+//  over listings sorted by path, with no repo and no ambient globals so it is
+//  testable alone.  A null `stage` means no GIT-032 reader: column 3 is then
+//  all `.` and column 4 stands on head.  `con` holds the conflicted paths.
 function quadModel(inp) {
   const noStage = inp.stage === null || inp.stage === undefined;
   const cs = { root: cursor(inp.root), track: cursor(inp.track),
@@ -61,8 +57,8 @@ function quadModel(inp) {
     const sRoot = take(cs.root);
     const sTrack = take(cs.track), sBase = take(cs.base);
     const sStage = take(cs.stage), sWt = take(cs.wt);
-    //  The four rungs.  With no stage reader there is no index to measure the
-    //  worktree against, so rung 4 stands on HEAD instead (the summary says so).
+    //  Without a stage reader there is no index to measure the worktree
+    //  against, so rung 4 stands on head instead, and the summary line says so.
     const rTrack = rel(sRoot, sTrack), rHead = rel(sTrack, sBase);
     const rStage = noStage ? CH.same : rel(sBase, sStage);
     const rWt = rel(noStage ? sBase : sStage, sWt);
@@ -77,9 +73,8 @@ function quadModel(inp) {
     rows.push({ path: min, quad: quad, con: isCon, gitlink: gitlink.has(min) });
   }
 
-  //  The commit rows are the same reading one level up: a row marks `o` in the
-  //  column whose tip REACHES it, so a local unposted commit is `.o..` and an
-  //  unabsorbed upstream one `o...` — the ladder's own `o`/`x` direction.
+  //  Commit rows read one level up: `o` in the column whose tip reaches it, so
+  //  a local unposted commit is `.o..` and an unabsorbed upstream one `o...`.
   const commits = [];
   for (const c of (inp.ahead || []))
     commits.push({ quad: ".o..", hashlet: c.hashlet, subject: c.subject, ts: c.ts });
