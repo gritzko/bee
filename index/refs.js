@@ -83,5 +83,56 @@ function head(gitdir) {
   return { ref: chain[chain.length - 1], sha: sha };
 }
 
+//  BEE-022:39: the ONE thing a status needs out of `<gitdir>/config` — the
+//  `[branch "<b>"]` section's `remote` and `merge`.  dog/git/CFG.h parses this
+//  grammar properly but has NO JS binding yet (see the ticket's report), so
+//  this reads those two keys and nothing else: a `[section "sub"]` header, a
+//  `key = value` line, comments dropped.  No value is a URI and none is
+//  resolved here — the refname it yields goes through `resolve` above.
+function branchConf(gitdir, branch) {
+  const out = { remote: "", merge: "" };
+  const t = readText(commonDir(gitdir) + "/config");
+  if (t === null) return out;
+  const want = 'branch "' + branch + '"';
+  let mine = false;
+  for (let line of t.split("\n")) {
+    line = line.trim();
+    if (line === "" || line[0] === "#" || line[0] === ";") continue;
+    if (line[0] === "[") {
+      const e = line.indexOf("]");
+      mine = e > 0 && line.slice(1, e).trim() === want;
+      continue;
+    }
+    if (!mine) continue;
+    const eq = line.indexOf("=");
+    if (eq < 0) continue;
+    const k = line.slice(0, eq).trim(), v = line.slice(eq + 1).trim();
+    if (k === "remote" || k === "merge") out[k] = v;
+  }
+  return out;
+}
+
+//  upstream(gitdir, headRef) -> { name, short, sha } | null: the tip a branch
+//  TRACKS.  `branch.<b>.merge` names the ref on the remote and
+//  `branch.<b>.remote` which remote, so the local ref is the remote-tracking
+//  one; a `.` remote means the merge ref is local already.  Detached HEAD, no
+//  config and an unresolvable ref all answer null — the degenerate roots of
+//  [/wiki/Status], where the caller reads track = HEAD.
+function upstream(gitdir, headRef) {
+  if (typeof headRef !== "string" || headRef.slice(0, 11) !== "refs/heads/") return null;
+  const c = branchConf(gitdir, headRef.slice(11));
+  if (!c.merge) return null;
+  const leaf = c.merge.slice(0, 11) === "refs/heads/" ? c.merge.slice(11) : c.merge;
+  const name = (!c.remote || c.remote === ".") ? c.merge
+             : "refs/remotes/" + c.remote + "/" + leaf;
+  let sha = null;
+  try { sha = resolve(gitdir, name, null, null, 0); } catch (e) { sha = null; }
+  if (!isSha40(sha)) return null;
+  const short = name.slice(0, 13) === "refs/remotes/" ? name.slice(13)
+              : name.slice(0, 11) === "refs/heads/" ? name.slice(11) : name;
+  return { name: name, short: short, sha: sha };
+}
+
 module.exports = { isSha40: isSha40, head: head, resolve: resolve,
-                   packedRefs: packedRefs, commonDir: commonDir };
+                   packedRefs: packedRefs, commonDir: commonDir,
+                   branchConf: branchConf, upstream: upstream };

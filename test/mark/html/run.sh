@@ -353,7 +353,7 @@ REPO="$WORK/repo"; mkdir -p "$REPO/sub"
 
 PORT="${LITEPORT:-18035}"
 BASE="http://127.0.0.1:$PORT"
-( cd "$REPO"; exec env HOME="$FAKEHOME" "$RT" serve --port "$PORT" ) \
+( cd "$REPO"; exec env HOME="$FAKEHOME" "$RT" http --port "$PORT" ) \
   > "$WORK/srv.log" 2>&1 &
 SRVPID=$!
 i=0
@@ -370,36 +370,36 @@ has()   { if grep -qF "$2" "$WORK/page.html"
 hasnt() { if grep -qF "$2" "$WORK/page.html"
           then bad "$1 (present: $2)" "$WORK/page.html"; else ok "$1"; fi; }
 
-R=$(get /cat/doc.md)
+R=$(get /repo/cat/doc.md)
 [ "$R" = "200 text/html; charset=utf-8" ] && ok "a .md URL answers 200 text/html" \
-  || bad "GET /cat/doc.md -> '$R'" "$WORK/page.html"
+  || bad "GET /repo/cat/doc.md -> '$R'" "$WORK/page.html"
 has   "the .md URL is RENDERED by default"        '<h1 id="doc-title">Doc <em>title</em></h1>'
 hasnt "the rendered page carries no painted spans" 'class="tok-'
 has   "the GFM checkbox rides the rendered page"   '<input type="checkbox" checked="" disabled="" />'
 has   "the GFM table rides it too"                 '<th align="left">a</th>'
-has   "a relative link carries the RESOLVED href"  '<a href="/cat/sub/x.txt">file</a>'
-has   "a .md target links to its RENDERED page"    '<a href="/cat/sub/other.md">page</a>'
-has   "a directory target links to the list view"  '<a href="/list/sub/">dir</a>'
+has   "a relative link carries the RESOLVED href"  '<a href="/repo/sub/x.txt">file</a>'
+has   "a .md target links to its RENDERED page"    '<a href="/repo/sub/other.md">page</a>'
+has   "a directory target links to the list view"  '<a href="/repo/sub/">dir</a>'
 has   "an absolute url rides as it was typed"      '<a href="https://e.org/a?b=1&amp;c=2">out</a>'
 hasnt "an unresolvable target is NOT a link"       '>miss</a>'
 has   "an unresolvable target stays plain text"    'a miss,'
 hasnt "a javascript: link never reaches the page"  'javascript:'
 hasnt "raw HTML never reaches the page as markup"  '<script'
 has   "raw HTML reaches it as visible text"        '&lt;script&gt;alert(1)&lt;/script&gt;'
-has   "the page offers the source toggle"          '<a href="/raw/doc.md">source</a>'
+has   "the page offers the source toggle"          '<a href="/repo/raw/doc.md">source</a>'
 has   "the LITE-034 shell wraps the fragment"      '<link rel="stylesheet" href="/style.css">'
 
-R=$(get /raw/doc.md)
+R=$(get /repo/raw/doc.md)
 [ "$R" = "200 text/html; charset=utf-8" ] && ok "the toggle URL answers 200 text/html" \
-  || bad "GET /raw/doc.md -> '$R'" "$WORK/page.html"
+  || bad "GET /repo/raw/doc.md -> '$R'" "$WORK/page.html"
 has   "the toggle serves the PAINTED source"       'class="tok-'
 hasnt "the painted source renders no heading"      '<h1 id='
-has   "the painted view links back to rendered"    '<a href="/cat/doc.md">rendered</a>'
+has   "the painted view links back to rendered"    '<a href="/repo/cat/doc.md">rendered</a>'
 
-get /cat/sub/other.md > /dev/null
-has   "a link out of a subdir resolves against ITS dir" '<a href="/cat/doc.md">the doc</a>'
+get /repo/cat/sub/other.md > /dev/null
+has   "a link out of a subdir resolves against ITS dir" '<a href="/repo/doc.md">the doc</a>'
 
-get /cat/doc.mkd > /dev/null
+get /repo/cat/doc.mkd > /dev/null
 has   "a .mkd is still painted source (LITE-034)"  'class="tok-'
 hasnt "a .mkd is not rendered"                     '<h1 id='
 

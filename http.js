@@ -50,6 +50,8 @@ const ROUTE = {
   log:      "log",                  //  /log/<path|hex>
   commit:   "commit",               //  /commit/<hex>
   diff:     "diff",                 //  /diff/<hex|path>
+  //  BEE-022: the quad of the LIVE worktree; it takes no path and no rev.
+  status:   "status",               //  /status
   cat:      "cat",                  //  /cat/<path>[?<rev>]  a .md RENDERS here
   raw:      "cat",                  //  /raw/<path>[?<rev>]  the painted source
   tree:     "tree",                 //  /tree/<path|hex>[?<rev>]

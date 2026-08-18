@@ -49,6 +49,9 @@ const THEME = {
   N: aFlag(A_BOLD), C: aFlag(A_BOLD), F: aFg256(56), T: aFg256(56),
   W: aFgB(32),
   E: aFgB(33), X: aFg256(94), Q: aFgB(90),
+  //  BEE-022: `status`'s quad cells reuse these slots (R/W/E/X per column) and
+  //  add BE-001's M — bright red, reserved for a CONFLICT and nothing else.
+  M: aFgB(91),
 };
 function themeAt(tag) { return THEME[tag] || A0; }
 const THEME_BANNER = { fm: 2, fg: 0, bm: 2, bg: 230, fl: 0 };

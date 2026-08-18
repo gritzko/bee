@@ -1007,6 +1007,7 @@ module.exports = {
   discover: discover, openRepo: openRepo, closeRepo: closeRepo,
   //  BEE-009: the linked-worktree tell and the ORIGINAL both doors take.
   linkedWorktree: linkedWorktree, origin: origin, mainOf: mainOf,
+  gitdirOf: gitdirOf,
   //  BEE-006: the gitlink half — the walk, the sub list and the dir-rev source.
   subTree: subTree, subPaths: subPaths, submodulePaths: submodulePaths,
   subAt: subAt, subRevs: subRevs, submodules: submodules, subsSaid: subsSaid,

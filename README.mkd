@@ -64,6 +64,17 @@ picks the sink, `--plain` (also what a pipe defaults to), `--color`, `--html`:
      2. `<hex>`: that commit vs its first parent
      3. `<hex> <hex>`: any two revisions, rooted at their merge base
      4. `<path>`: that file/dir only
+ -  `bee status` — the QUAD: one row per path that is not quiet, four chars
+    wide, `UPSTREAM HEAD STAGE WORKTREE` — `.` same, `x` removed, `o`
+    created, `v` advanced, `!` conflicted; position is authoritative
+     1. a LADDER: each column reads against its NEIGHBOUR — origin vs HEAD,
+        HEAD vs origin, index vs HEAD, worktree vs index.  No merge base, so
+        histories that never met render instead of erroring
+     2. rungs 1 and 2 are one comparison from both ends: a path only origin
+        has reads `ox..`, one only HEAD has `xo..` — `o`/`x` says which way
+     3. commit rows say the same thing one level up: `.o..` ahead, `o...` behind
+     4. untracked files ride `.gitignore`; the summary line names the branch,
+        its upstream and the per-column tallies
  -  `bee list [<path>][?<rev>]` — dir browser: marker, name, last commit, age
  -  `bee cat <path>[?<rev>]` — the file's own bytes, syntax-painted
  -  `bee tree [<hex>|<path>][?<rev>]` — raw git-tree rows, `..` row when descended
