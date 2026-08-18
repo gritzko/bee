@@ -102,7 +102,7 @@ echo "logspine: runtime $RT, fixtures $WORK"
 rtin "$REPO" log > "$WORK/p1" 2>"$WORK/p1e"; RC=$?
 g log --date-order --format='%H' | cut -c1-8 > "$WORK/p1g"
 cut -c1-8 "$WORK/p1" > "$WORK/p1q"
-if [ "$RC" = 0 ] && [ "$(wc -l < "$WORK/p1")" = "6" ] && cmp -s "$WORK/p1g" "$WORK/p1q"
+if [ "$RC" = 0 ] && [ "$(( $(wc -l < "$WORK/p1") ))" = "6" ] && cmp -s "$WORK/p1g" "$WORK/p1q"
 then ok "the merge log is still the 6 commits in git --date-order order"
 else bad "the merge log is still git --date-order (rc $RC)" "$WORK/p1" "$WORK/p1g" "$WORK/p1e"; fi
 
@@ -120,7 +120,7 @@ rtin "$REPO" log --plain "$M" > "$WORK/p3p" 2>"$WORK/p3e"; RC=$?
 rtin "$REPO" log s.txt > "$WORK/p4" 2>/dev/null
 rtin "$REPO" log --plain s.txt > "$WORK/p4p" 2>"$WORK/p4e"
 if [ "$RC" = 0 ] && cmp -s "$WORK/p3" "$WORK/p3p" && cmp -s "$WORK/p4" "$WORK/p4p" &&
-   [ "$(wc -l < "$WORK/p3")" = "5" ] && [ "$(wc -l < "$WORK/p4")" = "2" ]
+   [ "$(( $(wc -l < "$WORK/p3") ))" = "5" ] && [ "$(( $(wc -l < "$WORK/p4") ))" = "2" ]
 then ok "log --plain = the piped rows for the <hex> and <path> forms too"
 else bad "log --plain for <hex> / <path> (rc $RC)" "$WORK/p3" "$WORK/p3p" "$WORK/p4" "$WORK/p4p" "$WORK/p3e"; fi
 
@@ -134,7 +134,7 @@ else bad "a grey row's plain bytes carry no marker" "$WORK/p1"; fi
 # P5: the LINEAR fixture — nothing to grey, and `--plain` unchanged there too.
 rtin "$LIN" log > "$WORK/p5" 2>/dev/null
 rtin "$LIN" log --plain > "$WORK/p5p" 2>"$WORK/p5e"; RC=$?
-if [ "$RC" = 0 ] && [ "$(wc -l < "$WORK/p5")" = "3" ] && cmp -s "$WORK/p5" "$WORK/p5p"
+if [ "$RC" = 0 ] && [ "$(( $(wc -l < "$WORK/p5") ))" = "3" ] && cmp -s "$WORK/p5" "$WORK/p5p"
 then ok "a linear history logs 3 rows, --plain identical"
 else bad "a linear history logs 3 rows (rc $RC)" "$WORK/p5" "$WORK/p5p" "$WORK/p5e"; fi
 

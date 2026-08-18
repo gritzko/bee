@@ -126,7 +126,7 @@ if grep -q '^mod a.txt .*C0 seed a and sub' "$WORK/o1" &&
    grep -q '^dir sub/ .*C2 edit sub' "$WORK/o1"
 then ok "...fused on the FIRST run — no starved summaries"
 else bad "the first run's rows are not fused" "$WORK/o1"; fi
-if [ "$(grep -cE '[0-9]+[smhdy]$' "$WORK/o1")" = "$(wc -l < "$WORK/o1")" ]
+if [ "$(grep -cE '[0-9]+[smhdy]$' "$WORK/o1")" = "$(( $(wc -l < "$WORK/o1") ))" ]
 then ok "...and every row carries its rel-age column"
 else bad "rel-age column" "$WORK/o1"; fi
 
@@ -161,7 +161,7 @@ if cmp -s "$WORK/h1" "$WORK/h2"
 then ok "...and shows the same board"
 else bad "the second run's board differs" "$WORK/o1" "$WORK/o2"; fi
 # It did not re-append to the repo list either (LITE-006 dedups on read).
-if [ "$(wc -l < "$TRK")" = "1" ]
+if [ "$(( $(wc -l < "$TRK") ))" = "1" ]
 then ok "...and the repo list dedups"
 else bad "the repo list re-appended" "$TRK"; fi
 

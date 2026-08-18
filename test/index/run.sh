@@ -112,7 +112,7 @@ else bad "the repo list holds the repo's absolute path" "$TRK"; fi
 # V4: the second run is a NO-OP (watermark hit) and does not re-append.
 rt index "$REPO" > "$WORK/o2" 2>"$WORK/e2"; RC=$?
 if [ "$RC" = 0 ] && grep -q "^up to date: refs/heads/master " "$WORK/o2" &&
-   [ "$(wc -l < "$TRK")" = "1" ]
+   [ "$(( $(wc -l < "$TRK") ))" = "1" ]
 then ok "second run is a no-op, the repo list dedups"
 else bad "second run is a no-op, the repo list dedups (rc $RC)" "$WORK/o2" "$WORK/e2" "$TRK"; fi
 
@@ -136,7 +136,7 @@ g checkout -q master
 rtin "$REPO" log > "$WORK/l1" 2>"$WORK/l1e"; RC=$?
 g log --date-order --format='%H' | cut -c1-8 > "$WORK/l1g"
 cut -c1-8 "$WORK/l1" > "$WORK/l1q"
-if [ "$RC" = 0 ] && [ "$(wc -l < "$WORK/l1")" = "5" ] && cmp -s "$WORK/l1g" "$WORK/l1q"
+if [ "$RC" = 0 ] && [ "$(( $(wc -l < "$WORK/l1") ))" = "5" ] && cmp -s "$WORK/l1g" "$WORK/l1q"
 then ok "log = the 5 reachable commits in git --date-order order"
 else bad "log = the 5 reachable commits in git --date-order order (rc $RC)" "$WORK/l1" "$WORK/l1e"; fi
 
@@ -246,10 +246,10 @@ else bad "log --plain = the piped rows (rc $RC)" "$WORK/l1" "$WORK/lp" "$WORK/lp
 CLONE="$WORK/clone"
 git clone -q --no-local "$REPO" "$CLONE" 2>/dev/null
 rm -rf "$CLONE/.git/be"
-TRKLINES=$(wc -l < "$TRK")
+TRKLINES=$(( $(wc -l < "$TRK") ))
 rtin "$CLONE" log > "$WORK/l9" 2>"$WORK/l9e"; RC=$?
-if [ "$RC" = 0 ] && [ "$(wc -l < "$WORK/l9")" = "5" ] && [ -d "$CLONE/.git/be" ] &&
-   [ "$(wc -l < "$TRK")" = "$TRKLINES" ]
+if [ "$RC" = 0 ] && [ "$(( $(wc -l < "$WORK/l9") ))" = "5" ] && [ -d "$CLONE/.git/be" ] &&
+   [ "$(( $(wc -l < "$TRK") ))" = "$TRKLINES" ]
 then ok "log on a fresh clone indexes implicitly and adds no registry line"
 else bad "log on a fresh clone indexes implicitly (rc $RC)" "$WORK/l9" "$WORK/l9e"; fi
 
@@ -513,7 +513,7 @@ else bad "install brings both halves up" "$WORK/b1l" "$WORK/b1le" "$WORK/b1"; fi
 # B2: a second install says so and adds NO second line.
 rt4 install > "$WORK/b2" 2>"$WORK/b2e"; RC=$?
 if [ "$RC" = 0 ] && grep -q '^already installed' "$WORK/b2" &&
-   [ "$(wc -l < "$REG")" = "1" ]
+   [ "$(( $(wc -l < "$REG") ))" = "1" ]
 then ok "a second install adds no second line"
 else bad "a second install adds no second line (rc $RC)" "$WORK/b2" "$WORK/b2e" "$REG"; fi
 
@@ -523,7 +523,7 @@ WT4="$WORK/wt4"
 if git -C "$REPO4" worktree add -q "$WT4" -b wt4 >/dev/null 2>&1; then
     ( cd "$WT4" && HOME="$FH4" "$RT" install ) > "$WORK/b3" 2>"$WORK/b3e"; RC=$?
     if [ "$RC" != 0 ] && [ ! -s "$WORK/b3" ] && grep -q 'worktree' "$WORK/b3e" &&
-       [ "$(wc -l < "$REG")" = "1" ]
+       [ "$(( $(wc -l < "$REG") ))" = "1" ]
     then ok "install refuses a linked worktree in plain words"
     else bad "install refuses a linked worktree (rc $RC)" "$WORK/b3" "$WORK/b3e" "$REG"; fi
 else
@@ -612,7 +612,7 @@ else bad "list attributes the submodule row (rc $RC)" "$WORK/s2" "$WORK/s2e"; fi
 # S3: a second install adds no second line for either repo.
 rtp install > "$WORK/s3" 2>"$WORK/s3e"; RC=$?
 if [ "$RC" = 0 ] && grep -q '^already installed' "$WORK/s3" &&
-   [ "$(wc -l < "$REG6")" = "2" ]
+   [ "$(( $(wc -l < "$REG6") ))" = "2" ]
 then ok "a second install adds no duplicate line for parent or sub"
 else bad "a second install duplicates nothing (rc $RC)" "$WORK/s3" "$WORK/s3e" "$REG6"; fi
 

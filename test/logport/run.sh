@@ -96,21 +96,21 @@ echo "logport: runtime $RT, fixtures $WORK"
 # ==========================================================================
 # L0: the BASELINE — master's own log is 4 rows and knows nothing of `side`.
 rtin "$PAR" log --plain > "$WORK/l0" 2>"$WORK/l0e"; RC=$?
-if [ "$RC" = 0 ] && [ "$(wc -l < "$WORK/l0")" = "4" ] && ! grep -q "$SX8" "$WORK/l0"
+if [ "$RC" = 0 ] && [ "$(( $(wc -l < "$WORK/l0") ))" = "4" ] && ! grep -q "$SX8" "$WORK/l0"
 then ok "the bare log is master's 4 commits, no side branch in it"
 else bad "the bare log is master's own (rc $RC)" "$WORK/l0" "$WORK/l0e"; fi
 
 # L0b: the file log BEFORE any `?<rev>` brought another branch up — f.txt on
 # master is p3, p2, p0 and the side commit is nowhere in the index yet.
 rtin "$PAR" log --plain f.txt > "$WORK/l3m" 2>/dev/null
-if [ "$(wc -l < "$WORK/l3m")" = "3" ] && ! grep -q "$SX8" "$WORK/l3m"
+if [ "$(( $(wc -l < "$WORK/l3m") ))" = "3" ] && ! grep -q "$SX8" "$WORK/l3m"
 then ok "log f.txt on master is the 3 master revisions"
 else bad "log f.txt on master" "$WORK/l3m"; fi
 
 # L1: `log ?<ref>` walks THAT tip — `side` is 4 commits ending at sx, and the
 # master-only tip p3 is not among them.
 rtin "$PAR" log --plain '?side' > "$WORK/l1" 2>"$WORK/l1e"; RC=$?
-if [ "$RC" = 0 ] && [ "$(wc -l < "$WORK/l1")" = "4" ] &&
+if [ "$RC" = 0 ] && [ "$(( $(wc -l < "$WORK/l1") ))" = "4" ] &&
    head -1 "$WORK/l1" | grep -q "^$SX8 " && ! grep -q "$P38" "$WORK/l1"
 then ok "log ?side walks the side tip (sx newest, no master-only p3)"
 else bad "log ?side walks the side tip (rc $RC)" "$WORK/l1" "$WORK/l1e"; fi
@@ -124,7 +124,7 @@ else bad "log ?<hexlet> = log ?<branch> (rc $RC)" "$WORK/l1" "$WORK/l2" "$WORK/l
 # L3: `log <path>?<rev>` is the file's revisions reachable from THAT tip only —
 # f.txt on side is sx, p2, p0; p3 amended f.txt on master and must not show.
 rtin "$PAR" log --plain 'f.txt?side' > "$WORK/l3" 2>"$WORK/l3e"; RC=$?
-if [ "$RC" = 0 ] && [ "$(wc -l < "$WORK/l3")" = "3" ] &&
+if [ "$RC" = 0 ] && [ "$(( $(wc -l < "$WORK/l3") ))" = "3" ] &&
    head -1 "$WORK/l3" | grep -q "^$SX8 " && ! grep -q "$P38" "$WORK/l3"
 then ok "log f.txt?side = the file's side revisions only (master's tip absent)"
 else bad "log f.txt?side (rc $RC)" "$WORK/l3" "$WORK/l3e"; fi
@@ -134,13 +134,13 @@ else bad "log f.txt?side (rc $RC)" "$WORK/l3" "$WORK/l3e"; fi
 rtin "$PAR" log --plain sub/g.txt > "$WORK/l4" 2>"$WORK/l4e"; RC=$?
 rtin "$PAR/sub" log --plain g.txt > "$WORK/l4w" 2>"$WORK/l4we"
 if [ "$RC" = 0 ] && [ -s "$WORK/l4" ] && cmp -s "$WORK/l4w" "$WORK/l4" &&
-   [ "$(wc -l < "$WORK/l4")" = "3" ]
+   [ "$(( $(wc -l < "$WORK/l4") ))" = "3" ]
 then ok "log sub/g.txt from the parent = the sub's own g.txt log, byte for byte"
 else bad "log sub/g.txt descends (rc $RC)" "$WORK/l4" "$WORK/l4w" "$WORK/l4e" "$WORK/l4we"; fi
 
 # L5: `log <sub>` alone is the SUB's whole history, not the parent's gitlink bump.
 rtin "$PAR" log --plain sub > "$WORK/l5" 2>"$WORK/l5e"; RC=$?
-if [ "$RC" = 0 ] && [ "$(wc -l < "$WORK/l5")" = "3" ] &&
+if [ "$RC" = 0 ] && [ "$(( $(wc -l < "$WORK/l5") ))" = "3" ] &&
    head -1 "$WORK/l5" | grep -q "^$S28 " && grep -q "^$S18 " "$WORK/l5"
 then ok "log sub is the submodule's own 3 commits"
 else bad "log sub is the submodule's own log (rc $RC)" "$WORK/l5" "$WORK/l5e"; fi
@@ -182,7 +182,7 @@ printf 'sp\n' > "$PAR/a b.txt"
   GIT_AUTHOR_DATE="2023-02-06T00:00:00Z" GIT_COMMITTER_DATE="2023-02-06T00:00:00Z" \
   git commit -q -m "p4 spaced name" ) >/dev/null 2>&1
 rtin "$PAR" log --plain "a b.txt" > "$WORK/l8b" 2>"$WORK/l8be"; RC=$?
-if [ "$RC" = 0 ] && [ "$(wc -l < "$WORK/l8b")" = "1" ] && grep -q 'p4 spaced name' "$WORK/l8b"
+if [ "$RC" = 0 ] && [ "$(( $(wc -l < "$WORK/l8b") ))" = "1" ] && grep -q 'p4 spaced name' "$WORK/l8b"
 then ok "a path with a space still logs (the URI split never eats a name)"
 else bad "a path with a space still logs (rc $RC)" "$WORK/l8b" "$WORK/l8be"; fi
 

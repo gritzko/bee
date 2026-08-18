@@ -1,14 +1,15 @@
 //  view/quad.js — BEE-022: the PURE quad model.  A path's whole story in four
-//  chars, and the quad is a LADDER (ruling 2026-08-18): every column is read
-//  against its NEIGHBOUR, never against a root —
-//    1 UPSTREAM  the tracked tip   vs HEAD
+//  chars, each column read against what it stands on —
+//    1 UPSTREAM  the tracked tip   vs the FORK POINT (ruling 2026-08-18b)
 //    2 HEAD      the base commit   vs the tracked tip
 //    3 STAGE     `.git/index`      vs HEAD
 //    4 WORKTREE  the bytes on disk vs the index
-//  so `merge-base` is not in this model at all and two histories that never met
-//  are a legal quad, not an error.  The canon is `.` same, `x` removed, `o`
-//  created, `v` advanced; an all-`.` row is dropped.  Columns 1 and 2 are the
-//  SAME comparison from both ends: the `o`/`x` asymmetry is what says which way.
+//  Column 1 stands on the fork so it says what the UPSTREAM did since the two
+//  parted: a commit only YOU made leaves it `.`, which is the whole point of
+//  the re-ruling — measured against HEAD it lit on every unpushed commit.
+//  A missing fork (two tips that never met) is an EMPTY listing, not an error:
+//  every path upstream carries then reads `o`.  The canon is `.` same, `x`
+//  removed, `o` created, `v` advanced; an all-`.` row is dropped.
 "use strict";
 
 const CH = { same: ".", removed: "x", created: "o", advanced: "v" };
@@ -32,13 +33,14 @@ function cursor(rows) {
 }
 
 //  quadModel(inp) -> { rows, commits, counts, noStage } — the k-way cursor
-//  merge, pure: no repo, no ambient globals.  `track`/`base`/`stage`/`wt` are
-//  listings sorted lex by path (`stage` null = no [GIT-032] reader, so column 3
-//  is all-`.` and column 4 falls back to HEAD); `con` is the set of paths the
-//  index holds in stage slots 1/2/3; `ahead`/`behind` are commit records.
+//  merge, pure: no repo, no ambient globals.  `root`/`track`/`base`/`stage`/`wt`
+//  are listings sorted lex by path (`stage` null = no [GIT-032] reader, so
+//  column 3 is all-`.` and column 4 falls back to HEAD); `con` is the set of
+//  paths the index holds in stage slots 1/2/3; `ahead`/`behind` are commits.
 function quadModel(inp) {
   const noStage = inp.stage === null || inp.stage === undefined;
-  const cs = { track: cursor(inp.track), base: cursor(inp.base),
+  const cs = { root: cursor(inp.root), track: cursor(inp.track),
+               base: cursor(inp.base),
                stage: cursor(noStage ? [] : inp.stage), wt: cursor(inp.wt) };
   const con = inp.con || new Set();
   const gitlink = inp.gitlink || new Set();
@@ -56,11 +58,12 @@ function quadModel(inp) {
       if (v && v.path === min) { c.advance(); return v.sha; }
       return null;
     };
+    const sRoot = take(cs.root);
     const sTrack = take(cs.track), sBase = take(cs.base);
     const sStage = take(cs.stage), sWt = take(cs.wt);
     //  The four rungs.  With no stage reader there is no index to measure the
     //  worktree against, so rung 4 stands on HEAD instead (the summary says so).
-    const rTrack = rel(sBase, sTrack), rHead = rel(sTrack, sBase);
+    const rTrack = rel(sRoot, sTrack), rHead = rel(sTrack, sBase);
     const rStage = noStage ? CH.same : rel(sBase, sStage);
     const rWt = rel(noStage ? sBase : sStage, sWt);
     const isCon = con.has(min);

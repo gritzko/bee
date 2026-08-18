@@ -241,7 +241,7 @@ g checkout -q master
 printf 'the quick brown owl\njumps over\nthe lazy dog\n' > "$REPO/f.txt"
 g commit -qam ours2
 g merge feat2 > "$WORK/m2" 2>"$WORK/m2e"; RC=$?
-UN=$(g ls-files -u f.txt | wc -l)
+UN=$(( $(g ls-files -u f.txt | wc -l) ))
 if [ "$RC" != 0 ] && [ "$UN" = 3 ] &&
    g status --short | grep -q '^UU f.txt' &&
    grep -q 'cat' "$REPO/f.txt" && grep -q 'owl' "$REPO/f.txt" &&
@@ -264,7 +264,7 @@ else bad "binary fallback (rc $RC)" "$BIN/se" "$BIN/so"; fi
 # so the fallback must produce GIT's merged result (not ours, not a refusal).
 BIG="$WORK/big"; mkdir -p "$BIG"
 ( i=0; while [ $i -lt 140000 ]; do echo "line $i padding padding padding"; i=$((i+1)); done ) > "$BIG/b"
-[ "$(wc -c < "$BIG/b")" -gt 4194304 ] || { echo "merge: over-cap fixture too small" >&2; exit 2; }
+[ "$(( $(wc -c < "$BIG/b") ))" -gt 4194304 ] || { echo "merge: over-cap fixture too small" >&2; exit 2; }
 { echo "OURS HEAD"; cat "$BIG/b"; } > "$BIG/o"
 { cat "$BIG/b"; echo "THEIRS TAIL"; } > "$BIG/t"
 cp "$BIG/o" "$BIG/out"

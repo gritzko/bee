@@ -128,14 +128,14 @@ if [ "$RC" = 0 ] && grep -q '^dir er/ .*C0 seed a and sub' "$WORK/deep.out"
 then ok "a dir one level down fuses as exactly as a file does"
 else bad "nested dir not fused (rc $RC)" "$WORK/deep.out" "$WORK/deep.err"; fi
 # Every row carries a rel-age token at its tail.
-if [ "$(grep -cE '[0-9]+[smhdy]$' "$WORK/out")" = "$(wc -l < "$WORK/out")" ]
+if [ "$(grep -cE '[0-9]+[smhdy]$' "$WORK/out")" = "$(( $(wc -l < "$WORK/out") ))" ]
 then ok "every row carries a rel-age column"
 else bad "rel-age column" "$WORK/out"; fi
 
 # A SCOPED listing, and the `?<rev>` one.
 rtin "$REPO" list --plain sub > "$WORK/sub.out" 2>"$WORK/sub.err"; RC=$?
 if [ "$RC" = 0 ] && grep -q '^eq  x.txt .*C2 edit sub' "$WORK/sub.out" &&
-   [ "$(wc -l < "$WORK/sub.out")" = 1 ]
+   [ "$(( $(wc -l < "$WORK/sub.out") ))" = 1 ]
 then ok "a scoped listing is that dir's entries alone, fused"
 else bad "scoped list (rc $RC)" "$WORK/sub.out" "$WORK/sub.err"; fi
 rtin "$REPO" list --plain "?$C1" > "$WORK/rev.out" 2>"$WORK/rev.err"; RC=$?

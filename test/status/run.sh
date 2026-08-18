@@ -5,11 +5,11 @@
 # named the upstream.  The quad ([/wiki/Status]) says a path's whole story in
 # four chars, one per tree, position authoritative:
 #
-#   a LADDER, each column read against its neighbour (gritzko 2026-08-18):
-#   origin vs HEAD, HEAD vs origin, index vs HEAD, worktree vs index.
+#   column 1 stands on the FORK POINT, 2..4 on the tip to their left
+#   (gritzko 2026-08-18b): upstream vs fork, HEAD vs upstream, index vs
+#   HEAD, worktree vs index.  So column 1 says what the UPSTREAM did and
+#   a commit only WE made never lights it — the point of that ruling.
 #   `.` same   `x` removed   `o` created   `v` advanced   `!` conflicted
-#   No merge-base anywhere: columns 1 and 2 are one comparison from both
-#   ends, so the `o`/`x` asymmetry is what carries the DIRECTION.
 #
 # The fixture is a CLONE that has diverged from its origin, so every column
 # has something to say at once: origin is one commit ahead (a.txt edited,
@@ -101,17 +101,18 @@ if [ "$RC" = 0 ] && [ -s "$WORK/out" ]
 then ok "the view emits rows"
 else bad "status (rc $RC)" "$WORK/out" "$WORK/err"; fi
 
-for _row in 'vv.v a.txt' 'vv.. b.txt' 'ox.. gone.txt' 'xo.. loc.txt' '..o. n.txt' \
+for _row in 'vv.v a.txt' '.v.. b.txt' '.x.. gone.txt' '.o.. loc.txt' '..o. n.txt' \
             '..xo rm.txt' '..v. sub/x.txt' '...o u.txt' 'ox.. up.txt'; do
     if grep -qx "$_row" "$WORK/out"
     then ok "row: $_row"
     else bad "missing quad row: $_row" "$WORK/out"; fi
 done
 
-# DIRECTION: rungs 1 and 2 are one comparison from both ends, so a path only
-# origin has reads `o` then `x` — and a path only HEAD has spells it reversed.
-if grep -qx 'ox.. up.txt' "$WORK/out" && grep -qx 'xo.. loc.txt' "$WORK/out"
-then ok "the o/x asymmetry carries the direction, both ways round"
+# WHO ADDED IT: a file the UPSTREAM added is `ox` — created since the fork,
+# missing from HEAD — while one WE added leaves column 1 alone and reads `.o`.
+# That asymmetry is the fork-point ruling's whole payload.
+if grep -qx 'ox.. up.txt' "$WORK/out" && grep -qx '.o.. loc.txt' "$WORK/out"
+then ok "column 1 names the upstream's own doing, never ours"
 else bad "direction reading" "$WORK/out"; fi
 
 # The ignore machinery — a build tree is not the output.
@@ -129,7 +130,7 @@ then ok "an unchanged path gets no row"
 else bad "an unchanged path got a row" "$WORK/out"; fi
 
 # THE CONTRACT: piped output is the bare ASCII canon, no colour, no glyph.
-if [ "$(grep -cE '^[.xov!]{4} ' "$WORK/out")" = "$(($(wc -l < "$WORK/out") - 1))" ]
+if [ "$(grep -cE '^[.xov!]{4} ' "$WORK/out")" = "$(($(( $(wc -l < "$WORK/out") )) - 1))" ]
 then ok "every row but the summary is a bare 4-char quad"
 else bad "the plain canon leaked" "$WORK/out"; fi
 if ! grep -q "$(printf '\033')" "$WORK/out"
@@ -156,8 +157,11 @@ rtin "$REPO" status --color > "$WORK/col" 2>"$WORK/colerr"; RC=$?
 if [ "$RC" = 0 ] && grep -q '↑' "$WORK/col" && grep -q '●' "$WORK/col"
 then ok "a coloured run substitutes the BRO-030 glyphs"
 else bad "no tty glyphs (rc $RC)" "$WORK/col" "$WORK/colerr"; fi
-if grep -q "$(printf '\033')\[38;5;94m↑" "$WORK/col"
-then ok "...and paints the worktree cell in its own colour"
+# The quad owns FOUR slots (ruling 2026-08-18): I/J/K/V, never a borrowed
+# syntax or status tag, so 208 here is the worktree column's ORANGE and no
+# repaint of `list`'s brown del marker can reach it.
+if grep -q "$(printf '\033')\[38;5;208m↑" "$WORK/col"
+then ok "...and paints the worktree cell in its own orange"
 else bad "no per-column cell paint" "$WORK/col"; fi
 
 # ==========================================================================
@@ -188,8 +192,8 @@ git clone -q "$ORIGIN" "$ORPH" >/dev/null 2>&1 || exit 2
 ) || { echo "status: cannot build the orphan fixture" >&2; exit 2; }
 rtin "$ORPH" status --plain > "$WORK/orp.out" 2>"$WORK/orp.err"; RC=$?
 if [ "$RC" = 0 ] && grep -qx 'ox.. up.txt' "$WORK/orp.out" &&
-   grep -qx 'xo.. z.txt' "$WORK/orp.out"
-then ok "unrelated histories RENDER — every path o/x, no refusal"
+   grep -qx '.o.. z.txt' "$WORK/orp.out"
+then ok "no fork at all still RENDERS — an empty root, never a refusal"
 else bad "unrelated-histories run (rc $RC)" "$WORK/orp.out" "$WORK/orp.err"; fi
 
 # ==========================================================================

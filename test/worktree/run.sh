@@ -83,7 +83,7 @@ else bad "the summary names the repo taken" "$WORK/l1"; fi
 # The bare run is the OTHER door — `view/list.js` brings the index up with
 # `track: true`, which is how the polluted registries were written.
 ( cd "$WT" && HOME="$FH" "$RT" ) > "$WORK/l2" 2>"$WORK/l2e"; RC=$?
-if [ "$RC" = 0 ] && [ "$(wc -l < "$REG")" = "2" ] && ! grep -q "^$WT\$" "$REG"
+if [ "$RC" = 0 ] && [ "$(( $(wc -l < "$REG") ))" = "2" ] && ! grep -q "^$WT\$" "$REG"
 then ok "a bare \`bee\` run inside it adds no second line"
 else bad "the bare run adds no line (rc $RC)" "$WORK/l2" "$WORK/l2e" "$REG"; fi
 

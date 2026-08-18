@@ -242,11 +242,12 @@ function divergence(ctx, ix, mineHl, theirsHl) {
 //  (view/quadrender.js's rules, render/ansi.js carries the slots).
 const TTY = { ".": ".", "x": "∅", "o": "●", "v": "↑" };
 const TTY_COMMIT = { ".": ".", "x": "∅", "o": "✔", "v": "↑" };
-//  The per-column cell tags, out of the theme slots bee already carries
-//  (dog/THEME.c THEME16TBL): R blue upstream, W green head, E amber stage, X
-//  orange wt, and BE-001's M — red, and red ONLY for a conflict.  '.' is
-//  unpainted ('S'), so position stays authoritative.
-const CELL = ["R", "W", "E", "X"], CELL_CON = "M";
+//  The per-column cell tags — FOUR SLOTS OF THE QUAD'S OWN (ruling
+//  2026-08-18), never a syntax or status tag on loan, so nothing else in the
+//  palette can move a status column: I blue upstream, J green head, K amber
+//  stage, V orange worktree, and M red for a conflict and nothing else.
+//  '.' is unpainted ('S'), so position stays authoritative.
+const CELL = ["I", "J", "K", "V"], CELL_CON = "M";
 
 function plainQuad(q, con) {
   return con ? q.slice(0, 3) + "!" : q;
@@ -334,8 +335,10 @@ function hunkOf(uriStr, rows, summary) {
 //  --- the verb --------------------------------------------------------------
 //  status(arg, opts) -> { uri, model, rows, hunks }.  The tips first: HEAD is
 //  the base and the upstream is `index/refs.js upstream` (no second resolver);
-//  detached or untracked => track = HEAD, an all-`.` first column.  Two tips
-//  that share no history are no special case — the ladder has no root to miss.
+//  detached or untracked => track = HEAD, an all-`.` first column.  Column 1
+//  stands on the FORK POINT (ruling 2026-08-18b), so the root tree is the
+//  merge base's; two tips that never met have none and it lists as EMPTY,
+//  which reads every upstream path `o` rather than refusing.
 function status(arg, opts) {
   opts = opts || {};
   const ctx = idx.openRepo(opts.from || io.cwd(), true);
@@ -345,11 +348,15 @@ function status(arg, opts) {
     const track = up === null ? base : up.sha;
     const ix = idx.openIndex(ctx.gitdir, idx.fresh(ctx.gitdir));
     let div = { ahead: [], behind: [] };
+    let rootSha = base;                 // no upstream: the fork IS HEAD
     try {
       idx.bringUp(ctx, ix, { track: false });
       if (track !== base) {
         idx.bringUp(ctx, ix, { tip: track, track: false });
-        div = divergence(ctx, ix, idx.hlOfSha(base), idx.hlOfSha(track));
+        const mine = idx.hlOfSha(base), theirs = idx.hlOfSha(track);
+        div = divergence(ctx, ix, mine, theirs);
+        const mb = dag.mergeBase(ix, mine, theirs);
+        rootSha = mb === null ? "" : idx.hexOfHl(mb);
       }
     } finally { try { ix.close(); } catch (e) {} }
 
@@ -358,6 +365,7 @@ function status(arg, opts) {
     const gitlink = new Set();
     for (const e of baseL) if (e.sub) gitlink.add(e.path);
     const model = quad.quadModel({
+      root: rootSha === base ? baseL : rootSha ? leavesAt(ctx, rootSha) : [],
       track: track === base ? baseL : leavesAt(ctx, track),
       base: baseL, stage: st.rows, wt: wtOf(ctx, baseL, st.rows, st.cache),
       con: st.con, gitlink: gitlink, ahead: div.ahead, behind: div.behind });

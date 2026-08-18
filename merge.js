@@ -117,8 +117,8 @@ function merge(args) {
 //  The absolute path of THIS binary — what the driver line must name, since git
 //  runs it from the repo root with no PATH promise.
 function selfPath() {
+  if (process.execPath) return process.execPath;
   try { return io.readlink("/proc/self/exe"); } catch (e) {}
-  try { return io.realpath(process.argv[0]); } catch (e) {}
   throw "install: cannot tell where this bee binary lives";
 }
 

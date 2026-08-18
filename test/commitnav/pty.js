@@ -27,12 +27,21 @@ const P1 = io.getenv("LITE_P1");
 
 const hunks = entry.openTarget("commit " + SHA);
 const pty = tty.openpty();
-tty.setSize(pty.slave, 20, 120);
+const ROWS = 20;
+tty.setSize(pty.slave, ROWS, 120);
 const p = new pagerlib.Pager(pty.slave, { color: true, open: entry.openTarget });
 p.setHunks(hunks, "commit " + SHA);
 
 const rb = io.buf(1 << 16);
 function drain() { rb.reset(); const k = io.read(pty.master, rb); return k > 0 ? utf8.Decode(rb.data().slice()) : ""; }
+//  A pty hands the master its bytes through a kernel work queue, so one read
+//  can return a FRACTION of the frame however small it is.  render() paints
+//  ROWS - 1 CRLF-ended rows before the status line, so read until they are in.
+function frame() {
+  let s = "";
+  for (let r = 0; r < 40 && s.split("\r\n").length - 1 < ROWS - 1; r++) s += drain();
+  return s;
+}
 const kbuf = io.buf(64);
 function send(s) { kbuf.reset(); kbuf.feed(utf8.Encode(s)); io.writeAll(pty.master, kbuf); }
 const krb = io.buf(64);
@@ -47,7 +56,7 @@ function pump(done, tries) {
 }
 
 p.render();
-const frame1 = drain();
+const frame1 = frame();
 //  the painted tree row, SGR stripped (the field name and the sha are different
 //  colour slots, so the escapes sit between them).
 const l1 = frame1.split("\n").map(function (l) {

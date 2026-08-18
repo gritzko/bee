@@ -48,7 +48,7 @@ echo "now: runtime $RT, fixtures $WORK"
 # ==========================================================================
 lite > "$WORK/n.out" 2>"$WORK/n.err"; RC=$?
 W=$(cat "$WORK/n.out")
-if [ "$RC" = 0 ] && [ "$(wc -l < "$WORK/n.out")" = 1 ]
+if [ "$RC" = 0 ] && [ "$(( $(wc -l < "$WORK/n.out") ))" = 1 ]
 then ok "bare \`now\` prints ONE line, rc 0"
 else bad "bare now (rc $RC)" "$WORK/n.out" "$WORK/n.err"; fi
 # All TEN digits: a DeNorm strip would eat the (usually zero-ish) ms tail.
@@ -80,7 +80,7 @@ else bad "roundtrip: got '$RT_OUT' want '$W'"; fi
 conv() {   # conv <word> <want-iso>
     lite "$1" > "$WORK/c.out" 2>"$WORK/c.err"; _rc=$?
     _got=$(cat "$WORK/c.out")
-    if [ "$_rc" = 0 ] && [ "$_got" = "$2" ] && [ "$(wc -l < "$WORK/c.out")" = 1 ]
+    if [ "$_rc" = 0 ] && [ "$_got" = "$2" ] && [ "$(( $(wc -l < "$WORK/c.out") ))" = 1 ]
     then ok "$1 -> $2"
     else bad "$1 -> '$_got' want '$2' (rc $_rc)" "$WORK/c.err"; fi
 }

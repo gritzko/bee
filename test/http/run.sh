@@ -299,7 +299,7 @@ method "DELETE is not allowed" DELETE 405
 has    "the refusal says bee http only reads" "bee http only reads"
 # A body offered with the refused method changes nothing and mutates nothing.
 curl -s -o /dev/null -X POST --data-binary 'x=1' "$BASE/cat/a.txt"
-if [ "$(cat "$REPO/a.txt" | wc -l)" = 2 ] && [ -z "$(g status --porcelain -- doc.mkd)" ]
+if [ "$(( $(cat "$REPO/a.txt" | wc -l) ))" = 2 ] && [ -z "$(g status --porcelain -- doc.mkd)" ]
 then ok "a POST body left the worktree alone"
 else bad "the worktree moved under a POST"; fi
 

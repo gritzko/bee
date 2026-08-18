@@ -1,11 +1,14 @@
 #   Bee: CRDT magic for git repos
 
-This project implements some of Beagle SCM functionality for regular git repos.
-The work is ongoing, so far it can do:
+<img src="blob/permalink.png" align="right" width="40%"
+     alt="syntax-highlighted source with permalinks in the comments">
+
+This project implements some of Beagle SCM's functionality for regular git repos.
+The work is ongoing; so far it can do:
 
  1. CRDT merges (use `bee install` to add a hook to a git repo),
- 2. TUI repo browser (use `bee ./file` to open),
- 3. HTML browser (use `bee http --port 8888` to run, 
+ 2. TUI code browser (use `bee ./myfile` to open),
+ 3. HTML code browser (use `bee http --port 8888` to run, 
     then open `http://localhost:8888/myproject` in a browser),
  4. token-level diffs (may start with `bee log` or 
     `http://localhost:8888/myproject/log` then click around),
@@ -13,12 +16,12 @@ The work is ongoing, so far it can do:
     (e.g. `index/perma.js:6:ur`, see them in the pager/browser, 
     `bee see` for CLI use, commit hook or `be mint` to create)
 
-Reproducing Beagle's smooth worktree workflows turned difficult so far,
+Reproducing Beagle's smooth worktree workflows has proven difficult,
 as git submodule and git worktree implementations are rather abrasive.
 
 ##  Build
 
-Build: bundle with the [quickjab][q] runtime for a standalone binary.
+Bundle with the [quickjab][q] runtime for a standalone binary.
 That carries dog/ (libdog), dog/abc/ (libabc) and test/ (the
 jab-shared API suite) as submodules:
 
@@ -30,80 +33,70 @@ jab-shared API suite) as submodules:
 That leaves the binary at `build/bin/bee` and runs this tree's own
 `test/*/run.sh` suites against it, exactly as CI does
 (`.github/build-bee.sh`).  Tagging `X.Y.Z` releases the same build:
-a source tarball plus `bee` for linux x86_64/arm64, macOS arm64 and a
-fully static linux x86_64.
+a source tarball plus `bee` for linux x86\_64/arm64, macOS arm64 and a
+fully static linux x86\_64.
 
 ##  Usage
 
-Usage — a terminal with no flag pages coloured hunks; otherwise one mode flag
-picks the sink, `--plain` (also what a pipe defaults to), `--color`, `--html`:
+The standalone (bundled) `bee` binary call patterns:
 
- -  `bee` — in a git repo: index it, open the `list` browser; elsewhere as `bee <path>`
- -  `bee <path>...` — page files/dirs off the filesystem
- -  `bee index [<repo>]` — build/refresh `<repo>/.git/be/`; lazy, fully derived;
+ -  `bee` -- in a git repo: index it, open the `list` browser;
+ -  `bee <path>...` -- page files/dirs off the filesystem
+ -  `bee index [<repo>]` -- build/refresh `<repo>/.git/be/`; lazy, fully derived;
     BOTH passes, the commit walk and the tip-blob link scan, each off its own
     mark, both on the one summary line
-     1. every INITIALISED submodule is indexed too, depth-first; an uninitialised one is skipped in words
-     2. inside a LINKED WORKTREE it registers the ORIGINAL — one repository is one line, and it says which
- -  `bee lindex [<target>]` — backlink suspects; lazy, tip blobs only
-     1. bare: bring the LINK rows up to the tip, this repo only
+     1. every initialized submodule is indexed too, depth-first; an uninitialised one is skipped in words
+     2. inside a linked worktree it registers the original -- one repository is one line, and it says which
+ -  `bee lindex [<target>]` -- backlink suspects; lazy, tip blobs only
+     1. bare: bring the link rows up to the tip, this repo only
      2. `<target>`: the paths that may link to a file or a ticket code, looked
-        up in EVERY repo of `~/.config/bee/repos` (read-only) and printed
+        up in every repo of `~/.config/bee/repos` (read-only) and printed
         repo-qualified, the local repo first
- -  `bee log [<n>] [<hex>|<path>][?<rev>]` — commit log, newest first; off-mainline rows grey
+ -  `bee log [<n>] [<hex>|<path>][?<rev>]` -- commit log, newest first; off-mainline rows grey
      1. bare: the checked-out tip's ancestry; `<n>` caps the rows, `0` = all
      2. `<hex>`: that commit's ancestry
      3. `<path>`: the file's revisions
-     4. `?<rev>`: a branch, tag or hexlet names the tip — `log ?main`, `log f.c?v2`
-     5. `<sub>/<path>`: the SUBMODULE's own history, its rows opening in the sub
+     4. `?<rev>`: a branch, tag or hexlet names the tip -- `log ?main`, `log f.c?v2`
+     5. `<sub>/<path>`: the submodule's own history, its rows opening in the sub
      6. a ticket code in a summary is a link, like any other reference
- -  `bee commit [<hex>]` — one commit, header + message; tree/parent hashes are links
- -  `bee diff [<hex> [<hex>]|<path>]` — the token-level diff: one weave per path,
+ -  `bee commit [<hex>]` -- one commit, header + message; tree/parent hashes are links
+ -  `bee diff [<hex> [<hex>]|<path>]` -- the token-level diff: one weave per path,
     seeded at the two revisions' merge base, every token naming its own commit
      1. bare: worktree vs HEAD
      2. `<hex>`: that commit vs its first parent
      3. `<hex> <hex>`: any two revisions, rooted at their merge base
      4. `<path>`: that file/dir only
- -  `bee status` — the QUAD: one row per path that is not quiet, four chars
-    wide, `UPSTREAM HEAD STAGE WORKTREE` — `.` same, `x` removed, `o`
+ -  `bee status` — the quad: one row per path that is not quiet, four chars
+    wide, `upstream HEAD index worktree`, `.` same, `x` removed, `o`
     created, `v` advanced, `!` conflicted; position is authoritative
-     1. a LADDER: each column reads against its NEIGHBOUR — origin vs HEAD,
-        HEAD vs origin, index vs HEAD, worktree vs index.  No merge base, so
-        histories that never met render instead of erroring
-     2. rungs 1 and 2 are one comparison from both ends: a path only origin
-        has reads `ox..`, one only HEAD has `xo..` — `o`/`x` says which way
-     3. commit rows say the same thing one level up: `.o..` ahead, `o...` behind
-     4. untracked files ride `.gitignore`; the summary line names the branch,
-        its upstream and the per-column tallies
- -  `bee list [<path>][?<rev>]` — dir browser: marker, name, last commit, age
- -  `bee cat <path>[?<rev>]` — the file's own bytes, syntax-painted
- -  `bee tree [<hex>|<path>][?<rev>]` — raw git-tree rows, `..` row when descended
- -  `bee blob <hexlet>` — a blob by object name
- -  `bee see [-C<n>] <ref>...` — the chunk each reference names, two lines of context each way; the only CLI door onto a permalink
+ -  `bee list [<path>][?<rev>]` -- dir browser: marker, name, last commit, age
+ -  `bee cat <path>[?<rev>]` -- the file's own bytes, syntax-painted
+ -  `bee tree [<hex>|<path>][?<rev>]` -- raw git-tree rows, `..` row when descended
+ -  `bee blob <hexlet>` -- a blob by object name
+ -  `bee see [-C<n>] <ref>...` -- the chunk each reference names, two lines of context each way; the only CLI door onto a permalink
      1. every shape `door.js` resolves: permalink, path, partial, ticket code, pocket page, another registered repo
      2. one hunk per ref, in the order given; a miss names the repos searched, an ambiguity shows the chooser, neither ends the batch
- -  `bee http [--port <n>]` — the same views over HTTP on localhost:8034, read-only, EVERY registered repo
-     1. `/<repo>/<path>` is the file itself, `/<repo>/<verb>/<path>` a named view; a repo-less URL 301s to the prefixed form
-     2. a `.md` URL renders as a page, links resolved; `.mkd` stays painted
-    1. an `.rst` URL renders the reST subset; directives and tables show literal
-     3. `/<repo>/raw/<path>` is the painted source, and each view links to the other
-     4. `/<repo>/bytes/<path>[?<rev>]` ships the file's raw bytes; a rendered image points there
-     5. a SUBMODULE is served through its parent (`/quickjab/dog/abc/TCP.c`), never under a name of its own
- -  `bee install [<repo>]` — wire bee as the repo's git merge driver and pre-commit hook, list it in `~/.config/bee/repos`, index it
-     1. a LINKED WORKTREE is refused: a repo is known by its path (`bee index` redirects to the original instead)
-     2. a SUBMODULE is an ordinary repo: each initialised one is registered, indexed and lindexed too
- -  `bee hook [<repo>]` — the pre-commit pass: fresh `file:line(:col)` refs in the staged text become `file:LINE:HASHLET` permalinks, re-staged
- -  `bee mint [--dry-run] <file>...` — the same upgrade for refs that ALREADY landed transient, in the working copy only; the hook cannot reach those
-     1. the file list names the CARRIERS: refs written in them, pointing anywhere; a target not listed must be clean, or it is refused
-     2. everything left alone is reported, one line per ref — unresolved, ambiguous, past the end, on a link cycle
- -  `bee merge <base> <ours> <theirs> [-o <out>] [-p <path>]` — CRDT 3-way file merge
+ -  `bee http [--port <n>]` -- the same views over HTTP on localhost:8034, read-only, every registered repo, links to known files resolved and clickable
+     1. `/<repo>/<path>` is the file itself,
+     2. `/<repo>/raw/<path>` is the highlighted source, 
+     3. `/<repo>/bytes/<path>[?<rev>]` ships the file's raw bytes,
+     4. submodule is served through its parent (`/quickjab/dog/abc/TCP.c`), never under a name of its own
+ -  `bee install [<repo>]` -- wire bee as the repo's git merge driver and pre-commit hook, list it in `~/.config/bee/repos`, index it
+     1. a linked worktree is refused: a repo is known by its path (`bee index` redirects to the original instead)
+     2. a submodule is an ordinary repo: each initialised one is registered, indexed and lindexed too
+ -  `bee hook [<repo>]` -- the pre-commit pass: fresh `file:line(:col)` refs 
+    in the staged text become `file:line:hash` permalinks, re-staged
+ -  `bee mint [--dry-run] <file>...` -- the same upgrade for refs that ALREADY landed transient, in the working copy only; the hook cannot reach those
+     1. the file list names the carriers: refs written in them, pointing anywhere; a target not listed must be clean, or it is refused
+     2. everything left alone is reported, one line per ref -- unresolved, ambiguous, past the end, on a link cycle
+ -  `bee merge <base> <ours> <theirs> [-o <out>] [-p <path>]` -- CRDT 3-way file merge
      1. clean: merged bytes over `<ours>` (or `<out>`), exit 0
      2. conflict: markerless weave, exit 1
      3. binary/oversize: falls back to `git merge-file`
- -  `bee mark <file.mkd>` — that page rendered to ONE HTML document on stdout (`.mkd`, `.md`, `.rst`), the writing left to the shell
+ -  `bee mark <file.mkd>` -- that page rendered to ONE HTML document on stdout (`.mkd`, `.md`, `.rst`), the writing left to the shell
      1. a `.mkd`/`.md`/`.rst` link takes the `.html` name rendered beside it, so a dumped tree links up; every other destination rides verbatim
      2. the head links the site's own `/assets/css/style.css`, and the body carries no bee chrome
- -  `bee chat [dir] [outdir]` — Claude session logs to StrictMark pages, append-only reruns
+ -  `bee chat [dir] [outdir]` -- Claude session logs to StrictMark pages, append-only reruns
 
 [q]: https://github.com/gritzko/quickjab
 [d]: https://github.com/gritzko/libdog

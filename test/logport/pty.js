@@ -30,7 +30,19 @@ const p = new pagerlib.Pager(pty.slave, { color: true, open: entry.openTarget })
 p.setHunks(hunks, "log sub/g.txt");
 
 const rb = io.buf(1 << 16);
-function drain() { rb.reset(); const k = io.read(pty.master, rb); return k > 0 ? utf8.Decode(rb.data().slice()) : ""; }
+//  One render is ONE write, but the master side may hand it over in pieces (the
+//  ldisc flushes off a workqueue; arm64 CI split it) — read until the 19 view
+//  rows are in, i.e. every `\r\n` the frame carries; the fds block, so this ends.
+const VIEW_ROWS = 19;
+function drain() {
+  let s = "";
+  for (let r = 0; r < 64 && s.split("\r\n").length <= VIEW_ROWS; r++) {
+    rb.reset(); const k = io.read(pty.master, rb);
+    if (k <= 0) break;
+    s += utf8.Decode(rb.data().slice());
+  }
+  return s;
+}
 const kbuf = io.buf(64);
 function send(s) { kbuf.reset(); kbuf.feed(utf8.Encode(s)); io.writeAll(pty.master, kbuf); }
 const krb = io.buf(64);
