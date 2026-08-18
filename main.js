@@ -107,6 +107,14 @@ function runMint(args) {
   if (r.out) writeFd(1, utf8.Encode(r.out));
 }
 
+//  `bee mark <file.mkd>` — ONE rendered page on stdout, the beagle mark CLI's
+//  job (beagle/mark/README.mkd) with the writing left to the shell.  Its arg is
+//  the path LIST, unfused, like `mint`'s.
+function runMark(args) {
+  const rest = args.filter(function (a) { return modeOf(a) === null; });
+  writeFd(1, utf8.Encode(require("view/mark.js").mark(rest)));
+}
+
 //  LITE-034: `bee http [--port <n>]` — the repo browser over HTTP, the same
 //  views the pager shows.  A LONG-RUNNING verb: this returns once the listener
 //  is up and the pol loop takes over, until SIGINT.
@@ -197,6 +205,7 @@ function pageHunks(hunks) {
 const SIDE = {
   index: runIndex, lindex: runLindex, merge: runMerge, install: runInstall,
   hook: runHook, chat: runChat, http: runHttp, now: runNow, mint: runMint,
+  mark: runMark,
 };
 
 function main(argv) {

@@ -6,12 +6,10 @@ on:
   pull_request:
     branches: [ "main" ]
 
-# Beagle-lite builds its binary from quickjab (github.com/gritzko/quickjab,
-# which carries dog/ = libdog and test/ = the jab-shared API suite as its
-# own submodules) with THIS tree packed in as the default jsrc floor.
-# quickjab is STANDALONE — no jab tree involved.  No JSC, no ICU.
-# Scaffolding: the golden-snapshot suite is not wired yet — CI is the packed
-# build + the floor smoke until it lands.
+# Same build as the release: `bee` is quickjab (github.com/gritzko/quickjab,
+# engine = vendored quickjs-ng) with THIS tree packed in as its default jsrc
+# floor, so what CI exercises is the artifact users get.  No JSC, no ICU.
+# The bundled test/*/run.sh suites come back as ctest JSRC* once packed.
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -24,23 +22,11 @@ jobs:
           sudo apt-get -y install ninja-build \
             libsodium-dev libcurl4-gnutls-dev liblz4-dev zlib1g-dev
 
-      - name: Build lite (quickjab + packed jsrc)
-        run: |
-          git clone --recurse-submodules --depth 1 \
-            https://github.com/gritzko/quickjab.git quickjab-src
-          mkdir lite-jsrc && git archive HEAD | tar -x -C lite-jsrc
-          cmake -S quickjab-src -B qj-build -GNinja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DJAB_JSRC="$PWD/lite-jsrc" -DQUICKJAB_JSRC_PACK=ON
-          ninja -C qj-build quickjab
-          install -m 0755 qj-build/bin/quickjab be-bin
+      - name: Build bee (quickjab + packed jsrc)
+        run: sh .github/build-bee.sh
 
-      # A fresh HOME has no jsrc anywhere, so a bareword invocation must
-      # extract the embedded floor to .cache/jsrcs/<hash>/ and run main.js
-      # from it.
-      - name: Smoke test the packed be
-        run: |
-          S=$(mktemp -d); W=$(mktemp -d)
-          (cd "$W" && HOME="$S" XDG_CACHE_HOME= \
-            "$GITHUB_WORKSPACE/be-bin" status 2>&1 | head -5) || true
-          find "$S/.cache/jsrcs" -mindepth 1 -maxdepth 1 -type d | grep -q .
+      - name: Bundled suites
+        run: ctest --test-dir qj-build -R '^JSRC' --output-on-failure
+
+      - name: Smoke test the packed bee
+        run: sh .github/smoke-bee.sh qj-build/bin/bee
