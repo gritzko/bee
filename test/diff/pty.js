@@ -5,7 +5,7 @@
 //  status bar carrying the file's own uri with the LIVE line.
 //
 //  Stepped, not run(): a self-pty has no concurrent reader, so ONE render is
-//  followed by ONE blocking drain (lite/test/pager/pty.js's note).
+//  painted to a scratch file and read back (lite/test/pager/pty.js's note).
 "use strict";
 const pagerlib = require("pager.js");
 const df = require("view/diff.js");
@@ -27,11 +27,16 @@ const out = df.diff(undefined, { from: repo });
 
 const pty = tty.openpty();
 tty.setSize(pty.slave, 16, 100);
-const p = new pagerlib.Pager(pty.slave, { color: true });
+//  Frames go to a scratch FILE, not the slave: a self-pty has no concurrent
+//  reader and macOS blocks a slave write at 1 KB unread (XNU TTYCLSIZE).  The
+//  pty stays the tty (size, raw, keys); `sink` takes the paint, `tap` reads it.
+const FRAMES = (io.getenv("TMPDIR") || "/tmp") + "/bee-pty-" + io.getpid() + ".frames";
+const sink = io.open(FRAMES, "c"), tap = io.open(FRAMES, "r");
+const p = new pagerlib.Pager(sink, { tty: pty.slave, color: true });
 p.setHunks(out.hunks);
 p.render();
 const rb = io.buf(1 << 16);
-const k = io.read(pty.master, rb);
+const k = io.read(tap, rb);
 const frame = k > 0 ? utf8.Decode(rb.data().slice()) : "";
 const lines = frame.split("\n");
 
@@ -57,5 +62,5 @@ check("status-bar-is-the-pager's",
 check("status-bar-carries-ONE-line-anchor",
       /#L[0-9]+ /.test(bar) && bar.indexOf("#L1#L") < 0, bar);
 
-try { io.close(pty.master); io.close(pty.slave); } catch (e) {}
+try { io.close(pty.master); io.close(pty.slave); io.close(sink); io.close(tap); io.unlink(FRAMES); } catch (e) {}
 w1((bad ? "FAILED " : "DONE ") + n + " checks\n");

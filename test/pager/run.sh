@@ -89,7 +89,6 @@ rt_plain() { ( cd "$LITE" && "$RT" "$@" ); }
 # usage throw is an OUTSIDE-a-repo story — P8 runs from a non-repo dir, the way
 # test/first does, with the jsrc symlink the runtime resolves through.
 NOWHERE="$WORK/nowhere"; mkdir -p "$NOWHERE"
-ln -sf "$LITE" "$WORK/jsrc"
 if ( cd "$NOWHERE" && git rev-parse --show-toplevel ) >/dev/null 2>&1
 then NOREPO=0; echo "pager: $NOWHERE is inside a git repo — P8 skips" >&2
 else NOREPO=1; fi

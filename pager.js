@@ -114,6 +114,10 @@ function indexAll(hunks, cols, soft) {
 //  (path -> hunks|null) is the ONE fs door: follow, `:`-path and refresh all use it.
 function Pager(fd, opts) {
   this.fd = fd;
+  //  The tty the geometry, raw mode and keys come off; defaults to `fd`.  A test
+  //  paints into a scratch file (a self-pty deadlocks at 1 KB unread on macOS)
+  //  but keeps the pty for size/raw/keys — see test/pager/pty.js.
+  this.tty = opts && opts.tty !== undefined ? opts.tty : fd;
   this.color = opts && opts.color !== undefined ? opts.color : true;
   this.open = opts && opts.open;                 // (path) -> hunks | null
   this.view = null;                              // { hunks, path, rows, scroll, cols, wrap, cur }
@@ -231,7 +235,7 @@ Pager.prototype._curSpan = function (r) {
 
 //  The viewport height (the status bar takes the last screen row).
 Pager.prototype._viewRows = function () {
-  const sz = tty.size(this.fd);
+  const sz = tty.size(this.tty);
   return (sz.rows > 1 ? sz.rows : 24) - 1;
 };
 
@@ -310,7 +314,7 @@ Pager.prototype._hopTok = function (d) {
 //  Paint one frame: the viewport rows[scroll .. scroll+viewRows] + the bottom
 //  status/path line, in ONE write (the whole frame) to avoid flicker.
 Pager.prototype.render = function () {
-  const sz = tty.size(this.fd);
+  const sz = tty.size(this.tty);
   const rowsN = sz.rows > 1 ? sz.rows : 24;
   const cols = sz.cols > 0 ? sz.cols : 80;
   const viewRows = rowsN - 1;                    // last row = status/path bar
@@ -611,7 +615,7 @@ Pager.prototype.key = function (b) {
 
 //  A page step: a near-full screen, keeping 1 row of context.
 Pager.prototype._page = function () {
-  const sz = tty.size(this.fd);
+  const sz = tty.size(this.tty);
   return (sz.rows > 2 ? sz.rows : 24) - 2;
 };
 
@@ -801,7 +805,7 @@ Pager.prototype._toggleMouse = function () {
 //  BRO-045: changed size since the LAST PAINTED frame?  Both axes count — cols
 //  re-wraps, rows alone still moves viewRows + the status bar.
 Pager.prototype._resized = function () {
-  const sz = tty.size(this.fd);
+  const sz = tty.size(this.tty);
   return (sz.rows > 1 ? sz.rows : 24) !== this._paintRows ||
          (sz.cols > 0 ? sz.cols : 80) !== this._paintCols;
 };
@@ -810,7 +814,7 @@ Pager.prototype._resized = function () {
 //  Raw mode, paint, block-poll a key, repaint — until q.  cook + restore cursor
 //  and mouse on EVERY exit path (try/finally) so a throw never wedges the tty.
 Pager.prototype.run = function () {
-  this._saved = tty.raw(this.fd);
+  this._saved = tty.raw(this.tty);
   //  BRO-027: ALT_ON first — the whole raw-mode session lives on the alt screen.
   ttyWrite(this.fd, ALT_ON + HIDE_CUR + MOUSE_ON + PASTE_ON);
   try {
@@ -822,7 +826,7 @@ Pager.prototype.run = function () {
       //  timeout, so spin until a byte arrives (portable, no platform poll).
       let n = 0;
       while (n === 0 && !this.quit) {
-        n = io.read(this.fd, rb);
+        n = io.read(this.tty, rb);
         if (n !== 0) break;
         //  BRO-045: a RESIZE repaints without a key — one ioctl per 100ms
         //  io.read timeout, never per inner pass.
@@ -840,7 +844,7 @@ Pager.prototype.run = function () {
   } finally {
     //  BRO-027: ALT_OFF last restores the pre-pager screen (no CLEAR needed).
     ttyWrite(this.fd, MOUSE_OFF + PASTE_OFF + ESC + "[0m" + SHOW_CUR + ALT_OFF);
-    tty.cook(this.fd, this._saved);
+    tty.cook(this.tty, this._saved);
     this._saved = null;
   }
 };

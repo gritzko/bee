@@ -6,7 +6,7 @@
 //  the spans; THIS proves the wiring the user actually touches.
 //
 //  Stepped, not run(): a self-pty has no concurrent reader, so ONE render is
-//  followed by ONE blocking drain, and raw is entered ONCE up front
+//  painted to a scratch file and read back, and raw is entered ONCE up front
 //  (tty.raw's TCSAFLUSH drops a pre-queued key).  See test/pager/pty.js.
 "use strict";
 const pagerlib = require("pager.js");
@@ -28,12 +28,20 @@ function check(name, cond, got) {
 
 const pty = tty.openpty();
 tty.setSize(pty.slave, 12, 100);
+//  Frames go to a scratch FILE, not the slave: a self-pty has no concurrent
+//  reader and macOS blocks a slave write at 1 KB unread (XNU TTYCLSIZE).  The
+//  pty stays the tty (size, raw, keys); `sink` takes the paint, `tap` reads it.
+const FRAMES = (io.getenv("TMPDIR") || "/tmp") + "/bee-pty-" + io.getpid() + ".frames";
+const sink = io.open(FRAMES, "c"), tap = io.open(FRAMES, "r");
 const rb = io.buf(1 << 16);
 let frames = "";
 function drain() {
-  rb.reset();
-  const k = io.read(pty.master, rb);
-  if (k > 0) frames += utf8.Decode(rb.data().slice());
+  for (;;) {                                     // to EOF: exactly the new frame
+    rb.reset();
+    const k = io.read(tap, rb);
+    if (k <= 0) break;
+    frames += utf8.Decode(rb.data().slice());
+  }
 }
 function frame(p) { p.render(); frames = ""; drain(); return frames; }
 const kbuf = io.buf(64);
@@ -68,7 +76,7 @@ function rowOf(p, hunk, want) {
 
 const saved = tty.raw(pty.slave);
 try {
-  const p = new pagerlib.Pager(pty.slave, { color: true, open: entry.openTarget });
+  const p = new pagerlib.Pager(sink, { tty: pty.slave, color: true, open: entry.openTarget });
   p.setHunks(listHunks, "list");
   const f0 = frame(p);
   check("a list paints a frame", f0.length > 0, "bytes " + f0.length);
@@ -127,7 +135,7 @@ try {
   pump(p, function () { return p.stack.length === 0; });
 
   //  ---- a TREE row's target opens a BLOB -----------------------------------
-  const pt = new pagerlib.Pager(pty.slave, { color: true, open: entry.openTarget });
+  const pt = new pagerlib.Pager(sink, { tty: pty.slave, color: true, open: entry.openTarget });
   pt.setHunks(treeHunks, "tree");
   const ft = frame(pt);
   check("a tree paints its fixed rows",
@@ -148,6 +156,6 @@ try {
         fb.indexOf("A0") >= 0 && fb.indexOf("A0-dirty") < 0, fb);
 } finally {
   try { tty.cook(pty.slave, saved); } catch (e) {}
-  try { io.close(pty.master); io.close(pty.slave); } catch (e) {}
+  try { io.close(pty.master); io.close(pty.slave); io.close(sink); io.close(tap); io.unlink(FRAMES); } catch (e) {}
 }
 w1((bad ? "FAILED " : "DONE ") + n + " checks\n");

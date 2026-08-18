@@ -29,19 +29,21 @@ const hunks = entry.openTarget("commit " + SHA);
 const pty = tty.openpty();
 const ROWS = 20;
 tty.setSize(pty.slave, ROWS, 120);
-const p = new pagerlib.Pager(pty.slave, { color: true, open: entry.openTarget });
+//  Frames go to a scratch FILE, not the slave: a self-pty has no concurrent
+//  reader and macOS blocks a slave write at 1 KB unread (XNU TTYCLSIZE).  The
+//  pty stays the tty (size, raw, keys); `sink` takes the paint, `tap` reads it.
+const FRAMES = (io.getenv("TMPDIR") || "/tmp") + "/bee-pty-" + io.getpid() + ".frames";
+const sink = io.open(FRAMES, "c"), tap = io.open(FRAMES, "r");
+const p = new pagerlib.Pager(sink, { tty: pty.slave, color: true, open: entry.openTarget });
 p.setHunks(hunks, "commit " + SHA);
 
 const rb = io.buf(1 << 16);
-function drain() { rb.reset(); const k = io.read(pty.master, rb); return k > 0 ? utf8.Decode(rb.data().slice()) : ""; }
-//  A pty hands the master its bytes through a kernel work queue, so one read
-//  can return a FRACTION of the frame however small it is.  render() paints
-//  ROWS - 1 CRLF-ended rows before the status line, so read until they are in.
-function frame() {
+function drain() {                             // to EOF: exactly the new frame
   let s = "";
-  for (let r = 0; r < 40 && s.split("\r\n").length - 1 < ROWS - 1; r++) s += drain();
+  for (;;) { rb.reset(); const k = io.read(tap, rb); if (k <= 0) break; s += utf8.Decode(rb.data().slice()); }
   return s;
 }
+function frame() { return drain(); }
 const kbuf = io.buf(64);
 function send(s) { kbuf.reset(); kbuf.feed(utf8.Encode(s)); io.writeAll(pty.master, kbuf); }
 const krb = io.buf(64);
@@ -93,7 +95,7 @@ try {
   clicked = pump(function () { return p.stack.length > 0; });
   if (clicked) cv = p.view;
   p.render(); drain();
-} finally { tty.cook(pty.slave, saved); io.close(pty.master); io.close(pty.slave); }
+} finally { tty.cook(pty.slave, saved); io.close(pty.master); io.close(pty.slave); io.close(sink); io.close(tap); io.unlink(FRAMES); }
 
 check("Enter-on-the-tree-row-pushed-a-view", entered, "stack " + p.stack.length);
 if (entered && tv) {
