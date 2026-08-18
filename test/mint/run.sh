@@ -162,7 +162,7 @@ if grep -q 'doc' "$WORK/a1e" && grep -qi 'director' "$WORK/a1e"
 then ok "a DIRECTORY argument is reported and skipped, never walked"
 else bad "directory argument (rc $RC)" "$WORK/a1" "$WORK/a1e"; fi
 
-rtin "$REPO" mint /etc/hostname > "$WORK/a2" 2>"$WORK/a2e"; RC=$?
+rtin "$REPO" mint /etc/hosts > "$WORK/a2" 2>"$WORK/a2e"; RC=$?
 if grep -qi 'outside' "$WORK/a2e"
 then ok "...and a path outside the repo says so"
 else bad "outside-the-repo argument (rc $RC)" "$WORK/a2" "$WORK/a2e"; fi

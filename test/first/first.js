@@ -74,13 +74,18 @@ if (typeof tty === "undefined" || !tty.openpty) {
 } else {
   const pty = tty.openpty();
   tty.setSize(pty.slave, 12, 100);
+  //  Frames go to a scratch FILE, not the slave: a self-pty has no concurrent
+  //  reader and macOS blocks a slave write at 1 KB unread (XNU TTYCLSIZE).  The
+  //  pty stays the tty (size, raw, keys); `sink` takes the paint, `tap` reads it.
+  const FRAMES = (io.getenv("TMPDIR") || "/tmp") + "/bee-pty-" + io.getpid() + ".frames";
+  const sink = io.open(FRAMES, "c"), tap = io.open(FRAMES, "r");
   const saved = tty.raw(pty.slave);
   try {
-    const p = new pagerlib.Pager(pty.slave, { color: true, open: dr.openTarget });
+    const p = new pagerlib.Pager(sink, { tty: pty.slave, color: true, open: dr.openTarget });
     p.setHunks(out.hunks, "list");
     p.render();
     const rb = io.buf(1 << 16);
-    const k = io.read(pty.master, rb);
+    const k = io.read(tap, rb);
     const f = k > 0 ? utf8.Decode(rb.data().slice()) : "";
     check("the first run paints the browser on a real tty", f.length > 0, "bytes " + f.length);
     check("...banner'd `list`, with the fused rows on the glass",
@@ -88,7 +93,7 @@ if (typeof tty === "undefined" || !tty.openpty) {
           f.indexOf("f.txt") >= 0 && f.indexOf("F0 fresh seed") >= 0, f);
   } finally {
     try { tty.cook(pty.slave, saved); } catch (e) {}
-    try { io.close(pty.master); io.close(pty.slave); } catch (e) {}
+    try { io.close(pty.master); io.close(pty.slave); io.close(sink); io.close(tap); io.unlink(FRAMES); } catch (e) {}
   }
 }
 

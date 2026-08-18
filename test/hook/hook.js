@@ -148,12 +148,18 @@ const R = {};
 if (page !== null) {
   const pty = tty.openpty();
   tty.setSize(pty.slave, 14, 110);
-  const p = new pagerlib.Pager(pty.slave, { color: true, open: entry.openTarget });
+  //  Frames go to a scratch FILE, not the slave: a self-pty has no concurrent
+  //  reader and macOS blocks a slave write at 1 KB unread (XNU TTYCLSIZE).  The
+  //  pty stays the tty (size, raw, keys); `sink` takes the paint, `tap` reads it.
+  const FRAMES = (io.getenv("TMPDIR") || "/tmp") + "/bee-pty-" + io.getpid() + ".frames";
+  const sink = io.open(FRAMES, "c"), tap = io.open(FRAMES, "r");
+  const p = new pagerlib.Pager(sink, { tty: pty.slave, color: true, open: entry.openTarget });
   p.setHunks(page, "doc/new.mkd");
   const rb = io.buf(1 << 16);
-  const drain = function () {
-    rb.reset(); const k = io.read(pty.master, rb);
-    return k > 0 ? utf8.Decode(rb.data().slice()) : "";
+  const drain = function () {                  // to EOF: exactly the new frame
+    let s = "";
+    for (;;) { rb.reset(); const k = io.read(tap, rb); if (k <= 0) break; s += utf8.Decode(rb.data().slice()); }
+    return s;
   };
   const kbuf = io.buf(64);
   const send = function (s) { kbuf.reset(); kbuf.feed(utf8.Encode(s)); io.writeAll(pty.master, kbuf); };
@@ -179,7 +185,7 @@ if (page !== null) {
     //  a click on the SELF-link row (row 6) opens nothing: it is still a plain
     //  `:line` ref into this very page, so it lands here, not elsewhere.
     R.selfRow = 6;
-  } finally { tty.cook(pty.slave, saved); io.close(pty.master); io.close(pty.slave); }
+  } finally { tty.cook(pty.slave, saved); io.close(pty.master); io.close(pty.slave); io.close(sink); io.close(tap); io.unlink(FRAMES); }
 }
 check("the permalink paints on the page", (R.base || "").indexOf(P_FSW20) >= 0,
       (R.base || "").split("\r\n")[1] || "");

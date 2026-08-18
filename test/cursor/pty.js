@@ -3,8 +3,8 @@
 //  and every assertion reads the frame BYTES back: the cursor wash must be on
 //  the row the keys say it is, and Enter must open what the active token names.
 //
-//  STEPPED, not run() — the LITE-004 pty discipline verbatim: one blocking
-//  master read per drain, tty.raw entered ONCE up front (TCSAFLUSH drops
+//  STEPPED, not run() — the LITE-004 pty discipline verbatim: frames drained
+//  off a scratch file, tty.raw entered ONCE up front (TCSAFLUSH drops
 //  pre-queued keys), pump() reads first and tests its condition after.
 "use strict";
 const pagerlib = require("pager.js");
@@ -28,13 +28,21 @@ function check(name, cond, got) {
 
 const pty = tty.openpty();
 tty.setSize(pty.slave, 10, 40);                  // 10 rows: 9 body + the bar
+//  Frames go to a scratch FILE, not the slave: a self-pty has no concurrent
+//  reader and macOS blocks a slave write at 1 KB unread (XNU TTYCLSIZE).  The
+//  pty stays the tty (size, raw, keys); `sink` takes the paint, `tap` reads it.
+const FRAMES = (io.getenv("TMPDIR") || "/tmp") + "/bee-pty-" + io.getpid() + ".frames";
+const sink = io.open(FRAMES, "c"), tap = io.open(FRAMES, "r");
 
 const rb = io.buf(1 << 16);
 let frames = "";
 function drain() {
-  rb.reset();
-  const k = io.read(pty.master, rb);
-  if (k > 0) frames += utf8.Decode(rb.data().slice());
+  for (;;) {                                     // to EOF: exactly the new frame
+    rb.reset();
+    const k = io.read(tap, rb);
+    if (k <= 0) break;
+    frames += utf8.Decode(rb.data().slice());
+  }
 }
 function frame(p) { p.render(); frames = ""; drain(); return frames; }
 //  The painted body rows of a frame, verbatim (SGR included) — row 0 is the
@@ -65,7 +73,7 @@ try {
   const dh = entry.openPath(".");
   check("dir view opens", dh !== null && dh[0].kind === "dir",
         dh === null ? "null" : dh[0].kind);
-  const p = new pagerlib.Pager(pty.slave, { color: true, open: entry.openPath });
+  const p = new pagerlib.Pager(sink, { tty: pty.slave, color: true, open: entry.openPath });
   p.setHunks(dh, ".");
 
   const f0 = frame(p);
@@ -188,7 +196,7 @@ try {
   //  ---- a U-BACKED token: the hidden follower is what Enter opens ---------
   const ch = fs.buildChooserHunk("chooser", [{ rel: "one.txt", full: "f01.txt" },
                                               { rel: "two.txt", full: "f02.txt" }]);
-  const pc = new pagerlib.Pager(pty.slave, { color: true, open: entry.openPath });
+  const pc = new pagerlib.Pager(sink, { tty: pty.slave, color: true, open: entry.openPath });
   pc.setHunks([ch], "chooser");
   frame(pc);
   send("j");
@@ -222,7 +230,7 @@ try {
   })(), "wrap " + pc.view.wrap);
 
   //  ---- a CLICK sets the cursor, then follows -----------------------------
-  const pm = new pagerlib.Pager(pty.slave, { color: true, open: entry.openPath });
+  const pm = new pagerlib.Pager(sink, { tty: pty.slave, color: true, open: entry.openPath });
   pm.setHunks(entry.openPath("."), ".");
   frame(pm);
   send(ESC + "[<0;2;3M");                          // screen row 3 = rows[2], col 2
@@ -234,5 +242,5 @@ try {
 } finally {
   tty.cook(pty.slave, saved);
 }
-io.close(pty.master); io.close(pty.slave);
+io.close(pty.master); io.close(pty.slave); io.close(sink); io.close(tap); io.unlink(FRAMES);
 w1((bad ? "FAILED " : "DONE ") + n + " checks\n");

@@ -5,10 +5,9 @@
 //  entry → pager wiring, not a mock.
 //
 //  STEPPED, not run(): the loop is driven render/drain/send cycle by cycle.
-//   -  a self-pty has no concurrent reader, so the master MUST be drained
-//      between frames or the slave write blocks once the buffer fills — and a
-//      drain does exactly ONE blocking read (the master is not raw; a second
-//      read past the pending bytes would hang forever).
+//   -  a self-pty has no concurrent reader, so a slave write blocks once the
+//      queue fills (1 KB on macOS): frames are painted into a scratch FILE and
+//      read back to EOF, the pty carrying only geometry and keys.
 //   -  a PRE-QUEUED key cannot drive run(): tty.raw installs the termios with
 //      TCSAFLUSH, which DROPS whatever is already sitting in the slave queue
 //      (LITE-002 Blockers).  Raw is entered ONCE, up front, before any send.
@@ -43,14 +42,21 @@ function skip(name, why) { w1("skip " + name + " — " + why + "\n"); }
 
 const pty = tty.openpty();
 tty.setSize(pty.slave, 10, 40);                  // 10 rows: 1 banner + 8 body + bar
+//  Frames go to a scratch FILE, not the slave: a self-pty has no concurrent
+//  reader and macOS blocks a slave write at 1 KB unread (XNU TTYCLSIZE).  The
+//  pty stays the tty (size, raw, keys); `sink` takes the paint, `tap` reads it.
+const FRAMES = (io.getenv("TMPDIR") || "/tmp") + "/bee-pty-" + io.getpid() + ".frames";
+const sink = io.open(FRAMES, "c"), tap = io.open(FRAMES, "r");
 
-//  ONE blocking read per drain (see the header note).
 const rb = io.buf(1 << 16);
 let frames = "";
 function drain() {
-  rb.reset();
-  const k = io.read(pty.master, rb);
-  if (k > 0) frames += utf8.Decode(rb.data().slice());
+  for (;;) {                                     // to EOF: exactly the new frame
+    rb.reset();
+    const k = io.read(tap, rb);
+    if (k <= 0) break;
+    frames += utf8.Decode(rb.data().slice());
+  }
 }
 function frame(p) { p.render(); frames = ""; drain(); return frames; }
 
@@ -75,7 +81,7 @@ try {
   const hs = entry.openPath("doc.txt");
   check("openPath-file-list", hs !== null && hs.length === 1 && hs[0].kind === "file",
         hs === null ? "null" : "len " + hs.length);
-  const p = new pager.Pager(pty.slave, { color: true, open: entry.openPath });
+  const p = new pager.Pager(sink, { tty: pty.slave, color: true, open: entry.openPath });
   p.setHunks(hs, "doc.txt");
 
   const f0 = frame(p);
@@ -126,7 +132,7 @@ try {
   check("g-top-frame", fg.indexOf("TOP") >= 0 && fg.indexOf("48;5;230") >= 0, fg);
 
   //  ---- wrap: a view OPENS no-wrap, `w` toggles ---------------------------
-  const pw = new pager.Pager(pty.slave, { color: true, open: entry.openPath });
+  const pw = new pager.Pager(sink, { tty: pty.slave, color: true, open: entry.openPath });
   pw.setHunks(entry.openPath("sub/long.txt"), "sub/long.txt");
   check("wrap-off-by-default", pw.view.wrap === false, String(pw.view.wrap));
   const nNo = pw.rows(40).length;
@@ -150,7 +156,7 @@ try {
   const dh = entry.openPath(".");
   check("openPath-dir-list", dh !== null && dh.length === 1 && dh[0].kind === "dir",
         dh === null ? "null" : "len " + dh.length);
-  const pd = new pager.Pager(pty.slave, { color: true, open: entry.openPath });
+  const pd = new pager.Pager(sink, { tty: pty.slave, color: true, open: entry.openPath });
   pd.setHunks(dh, ".");
   const drows = pd.rows(40);
   let ri = -1;
@@ -193,19 +199,16 @@ try {
   //  ---- run(): the raw + ALT-screen lifecycle and the finally-restore -----
   //  run() is ended from a RENDER HOOK, not a queued key: tty.raw's TCSAFLUSH
   //  would drop a key sent before the loop starts (LITE-002 Blockers).
-  const pr = new pager.Pager(pty.slave, { color: true, open: entry.openPath });
+  const pr = new pager.Pager(sink, { tty: pty.slave, color: true, open: entry.openPath });
   pr.setHunks(entry.openPath("doc.txt"), "doc.txt");
   let painted = 0;
   const realRender = pr.render;
   pr.render = function () { realRender.call(this); painted++; this.quit = true; };
   frames = "";
   pr.run();
-  //  A master read hands back ONE slave write at a time (they only sometimes
-  //  coalesce), and run() emits exactly THREE: the enter bracket, the frame, the
-  //  restore bracket.  Drain at most three times, stopping the moment ALT_OFF is
-  //  in — a fourth read with nothing pending would block for ever.  The whole
-  //  session is ~250 bytes, far under the pty buffer, so nothing blocks meanwhile.
-  for (let i = 0; i < 3 && frames.indexOf("?1049l") < 0; i++) drain();
+  //  run() emits exactly THREE writes — the enter bracket, the frame, the
+  //  restore bracket — all in the file by now: one drain to EOF has them.
+  drain();
   const rout = frames;
   check("run-painted-one-frame", painted === 1, "painted " + painted);
   check("run-quit", pr.quit === true, "quit " + pr.quit);
@@ -222,5 +225,5 @@ try {
 } finally {
   tty.cook(pty.slave, saved);
 }
-io.close(pty.master); io.close(pty.slave);
+io.close(pty.master); io.close(pty.slave); io.close(sink); io.close(tap); io.unlink(FRAMES);
 w1((bad ? "FAILED " : "DONE ") + n + " checks\n");

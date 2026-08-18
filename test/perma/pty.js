@@ -8,7 +8,7 @@
 //  The REAL UI path: a hunk painted on a `tty.openpty()` slave by the shipped
 //  Pager, a real SGR press written to the master, the pushed view's FRAME and
 //  status bar asserted.  Stepped, not run(): a self-pty has no concurrent
-//  reader, so a render is followed by a blocking drain.
+//  reader, so a render is painted to a scratch file and read back.
 //
 //  MINTING IS NOT UNDER TEST (another ticket): the anchors here are built from
 //  the fixture's own arithmetic — 16-byte lines, `git rev-parse` blob ids.
@@ -228,10 +228,19 @@ const h = refHunk("see.c", REFS);
 
 const pty = tty.openpty();
 tty.setSize(pty.slave, 14, 100);
-const p = new pagerlib.Pager(pty.slave, { color: true, open: entry.openTarget });
+//  Frames go to a scratch FILE, not the slave: a self-pty has no concurrent
+//  reader and macOS blocks a slave write at 1 KB unread (XNU TTYCLSIZE).  The
+//  pty stays the tty (size, raw, keys); `sink` takes the paint, `tap` reads it.
+const FRAMES = (io.getenv("TMPDIR") || "/tmp") + "/bee-pty-" + io.getpid() + ".frames";
+const sink = io.open(FRAMES, "c"), tap = io.open(FRAMES, "r");
+const p = new pagerlib.Pager(sink, { tty: pty.slave, color: true, open: entry.openTarget });
 p.setHunks([h], "see.c");
 const rb = io.buf(1 << 16);
-function drain() { rb.reset(); const k = io.read(pty.master, rb); return k > 0 ? utf8.Decode(rb.data().slice()) : ""; }
+function drain() {                             // to EOF: exactly the new frame
+  let s = "";
+  for (;;) { rb.reset(); const k = io.read(tap, rb); if (k <= 0) break; s += utf8.Decode(rb.data().slice()); }
+  return s;
+}
 const kbuf = io.buf(64);
 function send(s) { kbuf.reset(); kbuf.feed(utf8.Encode(s)); io.writeAll(pty.master, kbuf); }
 const krb = io.buf(64);
@@ -290,7 +299,7 @@ try {
   R.missMsg = pump(function () { return p.message !== ""; }) ? p.message : "";
   R.missDepth = p.stack.length;
   R.missFrame = frame();
-} finally { tty.cook(pty.slave, saved); io.close(pty.master); io.close(pty.slave); }
+} finally { tty.cook(pty.slave, saved); io.close(pty.master); io.close(pty.slave); io.close(sink); io.close(tap); io.unlink(FRAMES); }
 
 check("the permalink lines paint", R.base.indexOf(PERMA20) >= 0, frameRow(R.base, 1));
 check("a click on a permalink pushed a view", R.landed, "stack depth");

@@ -6,7 +6,7 @@
 //  the master, the pushed view's FRAME and status bar asserted.
 //
 //  Stepped, not run(): a self-pty has no concurrent reader, so a render is
-//  followed by a blocking drain.
+//  painted to a scratch file and read back.
 "use strict";
 const pagerlib = require("pager.js");
 const entry = require("door.js");        // LITE-045: the door, not the CLI
@@ -99,10 +99,19 @@ check("...and every chooser row CARRIES the tail",
 //  ---- the REAL click ------------------------------------------------------
 const pty = tty.openpty();
 tty.setSize(pty.slave, 14, 100);
-const p = new pagerlib.Pager(pty.slave, { color: true, open: entry.openTarget });
+//  Frames go to a scratch FILE, not the slave: a self-pty has no concurrent
+//  reader and macOS blocks a slave write at 1 KB unread (XNU TTYCLSIZE).  The
+//  pty stays the tty (size, raw, keys); `sink` takes the paint, `tap` reads it.
+const FRAMES = (io.getenv("TMPDIR") || "/tmp") + "/bee-pty-" + io.getpid() + ".frames";
+const sink = io.open(FRAMES, "c"), tap = io.open(FRAMES, "r");
+const p = new pagerlib.Pager(sink, { tty: pty.slave, color: true, open: entry.openTarget });
 p.setHunks([h], "see.c");
 const rb = io.buf(1 << 16);
-function drain() { rb.reset(); const k = io.read(pty.master, rb); return k > 0 ? utf8.Decode(rb.data().slice()) : ""; }
+function drain() {                             // to EOF: exactly the new frame
+  let s = "";
+  for (;;) { rb.reset(); const k = io.read(tap, rb); if (k <= 0) break; s += utf8.Decode(rb.data().slice()); }
+  return s;
+}
 const kbuf = io.buf(64);
 function send(s) { kbuf.reset(); kbuf.feed(utf8.Encode(s)); io.writeAll(pty.master, kbuf); }
 const krb = io.buf(64);
@@ -217,12 +226,12 @@ check("the LEXER fuses `abc/FSW.c:12:4` into one F token",
 
 const pty2 = tty.openpty();
 tty.setSize(pty2.slave, 14, 100);
-const p2 = new pagerlib.Pager(pty2.slave, { color: true, open: entry.openTarget });
+const p2 = new pagerlib.Pager(sink, { tty: pty2.slave, color: true, open: entry.openTarget });
 p2.setHunks(real, "src/see.c");
 const saved2 = tty.raw(pty2.slave);
 let realScroll = -1, realFrame = "";
 try {
-  p2.render(); rb.reset(); io.read(pty2.master, rb);
+  p2.render(); drain();
   kbuf.reset(); kbuf.feed(utf8.Encode(ESC + "[<0;" + (COL + 1) + ";2M"));
   io.writeAll(pty2.master, kbuf);
   for (let r = 0; r < 40 && p2.stack.length === 0; r++) {
@@ -231,9 +240,8 @@ try {
     if (m > 0) p2._feed(krb.data().slice());
   }
   realScroll = p2.view.scroll;
-  p2.render(); rb.reset();
-  const k = io.read(pty2.master, rb);
-  realFrame = k > 0 ? utf8.Decode(rb.data().slice()) : "";
+  p2.render();
+  realFrame = drain();
 } finally { tty.cook(pty2.slave, saved2); io.close(pty2.master); io.close(pty2.slave); }
 
 check("a click on THAT token lands on line 12", realScroll === 9, "scroll " + realScroll);
@@ -264,12 +272,12 @@ check("NO-GIT: an unmatched ref stays a quiet null", entry.openTarget("gone.js:9
 const ngh = entry.openTarget("note.c");
 const pty3 = tty.openpty();
 tty.setSize(pty3.slave, 14, 100);
-const p3 = new pagerlib.Pager(pty3.slave, { color: true, open: entry.openTarget });
+const p3 = new pagerlib.Pager(sink, { tty: pty3.slave, color: true, open: entry.openTarget });
 p3.setHunks(ngh, "note.c");
 const saved3 = tty.raw(pty3.slave);
 let ngScroll = -1, ngUri = "";
 try {
-  p3.render(); rb.reset(); io.read(pty3.master, rb);
+  p3.render(); drain();
   kbuf.reset(); kbuf.feed(utf8.Encode(ESC + "[<0;" + (COL + 1) + ";2M"));
   io.writeAll(pty3.master, kbuf);
   for (let r = 0; r < 40 && p3.stack.length === 0; r++) {
@@ -279,7 +287,7 @@ try {
   }
   ngScroll = p3.view.scroll;
   ngUri = p3.view.hunks && p3.view.hunks[0] ? String(p3.view.hunks[0].uri) : "";
-} finally { tty.cook(pty3.slave, saved3); io.close(pty3.master); io.close(pty3.slave); }
+} finally { tty.cook(pty3.slave, saved3); io.close(pty3.master); io.close(pty3.slave); io.close(sink); io.close(tap); io.unlink(FRAMES); }
 io.chdir(cd0);
 check("NO-GIT: the click opens deep/log0.js", ends(ngUri, "/deep/log0.js"), ngUri);
 check("...landed 1/4 above line 20", ngScroll === 17, "scroll " + ngScroll);
