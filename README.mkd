@@ -50,10 +50,12 @@ The standalone (bundled) `bee` binary call patterns:
      3. the slot is POSITIONAL and first: after a verb, `//<name>` is an argument like any other
      4. bare `bee //<name>` is the zero-arg story in that repo: index it, open the `list` browser
  -  `bee index [<repo>]` -- build/refresh `<repo>/.git/be/`; lazy, fully derived;
-    BOTH passes, the commit walk and the tip-blob link scan, each off its own
-    mark, both on the one summary line
+    ALL THREE passes, the commit walk, the tip-blob link scan and the `kv` meta
+    sweep, each off its own mark, all on the one summary line
      1. every initialized submodule is indexed too, depth-first; an uninitialised one is skipped in words
      2. inside a linked worktree it registers the original -- one repository is one line, and it says which
+     3. the tail `kv: N files, M pairs` is the keyed lane (BEE-024): the `.md`/`.mkd`
+        files this worktree carries and the live meta pairs they hold
  -  `bee lindex [<target>]` -- backlink suspects; lazy, tip blobs only
      1. bare: bring the link rows up to the tip, this repo only
      2. `<target>`: the paths that may link to a file or a ticket code, looked

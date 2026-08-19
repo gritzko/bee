@@ -1,6 +1,6 @@
 #   Beagle-lite index records
 
-The record catalogue of the `.git/be/` index a lite verb reads and writes ([LITE-006]). One `abc.index("wh128", …)` family — a dog Pup stack of `(key:u64, val:u64)` rows, sorted by key, unkeyed (a key may carry many rows) — lives in the repo's OWN gitdir as `<gitdir>/be/*.lite2.idx`. Everything there is DERIVED: `rm -rf` it and the next run rebuilds it from the ODB — and the EXTENSION IS THE FORMAT, so an index of an outdated one is swept (unlinked) before the family opens ([BEE-002]). Registered repos are listed in `$HOME/.config/bee/repos` ([BEE-001]), one absolute worktree path per line, written by `bee install`. The kind nibble is the LOW 4 bits of every key, so one index holds every record family and one scan sees them all.
+The record catalogue of the `.git/be/` index a lite verb reads and writes ([LITE-006]). One `abc.index("wh128", …)` family — a dog Pup stack of `(key:u64, val:u64)` rows, sorted by key, unkeyed (a key may carry many rows) — lives in the repo's OWN gitdir as `<gitdir>/be/*.lite2.idx`. Beside it, in the same dir, stands the KEYED `kv64` lane `*.kv.idx` ([BEE-024]), where a re-put OVERWRITES and a row is a mutable cell. Everything there is DERIVED: `rm -rf` it and the next run rebuilds it — and the EXTENSION IS THE FORMAT, so a file of neither live format is swept (unlinked) before either family opens ([BEE-002], [BEE-024]). Registered repos are listed in `$HOME/.config/bee/repos` ([BEE-001]), one absolute worktree path per line, written by `bee install`. The kind nibble is the LOW 4 bits of every key, so one index holds every record family and one scan sees them all.
 
 ##  Field vocabulary
 
@@ -103,6 +103,60 @@ Each query is a scan of ONE key prefix; no ODB ancestry walk happens at query ti
     in `$HOME/.config/bee/repos` ([BEE-002]): the vals are the carriers'
     `path_hl`, named back to text by that repo's own tree descent.
 
+##  The `kv` lane
+
+The KEYED family, `<gitdir>/be/*.kv.idx` ([BEE-024]): `abc.index("kv64", …)` compares KEYS alone, so a re-put of one key wins at `get`, `range` and `seek` alike. That is what lets `Now: OPEN` flip to `DONE` IN PLACE, which no lite2 row can say. Its records are FILE HEADERS: the StrictMark meta pairs under a `#   Title` ([/meta/todo]) and the top-level keys of a Markdown YAML preamble. Same discipline as lite2 — derived, the kind nibble in the LOW 4 bits, one lane for every cell-like kind.
+
+ -  `HEAD` (1) — key `path_hl:40|key_code:20|1`, val `vkind:4|payload:60`: one
+    META PAIR of one file. `key_code` is the 3-char key VERBATIM at 6 bits a
+    char, `ron.decode("Now")`, 18 of the 20 bits — injective, so a meta key
+    never collides and a file's pairs sort stably. PATH-MAJOR: one file's whole
+    block is ONE contiguous prefix scan.
+ -  `YAML` (2) — the same layout with `key_code` the TOP 20 bits of the key
+    text's hashlet, so `Now:` and `now:` can never meet. A nested key, a list
+    and a multiline scalar are SKIPPED whole: the payload is a match token, and
+    a value that will not fit one line is no token.
+ -  `MARK` (F) — key `MARK_PHL|wt_code:20|F`, the reserved all-ones `path_hl`,
+    so it sorts ABOVE every block; one row per WORKTREE.
+ -  `path_hl` hashes the WORKTREE-QUALIFIED (absolute) path, since linked
+    worktrees share the common gitdir and so share this lane ([BEE-009]); the
+    block's own header row carries the owning worktree's 20-bit code.
+ -  The reserved `key_code` is all-ones, the BLOCK HEADER row (kind 1): the file
+    exists, and this worktree owns it.
+
+The `vkind` nibble says what the 60-bit payload is, and only a LITERAL ranges:
+
+ -  `LIT` (0) — the ron60 of the DESPACED, DECASED value, when it round-trips
+    through the codec. It compares and RANGES exactly.
+ -  `HASH` (1) — the value's hashlet60 when it does not. It only ever equals.
+ -  `MARK` (2) — the max mtime observed, on the mark row.
+ -  `HEAD` (E) — the owning worktree's code, on the block header row.
+ -  `TOMB` (F) — the pair, or the whole file, is GONE. `kv64` has no delete, so
+    a tombstone is a row like any other.
+
+The SWEEP owns staleness, since with the value in the row there is no confirming read left to kill a stale one. It is LAZY — the first query brings the lane up, and `bee index` runs it so its summary line is honest.
+
+ -  The candidates are every `.mkd`/`.md` the STAGE lists plus the untracked
+    ones the [BEE-022] worktree walk finds under igno; a build tree never
+    floods the lane and the lane never opens a source file.
+ -  Every file whose mtime is AT OR PAST the mark is re-lexed and its block
+    RECONCILED: put what the lex found, TOMBSTONE what vanished. A file gone
+    from disk loses its whole block, this worktree's blocks only.
+ -  The mark is the MAX mtime OBSERVED in the scan, one row per worktree,
+    written LAST; a clock is never consulted, and an intermediate seal never
+    advances it, so a crash mid-sweep costs a redundant re-lex and never marks
+    an unlexed file done. Rows batch at 200, one 4 KB memtable page.
+ -  Per-key normalizers are where ranges come from: `Due: 2026-08-19` becomes
+    the ron60 DATE, so `Due:` takes a spelling PREFIX as a range; free text
+    hashes and only equals.
+ -  The sweep holds the COMPLETE path list, so a 40-bit `path_hl` collision is
+    DETECTED: two live paths on one hashlet leave the index for that run and are
+    read directly.
+ -  `find(repo, filters)` is the one door — exact, presence or prefix per key,
+    AND-intersected on `path_hl` — and a path comes back through the sweep's own
+    list, never decoded from a hash. The lane decides WHICH files, never what
+    to show ([TODO-003] rule): titles and bodies still come off the file.
+
 ##  The suspects contract
 
 `LINK` rows are SUSPECTS, not proof (ruling 2026-08-15): a row says a file MAY
@@ -184,7 +238,12 @@ The gaps, stated so a reader does not go looking for them.
 [BEE-005]: /todo/BEE/BEE-005.mkd
 [BEE-023]: /todo/BEE/BEE-023.mkd
 [BEE-007]: /todo/BEE/BEE-007.mkd
+[BEE-009]: /todo/BEE/BEE-009.mkd
+[BEE-022]: /todo/BEE/BEE-022.mkd
+[BEE-024]: /todo/BEE/BEE-024.mkd
 [LITE-006]: /todo/LITE/LITE-006.mkd
+[TODO-003]: /todo/TODO/TODO-003.mkd
+[/meta/todo]: /meta/todo.mkd
 [LITE-007]: /todo/LITE/LITE-007.mkd
 [LITE-011]: /todo/LITE/LITE-011.mkd
 [LITE-017]: /todo/LITE/LITE-017.mkd

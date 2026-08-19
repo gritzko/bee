@@ -368,5 +368,8 @@ function status(arg, opts) {
 module.exports = { status: status, rowsOf: rowsOf, hunkOf: hunkOf,
                    plainOf: plainOf, summaryOf: summaryOf, plainQuad: plainQuad,
                    leaves: leaves, stageOf: stageOf, wtOf: wtOf,
+                   //  BEE-024 takes the stage column and this walk as its
+                   //  candidate set; the quad is the only other caller.
+                   scanUntracked: scanUntracked,
                    ronOf: ronOf, TTY: TTY, TTY_COMMIT: TTY_COMMIT,
                    CELL: CELL, CELL_CON: CELL_CON };

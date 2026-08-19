@@ -15,6 +15,9 @@ const IDX_DIR = "be";
 //  The index format is its extension (BEE-002:115:qe): re-keyed LINK rows share
 //  the key space with the old ones, so `.lite.idx` retires and `openIndex` sweeps it.
 const IDX_EXT = ".lite2.idx";
+//  The KEYED lane beside it (BEE-024:23): a second family in the SAME dir, so
+//  the sweep below has to know both exts or it unlinks the kv runs.
+const KV_EXT = ".kv.idx";
 //  The initial derive alone opens a 64Ki-row memtable and seals lazily
 //  (DOG-032:38:Y0); the batch is the memtable, so a commit never lands mid-page.
 const IDX_BULK_ROWS = 1 << 16;
@@ -323,17 +326,37 @@ function openIndex(gitdir, bulk, ro) {
   return abc.index("wh128", o);
 }
 
-//  Unlink every file of an outdated format before the family is opened
+//  The kv64 lane of index/kv.js, opened in the SAME common dir (BEE-024:29), so
+//  linked worktrees share it exactly as they share the wh128 family (BEE-009).
+function openKv(gitdir, ro) {
+  const o = { dir: indexDir(gitdir), ext: KV_EXT };
+  if (ro) { o.mode = "r"; return abc.index("kv64", o); }
+  sweep(o.dir);
+  return abc.index("kv64", o);
+}
+
+//  The live formats, longest ext first so that one ending in another still
+//  matches its own.  BEE-024:118 generalized this: ONE sweep knows both.
+const IDX_EXTS = [IDX_EXT, KV_EXT];
+
+//  Unlink every file of an outdated format before either family is opened
 //  (BEE-002:115:qe); the dir is fully derived, so the next run rebuilds from the ODB.
 function sweep(dir) {
   let fs;
   try { fs = io.readdir(dir); } catch (e) { return; }
   for (const f of fs) {
     const n = f.length >= 1 && f.slice(-1) === "/" ? "" : f;
-    if (n === "" || (n.length >= IDX_EXT.length && n.slice(-IDX_EXT.length) === IDX_EXT))
-      continue;
+    if (n === "" || hasExt(n)) continue;
     try { io.unlink(dir + "/" + n); } catch (e) {}
   }
+}
+
+//  Does this index-dir entry belong to a live family?  A run is `<ron64><ext>`
+//  and the memtable is the bare `<ext>`, so a suffix test answers both.
+function hasExt(name) {
+  for (const e of IDX_EXTS)
+    if (name.length >= e.length && name.slice(-e.length) === e) return true;
+  return false;
 }
 
 //  Has this repo an index at all?  A dir with no run and no memtable is the
@@ -792,6 +815,10 @@ function index(repoArg, opts) {
       //  required lazily, so lindex.js's own `require("./index.js")` is fine.
       if (opts.links !== false) rec.link = require("./lindex.js").scan(ctx, ix);
     } finally { try { ix.close(); } catch (e) {} }
+    //  BEE-024: the kv lane is a family of its own, so it opens after this one
+    //  closes; the sweep is lazy either way and `bee index` runs it so that the
+    //  summary line is honest about what the board would answer off.
+    if (opts.kv !== false) rec.kv = require("./kv.js").sweepRepo(ctx, opts);
     //  Depth-first into every initialised submodule (BEE-006:48:3B), same
     //  bring-up and opts, so `track: false` writes no registry line for any.
     if (opts.subs !== false) indexSubs(ctx, rec, opts);
@@ -964,20 +991,23 @@ function emitDir(wr, st, c, chl) {
   return true;
 }
 
-//  The one-line summary the verb prints, both halves on it (BEE-007).  A half
-//  sitting on its mark says so and costs no words; both do, the ruled no-op.
+//  The one-line summary the verb prints, all three halves on it (BEE-007,
+//  BEE-024).  A half sitting on its mark says so and costs no words.
 function summary(rec) {
   const index = rec.ref + " " + rec.tip.slice(0, 8) + " in " + indexDir(rec.gitdir);
   const lk = rec.link;                     // absent when the half did not run
   const lp = !lk ? null : lk.upToDate ? "links up to date"
            : "scanned " + lk.files + " files, " + lk.links + " links, " +
              lk.rows + " rows";
+  //  BEE-024's phrase is the TAIL of either spelling, so the three counting
+  //  clauses of BEE-007 keep the shape every reader and test already knows.
+  const kv = require("./kv.js").said(rec.kv);
   if (rec.upToDate)
     return "up to date: " + index + (lk && !lk.upToDate ? " — " + lp : "") +
-           subsSaid(rec);
+           subsSaid(rec) + kv;
   return "indexed " + rec.commits + " commits, " + rec.revs + " revs, " +
          rec.rows + " rows" + (lp === null ? "" : " — " + lp) + " — " + index +
-         subsSaid(rec);
+         subsSaid(rec) + kv;
 }
 
 //  What the recursion took and what it passed over, as a tail phrase (BEE-006):
@@ -996,7 +1026,7 @@ function hexOfHl(hl60) { return hl60.toString(16).padStart(15, "0"); }
 
 module.exports = {
   index: index, summary: summary, track: track, repos: repos,
-  openIndex: openIndex, sweep: sweep,
+  openIndex: openIndex, openKv: openKv, sweep: sweep,
   discover: discover, openRepo: openRepo, closeRepo: closeRepo,
   //  The linked-worktree tell and the original both doors take (BEE-009).
   linkedWorktree: linkedWorktree, origin: origin, mainOf: mainOf,
@@ -1013,7 +1043,8 @@ module.exports = {
   //  `diff` reads blob/commit objects straight off the ODB (LITE-010).
   object: object,
   firstLine: firstLine, identTs: identTs, heap: heap, hexOfHl: hexOfHl,
-  IDX_DIR: IDX_DIR, IDX_EXT: IDX_EXT, IDX_BULK_ROWS: IDX_BULK_ROWS, indexDir: indexDir,
+  IDX_DIR: IDX_DIR, IDX_EXT: IDX_EXT, KV_EXT: KV_EXT, IDX_EXTS: IDX_EXTS,
+  IDX_BULK_ROWS: IDX_BULK_ROWS, indexDir: indexDir,
   fresh: fresh,
   CPAR_NONE: CPAR_NONE,
   K_BLOB: K_BLOB, K_CMMT: K_CMMT, K_PARS: K_PARS,
