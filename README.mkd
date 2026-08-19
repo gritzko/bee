@@ -90,6 +90,10 @@ The standalone (bundled) `bee` binary call patterns:
      2. `/<repo>/raw/<path>` is the highlighted source, 
      3. `/<repo>/bytes/<path>[?<rev>]` ships the file's raw bytes,
      4. submodule is served through its parent (`/quickjab/dog/abc/TCP.c`), never under a name of its own
+ -  `bee fork //repo-TKT-123` -- a ticket worktree of a registered repo at `$SRC_ROOT/repo-TKT-123`, on a branch named by the tail
+     1. the split takes the LONGEST registry name followed by `-` (`//bee-journal-BEE-023` is the journal's); the tail is free text, usually a ticket code
+     2. every submodule the HEAD records gets a worktree of its own repo at the same relative path, detached at the recorded commit, recursively
+     3. an existing branch is checked out, not re-created; the tree is not registered, and `git worktree remove` is how it goes away
  -  `bee install [<repo>]` -- wire bee as the repo's git merge driver and pre-commit hook, list it in `~/.config/bee/repos`, index it
      1. a linked worktree is refused: a repo is known by its path (`bee index` redirects to the original instead)
      2. a submodule is an ordinary repo: each initialised one is registered, indexed and lindexed too

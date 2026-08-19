@@ -90,6 +90,13 @@ function runInstall(args) {
   writeFd(1, utf8.Encode(mg.install(args.length ? args[0] : mnt.at()) + "\n"));
 }
 
+//  BEE-026: `bee fork //repo-TKT-123` — the ticket worktree of the work loop,
+//  branch named by the tail, submodules recursed into, at `$SRC_ROOT`.  One
+//  report line; a refusal is fork.js's throw.  The verb's name is fork.js:17 VERB.
+function runFork(args) {
+  writeFd(1, utf8.Encode(require("fork.js").fork(args) + "\n"));
+}
+
 //  LITE-026: `bee hook [<repo>]` — the PRE-COMMIT pass the planted
 //  `.git/hooks/pre-commit` runs: fresh `file:line(:col)` refs in the staged text
 //  become [LITE-025] permalinks, and the rewritten files are re-staged.  It
@@ -213,7 +220,7 @@ function pageHunks(hunks) {
 const SIDE = {
   index: runIndex, lindex: runLindex, merge: runMerge, install: runInstall,
   hook: runHook, chat: runChat, http: runHttp, now: runNow, mint: runMint,
-  mark: runMark,
+  mark: runMark, fork: runFork,
 };
 
 //  BEE-023:24 the CLI is TRIPARTITE — `bee [//context] verb args`.  The context
