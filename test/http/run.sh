@@ -19,7 +19,7 @@
 # test/http/repo.sh, run after it with its own fixtures and its own port.
 #
 # BEE-003: every URL here carries its REPO — the fixture is `$WORK/repo`, so the
-# prefix is `/repo/`; a reference resolves to the verb-less `/repo/<path>`.
+# prefix is `/repo/`; a reference resolves to `/repo/cat/<path>` (BEE-028).
 #
 # Standalone: `sh lite/test/http/run.sh` from anywhere (it cds itself).
 # $LITEJAB picks the runtime (default `jab`), built from THIS tree.
@@ -226,10 +226,10 @@ has  "the from-side washes out" 'side-rm" id="b2">X0'
 
 page "a file" "/repo/cat/doc.mkd" 200
 has  "the source is painted" '<span class="tok-'
-has  "a path reference links, resolved" '<a href="/repo/sub/x.txt">'
+has  "a path reference links, resolved" '<a href="/repo/cat/sub/x.txt">'
 # A ticket code names no file in this repo, so it resolves to NOTHING — and an
 # unresolvable reference is plain painted text, never a link that 404s.
-hasnt "a ticket code naming no file is NOT a link" '<a href="/repo/LITE-034'
+hasnt "a ticket code naming no file is NOT a link" '<a href="/repo/cat/LITE-034'
 has  "and the ticket code is still painted" '>LITE-034</span>'
 hasnt "NO CommonMark render — no heading element" "<h1"
 hasnt "NO CommonMark render — no paragraph element" "<p>"
@@ -255,15 +255,15 @@ has  "the blob's bytes" "X1"
 # the landed TOKEN.  Nothing resolvable carries no href at all.
 # ==========================================================================
 page "a page of references" "/repo/cat/ref.c" 200
-has  "a file:line ref lands on that line's first token" 'href="/repo/target.c#b63"'
-has  "a MOVED permalink lands where its token sits TODAY" 'href="/repo/target.c#b50"'
-has  "a DEAD permalink lands where its token STOOD" 'href="/repo/target.c#b37"'
-hasnt "a reference that answers nothing is NOT a link" 'href="/repo/nosuch'
+has  "a file:line ref lands on that line's first token" 'href="/repo/cat/target.c#b63"'
+has  "a MOVED permalink lands where its token sits TODAY" 'href="/repo/cat/target.c#b50"'
+has  "a DEAD permalink lands where its token STOOD" 'href="/repo/cat/target.c#b37"'
+hasnt "a reference that answers nothing is NOT a link" 'href="/repo/cat/nosuch'
 has  "and it is still painted as source" '>nosuch.c:3</span>'
 # The bug this leg exists for: no raw `file:LINE:HASHLET` may reach a URL.
-hasnt "no raw reference reaches a url" 'href="/repo/target.c:'
+hasnt "no raw reference reaches a url" 'href="/repo/cat/target.c:'
 hasnt "no raw permalink reaches a url" '%3A'
-if [ "$(grep -c 'href="/repo/target.c#b' "$WORK/body")" = 3 ]; then
+if [ "$(grep -c 'href="/repo/cat/target.c#b' "$WORK/body")" = 3 ]; then
     ok "exactly the three resolvable references linked"
 else
     bad "wrong number of resolved links" "$WORK/body"

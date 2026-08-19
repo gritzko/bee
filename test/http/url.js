@@ -155,20 +155,20 @@ const TGT = hunkOf("int a;\nint b;\nint c;\n",
 //  a plain `file:line` ref anchors on the LINE'S FIRST token (line 2 starts at 7)
 check("a file:line ref anchors on the line's first token",
       srv.urlOf(mkpg(doorOf({ full: ROOT + "/t.c", line: 2, col: 0 }, "reg", TGT), 8),
-                "t.c:2") === "/repo/t.c#b7",
+                "t.c:2") === "/repo/cat/t.c#b7",
       srv.urlOf(mkpg(doorOf({ full: ROOT + "/t.c", line: 2, col: 0 }, "reg", TGT), 8), "t.c:2"));
 //  a `file:line:col` ref anchors on the token the COLUMN sits in (col 5 -> byte 11)
 check("a file:line:col ref anchors on the column's token",
       srv.urlOf(mkpg(doorOf({ full: ROOT + "/t.c", line: 2, col: 5 }, "reg", TGT), 8),
-                "t.c:2:5") === "/repo/t.c#b11");
+                "t.c:2:5") === "/repo/cat/t.c#b11");
 //  a PERMALINK hands the resolver's OWN token bytes over — no re-derivation
 check("a permalink anchors on the resolver's own token",
       srv.urlOf(mkpg(doorOf({ full: ROOT + "/t.c", line: 3, col: 1, lo: 14, hi: 17 },
-                            "reg", TGT), 8), "t.c:E:AbCd") === "/repo/t.c#b14");
+                            "reg", TGT), 8), "t.c:E:AbCd") === "/repo/cat/t.c#b14");
 //  a reference naming a DIRECTORY opens the browser, not cat
 check("a dir reference opens in list",
       srv.urlOf(mkpg(doorOf({ full: ROOT + "/sub", line: 0, col: 0 }, "dir", null), 8),
-                "sub") === "/repo/sub/");
+                "sub") === "/repo/list/sub/");
 //  NOTHING answers -> no href; the painter leaves plain text
 check("an unresolvable reference gets NO url",
       srv.urlOf(mkpg(doorOf(null, null, null), 8), "nosuch.c:3") === "");
@@ -186,7 +186,7 @@ check("an untokenised target links without an anchor",
       srv.urlOf(mkpg(doorOf({ full: ROOT + "/t.txt", line: 1, col: 0 }, "reg",
                             { uri: "x", text: utf8.Encode("hi\n"),
                               toks: new Uint32Array(0), kind: "cat" }), 8),
-                "t.txt:1") === "/repo/t.txt");
+                "t.txt:1") === "/repo/cat/t.txt");
 //  the per-page BUDGET: past it a reference paints plain rather than stalling
 //  the one loop, and a repeat costs nothing (the cache answers).
 {
@@ -196,7 +196,7 @@ check("an untokenised target links without an anchor",
               openPath: function () { return [TGT]; } };
   const pg = mkpg(d, 1);
   const a = srv.urlOf(pg, "t.c:1"), b = srv.urlOf(pg, "t.c:1"), c = srv.urlOf(pg, "u.c:1");
-  check("a repeated reference is followed once", a === b && a === "/repo/t.c#b0" && calls === 1,
+  check("a repeated reference is followed once", a === b && a === "/repo/cat/t.c#b0" && calls === 1,
         a + " " + b + " calls " + calls);
   check("past the budget a reference paints plain", c === "", c);
 }
@@ -307,7 +307,7 @@ check("and it is still painted", html.hunkHtml(F, link).indexOf('class="tok-F" i
     return srv.urlOf(mkpg(doorOf({ full: ROOT + "/sub/x.txt", line: 0, col: 0 }, "reg", TGT), 8), t);
   };
   check("a resolvable F token becomes the resolved href",
-        html.hunkHtml(F, lk).indexOf('<a href="/repo/sub/x.txt">') >= 0, html.hunkHtml(F, lk));
+        html.hunkHtml(F, lk).indexOf('<a href="/repo/cat/sub/x.txt">') >= 0, html.hunkHtml(F, lk));
 }
 
 //  A hunk with NO toks at all (a blob, an unknown extension) still paints its

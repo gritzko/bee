@@ -166,18 +166,14 @@ const PRIO_TAG = [12, 21, 18, 3];
 //  --- the board root --------------------------------------------------------
 function todoOf(root) { const d = root + "/todo"; return isDir(d) ? d : null; }
 
-//  The repos the run boards, `[{ name, root, dir }]`.  A `//name` context is
-//  ONE repo and refuses when it carries no `todo/` (BEE-025:75, the stated
-//  default); without one the local repo answers, and failing that the board is
-//  the FAN-OUT over every registered repo that has a `todo/`.
+//  The repos the run boards, `[{ name, root, dir }]`.  A `//name` context, or
+//  the local repo, answers alone when it carries a `todo/`; otherwise the board
+//  is the FAN-OUT over every registered repo that has one (ruling gritzko
+//  2026-08-19, BEE-028: over http EVERY url carries a repo, so `/bee/todo` must
+//  board something — the refusal of BEE-025:50 is gone).
 function rootsOf(opts) {
   const out = [];
-  if (opts.from) {
-    const dir = todoOf(opts.from);
-    if (dir === null) throw "todo: //" + mnt.basename(opts.from) + ": no todo/";
-    return [{ name: mnt.basename(opts.from), root: opts.from, dir: dir }];
-  }
-  const here = idx.discover(mnt.at()) || mnt.at();
+  const here = opts.from || idx.discover(mnt.at()) || mnt.at();
   const dir = todoOf(here);
   if (dir !== null) return [{ name: mnt.basename(here), root: here, dir: dir }];
   for (const m of mnt.list()) {

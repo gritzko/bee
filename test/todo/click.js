@@ -98,11 +98,28 @@ check("a-slash-separates-like-a-space",
   check("the-parent-stays-flat", /^GET-001/m.test(plain), plain);
 }
 
-//  --- 6. a context with no todo/ refuses, naming itself ----------------------
+//  --- 6. a context with no todo/ boards every repo that has one (BEE-028) ----
 {
-  let said = "";
-  try { todo.todo("", { from: SRC + "/gamma" }); } catch (e) { said = String(e); }
-  check("a-todo-less-context-refuses-by-name", said === "todo: //gamma: no todo/", said);
+  const v = todo.todo("", { from: SRC + "/gamma" });
+  const plain = utf8.Decode(v.hunks[0].plain);
+  check("a-todo-less-context-fans-out", /^alpha\/GET-001/m.test(plain) && /^beta\/OPS-007/m.test(plain), plain);
+}
+
+//  --- 7. a reference ON a ticket page follows from the page's own dir --------
+//  BEE-028: the `cat` hunk names its ambient, so the pager's follow resolves a
+//  bare `GET-002.mkd` next to the page — from ANY cwd ($WORK is no repo).
+{
+  const pagerlib = require("pager.js"), door = require("door.js");
+  const spell = "cat //alpha/todo/GET/GET-001.mkd";
+  const hs = door.openTarget(spell);
+  check("a-cat-hunk-names-its-ambient", !!(hs && hs[0].pos && hs[0].pos.repo === ALPHA),
+        hs ? JSON.stringify(hs[0].pos) : "null");
+  const sink = io.open((io.getenv("TMPDIR") || "/tmp") + "/bee-todo-click-" + io.getpid(), "c");
+  const p = new pagerlib.Pager(sink, { color: false, open: door.openTarget });
+  p.setHunks(hs, spell);
+  p._follow(p.view.hunks[0], "GET-002.mkd");
+  check("a-ref-on-the-page-follows-from-its-dir", p.stack.length === 1 && !p.message,
+        "stack " + p.stack.length + " msg " + p.message);
 }
 
 w1((bad ? "FAIL" : "PASS") + " [bee/todo] click.js " + n + " checks, " + bad + " failed\n");

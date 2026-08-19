@@ -101,9 +101,10 @@ function unesc(s) { try { return URI.unescape(s); } catch (e) { return s; } }
 //  joined back by hand.
 //  BEE-003 (ruling 2): the FIRST segment names the REPO when the registry knows
 //  it (`names`, the mount table), and the verb follows it — `/<repo>/<verb>/
-//  <path>`.  With no verb after the repo the rest IS the path (`verb: "path"`,
-//  the file itself); with no repo at all the caller 301s to the prefixed form,
-//  so an old link converges instead of quietly serving one tree.
+//  <path>`.  BEE-028: a segment that spells a verb IS that verb, always; with
+//  none after the repo the rest is a path (`verb: "path"`) and the caller 301s
+//  to its `cat`/`list` form, as it does with no repo at all — an old or typed
+//  link converges on the one spelling instead of quietly serving one tree.
 function routeOf(reqUri, names) {
   let u;
   //  A request URI abc/URI refuses names no page — a 404, never a thrown loop.
@@ -252,8 +253,9 @@ function seatAt(pg, seat) {
 
 function seatRel(pg, target) { return seatAt(pg, seatOf(pg, target)); }
 
-//  A dir opens in the browser, a file in `cat` anchored on the landed token —
-//  both under `/<repo>/<path>`, the form that needs no verb (ruling 2).
+//  A dir opens in the browser, a file in `cat` anchored on the landed token.
+//  BEE-028: the verb is always written — a verb-less `/<repo>/<path>` would be
+//  read as the verb its first segment happens to spell (`todo/`, `log/`).
 function refResolve(pg, target) {
   const seat = seatOf(pg, target);
   //  BEE-012: a MULTI-HIT is bee saying "which one?", not "I do not know" — it
@@ -262,9 +264,9 @@ function refResolve(pg, target) {
     return "/" + pg.name + "/choose/" + escPath(target);
   const s = seatAt(pg, seat);
   if (s === null) return "";
-  if (s.st.kind === "dir") return "/" + s.name + "/" + escPath(s.rel) + "/";
+  if (s.st.kind === "dir") return "/" + s.name + "/list/" + escPath(s.rel) + "/";
   const b = anchorByte(pg, s.seat);
-  return "/" + s.name + "/" + escPath(s.rel) + (b >= 0 ? "#" + html.anchorId(0, b) : "");
+  return "/" + s.name + "/cat/" + escPath(s.rel) + (b >= 0 ? "#" + html.anchorId(0, b) : "");
 }
 
 //  LITE-036: an IMAGE names the file's own bytes, at the rev the PAGE is read
@@ -543,6 +545,15 @@ function handle(req, sock, st) {
   //  arg is re-rooted at whichever worktree actually carries it.
   let arg = r.arg, from = mount.root, prefix = "", verb = r.verb;
   const p0 = argPath(arg), rev = argRev(arg);
+  //  BEE-028: no verb in the URL — the target is a path, and its page is at the
+  //  spelled form: a dir under `list`, a file (or nothing) under `cat`.
+  if (verb === "path") {
+    const s = st.door.statOf(mount.root + "/" + p0);
+    if (s !== null)
+      return moveTo(sock, "/" + mount.name + (s.kind === "dir" ? "/list" : "/cat") +
+                    r.raw.slice(1 + r.repo.length) + r.query, only);
+    verb = "cat";                         // nothing there: `cat` says so, no detour
+  }
   if (p0 !== "" && p0.charAt(0) !== "/") {
     //  BEE-020:55: `serves`, not `deepest` — a path the worktree does not carry
     //  (a hexlet, a file gone at that rev) still names the sub it belongs to.
@@ -553,18 +564,17 @@ function handle(req, sock, st) {
       arg = (mount.root + "/" + p0).slice(deep.length + 1) + (rev ? "?" + rev : "");
     }
   }
-  //  No verb in the URL: the target IS the file — a dir opens the browser, a
-  //  file its `cat` page (which is where a `.md` renders).
-  if (verb === "path") {
-    const s = st.door.statOf(mount.root + "/" + p0);
-    verb = s !== null && s.kind === "dir" ? "list" : "cat";
-  }
   //  The AMBIENT of this request: the repo, the path, and nothing of the cwd.
   const pos = { repo: from, path: argPath(arg), anchor: "" };
   let hunks;
   try { hunks = mnt.within(pos, function () { return st.door.verbs[verb](arg, { from: from }); }); }
   catch (e) {
-    sendPage(sock, 404, "Not Found", verb, html.errorPage(verb, why(e)), only);
+    //  BEE-028: the verb refused, but read as a PATH the URL names a file in
+    //  the repo (`/todo/BE/BE-038.mkd`): the refusal names the path form too.
+    const asPath = r.head + "/" + p0, ps = st.door.statOf(mount.root + "/" + asPath);
+    const hint = ps === null ? null : { text: "as a path it is at", href: "/" + mount.name +
+      (ps.kind === "dir" ? "/list/" : "/cat/") + escPath(asPath) + (ps.kind === "dir" ? "/" : "") };
+    sendPage(sock, 404, "Not Found", verb, html.errorPage(verb, why(e), hint), only);
     return "404";
   }
   //  LITE-036: a raw-bytes URL has no page to paint and no reference to follow.

@@ -6,7 +6,7 @@
 # What it pins:
 #   * a cross-repo reference RESOLVES — `abc/TCP.c` read in the bee-side repo
 #     names `dog/abc/TCP.c` of the registered `quick` repo (through the parent,
-#     ruling 5) and renders as `<a href="/quick/dog/abc/TCP.c">`;
+#     ruling 5) and renders as `<a href="/quick/cat/dog/abc/TCP.c">` (BEE-028);
 #   * the URL CARRIES the repo (ruling 2) — `/<repo>/[<verb>/]<path>` serves
 #     EVERY registered repo, and a bare repo-less URL 301s to the prefixed form;
 #   * serving needs NO lane: a registered but unindexed repo still serves;
@@ -148,29 +148,33 @@ hdr()   { if grep -qiF "$2" "$WORK/hdr"; then ok "$1"; else bad "$1 — no '$2'"
 # ==========================================================================
 # leg 1 — THE REPRO: a cross-repo reference resolves and links
 # ==========================================================================
-page "the page of references" "/home/ref.c" 200
-has  "the cross-repo ref links INTO the other repo" 'href="/quick/dog/abc/TCP.c"'
-has  "a same-named local file still wins locally" 'href="/home/q.txt"'
-hasnt "and it does NOT point at the other repo's q.txt" 'href="/quick/q.txt"'
-hasnt "a reference no repo holds is not a link" 'href="/home/nosuch'
+page "the page of references" "/home/cat/ref.c" 200
+has  "the cross-repo ref links INTO the other repo" 'href="/quick/cat/dog/abc/TCP.c"'
+has  "a same-named local file still wins locally" 'href="/home/cat/q.txt"'
+hasnt "and it does NOT point at the other repo's q.txt" 'href="/quick/cat/q.txt"'
+hasnt "a reference no repo holds is not a link" 'href="/home/cat/nosuch'
 has  "and it is still painted as source" '>nosuch/gone.c</span>'
 
 # ==========================================================================
 # leg 2 — the URL carries the repo (ruling 2), every registered repo served
 # ==========================================================================
-page "the other repo's file" "/quick/dog/abc/TCP.c" 200
+page "the other repo's file" "/quick/cat/dog/abc/TCP.c" 200
 has  "it serves the SUBMODULE's own bytes" '>TCP</span>'
 page "the other repo's root" "/quick/" 200
 has  "the root list links its own file" 'href="/quick/cat/q.txt"'
-page "the same file through the verb" "/quick/cat/dog/abc/TCP.c" 200
-has  "the verb form serves the same bytes" '>TCP</span>'
-page "the submodule's own list" "/quick/dog/abc/" 200
+# BEE-028: the verb-less path form is a typed convenience — it converges on
+# the spelled form (a file under `cat`, a dir under `list`), never served as is.
+curl -s -D "$WORK/hdr" -o "$WORK/body" "$BASE/quick/dog/abc/TCP.c"
+hdr "a verb-less file URL 301s to its cat form" "Location: /quick/cat/dog/abc/TCP.c"
+curl -s -D "$WORK/hdr" -o "$WORK/body" "$BASE/quick/dog/abc/"
+hdr "a verb-less dir URL 301s to its list form" "Location: /quick/list/dog/abc/"
+page "the submodule's own list" "/quick/list/dog/abc/" 200
 has  "the sub lists its file THROUGH the parent (ruling 5)" 'href="/quick/cat/dog/abc/TCP.c"'
 page "the submodule's log" "/quick/log/dog/abc/TCP.c" 200
 has  "the log rows are the SUB's" "abc seed"
 
 # a registered repo with NO lane still serves its files
-page "an unindexed registered repo" "/plain/p.txt" 200
+page "an unindexed registered repo" "/plain/cat/p.txt" 200
 has  "its bytes come out all the same" "P0"
 
 # a bare repo-less URL 301s to the prefixed form — it never keeps working silently

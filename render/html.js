@@ -216,9 +216,12 @@ function page(title, body) {
 }
 
 //  A refusal reads as the verb wrote it — plain words, no stack, no chrome.
-function errorPage(title, message) {
+//  BEE-028: `hint` is an optional `{ text, href }` — one link the miss offers.
+function errorPage(title, message, hint) {
+  const h = hint ? "\n" + esc(hint.text) + ' <a href="' + esc(hint.href) + '">' +
+                   esc(hint.href) + "</a>" : "";
   return page(title, '<div class="hunk"><div class="banner">' + esc(title) +
-                     '</div><pre class="body">' + esc(message) + "\n</pre></div>");
+                     '</div><pre class="body">' + esc(message) + h + "\n</pre></div>");
 }
 
 //  ---- the RENDERER (LITE-045) -----------------------------------------------

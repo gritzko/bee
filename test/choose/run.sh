@@ -105,7 +105,7 @@ else bad "the ambiguous ref must link to the chooser" "$WORK/page"; fi
 
 # BEE-011 through the same door: the prefixed ref names ONE file, so it goes
 # straight there and never to the chooser.
-if grep -q 'href="/alpha/main.js"' "$WORK/page"
+if grep -q 'href="/alpha/cat/main.js"' "$WORK/page"
 then ok "...while the project-prefixed one links straight to the file"
 else bad "the prefixed ref must link to its file" "$WORK/page"; fi
 
@@ -119,8 +119,8 @@ if head -1 "$WORK/hdr" | grep -q ' 200 '
 then ok "the chooser page answers 200"
 else bad "the chooser page must answer" "$WORK/hdr" "$WORK/pick"; fi
 
-if grep -q 'href="/alpha/main.js"' "$WORK/pick" &&
-   grep -q 'href="/beta/main.js"' "$WORK/pick"
+if grep -q 'href="/alpha/cat/main.js"' "$WORK/pick" &&
+   grep -q 'href="/beta/cat/main.js"' "$WORK/pick"
 then ok "...listing BOTH candidates, each a link to its own page"
 else bad "the chooser must list every candidate" "$WORK/pick"; fi
 

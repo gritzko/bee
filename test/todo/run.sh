@@ -73,6 +73,7 @@ commit() {
 }
 
 mkrepo "$SRC/alpha"
+printf 'the alpha repo\n' > "$SRC/alpha/README.mkd"
 mkdir -p "$SRC/alpha/todo/GET" "$SRC/alpha/todo/PUT" "$SRC/alpha/todo/done" \
          "$SRC/alpha/todo/GET/GET-003" "$SRC/alpha/todo/notopic"
 cat > "$SRC/alpha/todo/GET/GET-001.mkd" <<'EOF'
@@ -81,7 +82,8 @@ cat > "$SRC/alpha/todo/GET/GET-001.mkd" <<'EOF'
     Sev: CRIT
     Who: gritzko
 
-The body is never read by the board.
+The body is never read by the board.  Kin: GET-002.mkd (an http link
+into `todo/` must NOT route as the `todo` verb).
 EOF
 cat > "$SRC/alpha/todo/GET/GET-002.mkd" <<'EOF'
 #   GET-002: a closed one
@@ -303,10 +305,12 @@ then ok "the all-repos board is dated, newest first"
 else bad "the all-repos board is dated, newest first" "$WORK/all"; fi
 
 # A CONTEXT with no `todo/` refuses, naming itself (BEE-025:75's default).
+# BEE-028: a context with no `todo/` is no refusal — it boards every repo that
+# has one, as a run with no context does (over http every URL has a context).
 bee //gamma todo --plain > "$WORK/none" 2>&1
-if grep -q 'todo: //gamma: no todo/' "$WORK/none"
-then ok "a context with no todo/ refuses by name"
-else bad "a context with no todo/ refuses by name" "$WORK/none"; fi
+if grep -q '^alpha/GET-001' "$WORK/none" && grep -q '^beta/OPS-007' "$WORK/none"
+then ok "a context with no todo/ fans out over every board"
+else bad "a context with no todo/ fans out over every board" "$WORK/none"; fi
 
 # Standing INSIDE a repo with a todo/, that repo is the board — no fan-out.
 ( cd "$SRC/alpha" && HOME="$FH" SRC_ROOT="$SRC" "$RT" todo --plain ) \
@@ -336,6 +340,24 @@ if command -v curl >/dev/null 2>&1; then
     if grep -q 'GET-001' "$WORK/page2" && ! grep -q 'GET-003' "$WORK/page2"
     then ok "an http arg line is its path segments"
     else bad "an http arg line is its path segments" "$WORK/page2"; fi
+    #  A reference INTO `todo/` is a path, not the verb: the href spells `cat`.
+    curl -s -o "$WORK/page3" "http://127.0.0.1:$PORT/alpha/cat/todo/GET/GET-001.mkd"
+    if grep -q 'href="/alpha/cat/todo/GET/GET-002.mkd' "$WORK/page3" \
+       && ! grep -q 'href="/alpha/todo/GET/GET-002.mkd' "$WORK/page3"
+    then ok "a link into todo/ routes as a path, not the todo verb"
+    else bad "a link into todo/ routes as a path, not the todo verb" "$WORK/page3"; fi
+    #  BEE-028: `/todo/<rest>` IS the verb, always — a file sitting under the
+    #  repo's `todo/` is refused there, and the refusal links the path form.
+    curl -s -D "$WORK/hdr4" -o "$WORK/page4" "http://127.0.0.1:$PORT/alpha/todo/GET/GET-002.mkd"
+    if head -1 "$WORK/hdr4" | grep -q ' 404 ' && grep -q '<title>todo</title>' "$WORK/page4" \
+       && grep -q 'href="/alpha/cat/todo/GET/GET-002.mkd"' "$WORK/page4"
+    then ok "/todo/<file> is the verb, refused with a link to the path form"
+    else bad "/todo/<file> is the verb, refused with a link to the path form" "$WORK/page4"; fi
+    #  ...while a verb-less path that spells no verb converges on its spelled form.
+    curl -s -D "$WORK/hdr5" -o /dev/null "http://127.0.0.1:$PORT/alpha/README.mkd"
+    if head -1 "$WORK/hdr5" | grep -q ' 301 ' && grep -qi '^Location: /alpha/cat/README.mkd' "$WORK/hdr5"
+    then ok "a verb-less file URL 301s to its cat form"
+    else bad "a verb-less file URL 301s to its cat form" "$WORK/hdr5"; fi
     kill "$SRVPID" 2>/dev/null; SRVPID=""
 else
     echo "todo: SKIP the http leg — no curl"

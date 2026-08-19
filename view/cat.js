@@ -53,6 +53,10 @@ function cat(arg, opts) {
     }
     const hunks = bytes.length === 0 ? []
                 : [rd.textHunk(uriStr, bytes, fs.pathExt(rel), "cat")];
+    //  BEE-028: the hunk NAMES its ambient (BEE-003, as a log's does), so a
+    //  reference on the page resolves from the file's own dir, not from the
+    //  pager's view path — which is the `cat …` spell, no dir at all.
+    if (hunks.length) hunks[0].pos = { repo: ctx.root, path: rel, anchor: "" };
     return { uri: uriStr, rel: rel, hunks: hunks };
   } finally { idx.closeRepo(ctx); }
 }

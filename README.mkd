@@ -86,15 +86,15 @@ The standalone (bundled) `bee` binary call patterns:
      1. every shape `door.js` resolves: permalink, path, partial, ticket code, pocket page, another registered repo
      2. one hunk per ref, in the order given; a miss names the repos searched, an ambiguity shows the chooser, neither ends the batch
  -  `bee todo [TOPIC] [Key:Value]...` -- the ticket board: `<●> KEY ┄ title` per open ticket, the row a click onto `bee see KEY`
-     1. bare, the board of the context repo's `todo/` -- topic headers with counts, `Sub:` families on dotted rails; with no context and no local `todo/`, every registered repo's, newest first, each row prefixed by its repo
+     1. bare, the board of the context repo's `todo/` -- topic headers with counts, `Sub:` families on dotted rails; when that repo (or, with no context, the local one) has no `todo/`, every registered repo's, newest first, each row prefixed by its repo
      2. `TOPIC` is one topic's list, `Key:Value` a filter -- keys AND, one key repeated ORs, `Key:*` is presence and `Key:` absence; `Sev:` paints the bullet CRIT red, HIGH orange, LOW dim
      3. open is `Now: OPEN`, or no `Now:` and no closed header mark; `todo/done/` never lists and the answer comes off the BEE-024 lane, one query per repo per run
      4. a ticket that has a `$SRC_ROOT` worktree carries the two BEE-027 frames; a worktree whose tail is no ticket code lists in a trailing `worktrees` block
  -  `bee http [--port <n>]` -- the same views over HTTP on localhost:8034, read-only, every registered repo, links to known files resolved and clickable
-     1. `/<repo>/<path>` is the file itself,
+     1. every URL is `/<repo>/<verb>/<arg>` -- `/<repo>/cat/<path>` the file (a `.md` rendered), `/<repo>/list/<dir>/` the browser; a verb-less `/<repo>/<path>` 301s to that form, and a segment that spells a verb (`todo/`) IS the verb (BEE-028)
      2. `/<repo>/raw/<path>` is the highlighted source, 
      3. `/<repo>/bytes/<path>[?<rev>]` ships the file's raw bytes,
-     4. submodule is served through its parent (`/quickjab/dog/abc/TCP.c`), never under a name of its own
+     4. submodule is served through its parent (`/quickjab/cat/dog/abc/TCP.c`), never under a name of its own
  -  `bee fork //repo-TKT-123` -- a ticket worktree of a registered repo at `$SRC_ROOT/repo-TKT-123`, on a branch named by the tail
      1. the split takes the LONGEST registry name followed by `-` (`//bee-journal-BEE-023` is the journal's); the tail is free text, usually a ticket code
      2. every submodule the HEAD records gets a worktree of its own repo at the same relative path, detached at the recorded commit, recursively

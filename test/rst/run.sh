@@ -17,7 +17,7 @@
 #
 #  BEE-003: every URL of leg 5 carries its REPO — the fixture is `$WORK/repo`,
 #  so the prefix is `/repo/`; a verb page is `/repo/<verb>/<path>` and a
-#  RESOLVED reference the verb-less `/repo/<path>`.
+#  RESOLVED reference `/repo/cat/<path>` or `/repo/list/<dir>/` (BEE-028).
 #
 #  THE SUBSET is the ticket's, and the parser is HAND-WRITTEN: docutils is
 #  Python and there is no JS reST parser to vendor.  What is NOT in it degrades
@@ -388,9 +388,9 @@ if grep -q '<a href="[^"]*nosuch.xyz' "$WORK/page.html"
 then bad "an unresolved bare ref must stay plain" "$WORK/page.html"
 else ok  "an unresolved bare ref stays plain"; fi
 has   "the transition is a rule"                   '<hr />'
-has   "a relative link carries the RESOLVED href"  '<a href="/repo/sub/x.txt">file</a>'
-has   "an .rst target links to its RENDERED page"  '<a href="/repo/sub/other.rst">page</a>'
-has   "a directory target links to the list view"  '<a href="/repo/sub/">dir</a>'
+has   "a relative link carries the RESOLVED href"  '<a href="/repo/cat/sub/x.txt">file</a>'
+has   "an .rst target links to its RENDERED page"  '<a href="/repo/cat/sub/other.rst">page</a>'
+has   "a directory target links to the list view"  '<a href="/repo/list/sub/">dir</a>'
 has   "a named target resolves its absolute url"   '<a href="https://e.org/a?b=1&amp;c=2">out</a>'
 hasnt "an unresolvable target is NOT a link"       '>miss</a>'
 has   "an unresolvable target stays plain text"    'a miss,'
@@ -411,7 +411,7 @@ hasnt "the painted source renders no heading"      '<h1 id='
 has   "the painted view links back to rendered"    '<a href="/repo/cat/doc.rst">rendered</a>'
 
 get /repo/cat/sub/other.rst > /dev/null
-has   "a link out of a subdir resolves against ITS dir" '<a href="/repo/doc.rst">the doc</a>'
+has   "a link out of a subdir resolves against ITS dir" '<a href="/repo/cat/doc.rst">the doc</a>'
 
 get /repo/cat/doc.mkd > /dev/null
 has   "a .mkd is still painted source (LITE-034)"  'class="tok-'
