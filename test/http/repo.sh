@@ -106,7 +106,18 @@ else ok "the submodule rides its parent's registry line"; fi
 # ==========================================================================
 # up it goes — served FROM the home repo, so every other repo is a cross-repo one
 # ==========================================================================
-( cd "$WORK/home"; exec env HOME="$FAKEHOME" "$RT" http --port "$PORT" ) \
+# BEE-023:27 the `$SRC_ROOT` leg: a FORK of a registered repo (`<name>-<tail>`,
+# BEE-026) is served by name; anything else under `$SRC_ROOT` is not a mount.
+SRC="$WORK/src"; mkdir -p "$SRC"
+( cd "$WORK/home" && git worktree add -q "$SRC/home-TKT-1" -b TKT-1 ) || exit 2
+mkrepo "$SRC/nope-TKT-2"
+( cd "$SRC/nope-TKT-2" && printf 'N0\n' > n.txt && git add -A && git commit -q -m 'n' ) || exit 2
+mkrepo "$SRC/home-.hid"
+( cd "$SRC/home-.hid" && printf 'HID\n' > s.txt && git add -A && git commit -q -m 's' ) || exit 2
+mkrepo "$SRC/.env"
+( cd "$SRC/.env" && printf 'SECRET\n' > e.txt && git add -A && git commit -q -m 'e' ) || exit 2
+
+( cd "$WORK/home"; exec env HOME="$FAKEHOME" SRC_ROOT="$SRC" "$RT" http --port "$PORT" ) \
   > "$WORK/srv.log" 2>&1 &
 SRVPID=$!
 N=0
@@ -179,6 +190,31 @@ curl -s -L -D "$WORK/hdr" -o "$WORK/body" "$BASE/nope/x.txt"
 ST=$(grep -c '^HTTP/1.1 404' "$WORK/hdr")
 if [ "$ST" -ge 1 ]; then ok "an unknown first segment ends in a 404"
 else bad "an unknown first segment must 404 after the 301" "$WORK/hdr"; fi
+
+# ==========================================================================
+# leg 2b — BEE-023: `$SRC_ROOT` forks by name, and only those
+# ==========================================================================
+page "a fork of a registered repo serves by its name" "/home-TKT-1/cat/h.txt" 200
+has  "...and it is the fork's own tree" "H0"
+page "the fork's list opens" "/home-TKT-1/" 200
+has  "...linked under its own name" 'href="/home-TKT-1/'
+# not a fork of anything registered: a bare URL, so 301 to the served repo, then 404
+curl -s -L -D "$WORK/hdr" -o "$WORK/body" "$BASE/nope-TKT-2/cat/n.txt"
+if grep -q '^HTTP/1.1 404' "$WORK/hdr" && ! grep -qF "N0" "$WORK/body"
+then ok "an unregistered prefix under \$SRC_ROOT is no mount"
+else bad "an unregistered prefix must not serve" "$WORK/hdr" "$WORK/body"; fi
+curl -s -L -D "$WORK/hdr" -o "$WORK/body" "$BASE/home-.hid/cat/s.txt"
+if ! grep -qF "HID" "$WORK/body"; then ok "a dot-led tail is no fork"
+else bad "a dot-led tail must not serve" "$WORK/hdr" "$WORK/body"; fi
+curl -s -L -D "$WORK/hdr" -o "$WORK/body" "$BASE/.env/cat/e.txt"
+if ! grep -qF "SECRET" "$WORK/body"; then ok "a dotfile name is no fork"
+else bad "a dotfile name must not serve" "$WORK/hdr" "$WORK/body"; fi
+curl -s -L -D "$WORK/hdr" -o "$WORK/body" "$BASE/home-TKT-1%2F..%2F.env/cat/e.txt"
+if ! grep -qF "SECRET" "$WORK/body"; then ok "an escaped slash in the name is no fork"
+else bad "a slashed name must not serve" "$WORK/hdr" "$WORK/body"; fi
+curl -s -L --path-as-is -D "$WORK/hdr" -o "$WORK/body" "$BASE/home-TKT-1/cat/../../.env/e.txt"
+if ! grep -qF "SECRET" "$WORK/body"; then ok "a fork page cannot climb out of its tree"
+else bad "dot-dot must not climb out of a fork" "$WORK/hdr" "$WORK/body"; fi
 
 # ==========================================================================
 # leg 3 — the door itself: the resolution ORDER, the refusal, the chooser

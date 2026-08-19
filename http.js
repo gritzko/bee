@@ -442,6 +442,31 @@ function mounted(st) {
   return keep;
 }
 
+//  The first path segment of a request URI, unescaped; "" when there is none.
+function firstSeg(reqUri) {
+  let u;
+  try { u = uri._parse(String(reqUri === undefined ? "" : reqUri)); } catch (e) { return ""; }
+  const segs = String(u.path || "/").split("/");
+  return segs.length > 1 ? unesc(segs[1]) : "";
+}
+
+//  BEE-023:27 the `$SRC_ROOT` leg as a one-request mount, so `/bee-BEE-026/cat/...`
+//  serves the worktree the CLI reaches as `//bee-BEE-026`.  Only a FORK name
+//  mounts (BEE-026: `<registered>-<tail>`), and only with a plain charset, so a
+//  dot-led, slashed or otherwise unregistered `$SRC_ROOT` dir is never served.
+const FORK_SEG = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
+function srcMount(name, names) {
+  if (!FORK_SEG.test(name) || names.indexOf(name) >= 0) return null;
+  let fork = false;
+  for (const n of names)
+    if (name.length > n.length + 1 && name.slice(0, n.length + 1) === n + "-" &&
+        name.charAt(n.length + 1) !== ".") { fork = true; break; }
+  if (!fork) return null;
+  const root = mnt.byName(name);
+  if (root === null) return null;
+  return { name: name, root: root, prefix: "", own: name, top: root, dup: false };
+}
+
 //  --- one request ------------------------------------------------------------
 function handle(req, sock, st) {
   const m = String(req.method || "");
@@ -455,6 +480,10 @@ function handle(req, sock, st) {
   const table = mounted(st);
   const names = [];
   for (const x of table) if (x.prefix === "" && !x.dup) names.push(x.name);
+  //  BEE-023:27 a first segment the registry does not know may still be a
+  //  `$SRC_ROOT` repo (a forked ticket worktree, BEE-026): it mounts for this request.
+  const extra = srcMount(firstSeg(req.uri), names);
+  if (extra !== null) { table.push(extra); names.push(extra.name); }
   const r = routeOf(req.uri, names);
   //  The two SITE files, repo-less and served off blob/: the one sheet and the
   //  one icon.  Both are read at startup, so a request is bytes and no syscall.
