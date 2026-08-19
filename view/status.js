@@ -371,5 +371,8 @@ module.exports = { status: status, rowsOf: rowsOf, hunkOf: hunkOf,
                    //  BEE-024 takes the stage column and this walk as its
                    //  candidate set; the quad is the only other caller.
                    scanUntracked: scanUntracked,
+                   //  BEE-027 arms its rev tree over this very chain, so the
+                   //  watcher skips exactly what the quad skips (cache.js:117 ignoOf).
+                   ignoStack: ignoStack,
                    ronOf: ronOf, TTY: TTY, TTY_COMMIT: TTY_COMMIT,
                    CELL: CELL, CELL_CON: CELL_CON };

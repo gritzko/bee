@@ -15,6 +15,9 @@ const emitBody = ansi.emitBody, paintRow = ansi.paintRow;
 const wrap = require("render/wrap.js");
 //  The hunk-header band SGR (pale-yellow bg), single-sourced from the theme.
 const theme = require("render/theme.js");
+//  BEE-027: the rev tree the resident view memos hang off.  There is no `pol`
+//  loop here, so the run loop drains it on its own 100 ms tick (`run` below).
+const cache = require("index/cache.js");
 
 //  BRO-007: the ONE source of the scroll-mode key bindings — `h` builds its
 //  inline help hunk straight from here.  KEEP IN SYNC with _keyScroll.
@@ -585,6 +588,7 @@ Pager.prototype._followCur = function () {
 Pager.prototype._refresh = function () {
   const v = this.view;
   if (!v || !v.path || !this.open) { this.message = "(nothing to refresh)"; return; }
+  cache.bumpRoot();          // BEE-027: a forced reload misses EVERY memo
   const scroll = v.scroll;
   let hunks;
   try { hunks = this.open(v.path, v.from); }
@@ -815,6 +819,9 @@ Pager.prototype._resized = function () {
 //  and mouse on EVERY exit path (try/finally) so a throw never wedges the tty.
 Pager.prototype.run = function () {
   this._saved = tty.raw(this.tty);
+  //  BEE-027: the pager is process-resident, so this is where the watcher lives
+  //  and where every view memo keyed on it holds — for the session, never past it.
+  const watching = cache.start(io.cwd());
   //  BRO-027: ALT_ON first — the whole raw-mode session lives on the alt screen.
   ttyWrite(this.fd, ALT_ON + HIDE_CUR + MOUSE_ON + PASTE_ON);
   try {
@@ -831,6 +838,7 @@ Pager.prototype.run = function () {
         //  BRO-045: a RESIZE repaints without a key — one ioctl per 100ms
         //  io.read timeout, never per inner pass.
         if (this._resized()) break;
+        cache.drain();                           // BEE-027: the fsw tick
       }
       //  Prepend any unfinished tail from the previous read, then feed; carry a
       //  still-unfinished escape forward (a click can straddle reads).
@@ -846,6 +854,7 @@ Pager.prototype.run = function () {
     ttyWrite(this.fd, MOUSE_OFF + PASTE_OFF + ESC + "[0m" + SHOW_CUR + ALT_OFF);
     tty.cook(this.tty, this._saved);
     this._saved = null;
+    if (watching) cache.stop();                  // BEE-027: no memo outlives it
   }
 };
 

@@ -226,6 +226,11 @@ The gaps, stated so a reader does not go looking for them.
  -  NO directory LISTING: a dir carries REV-CMMT rows saying WHEN it changed
     ([LITE-044]) and nothing else — no subtree sha, no entries, no name — so
     what is IN a directory still comes from the ODB or the fs, never the index.
+ -  NOT PERSISTED AT ALL: the worktree scan, the fsw rev tree and the per-wt
+    status memo ([BEE-027], `index/wts.js`, `index/cache.js`, `view/wtstat.js`)
+    write no row, no mtime mark and no file. They exist only in a process that
+    holds a live watcher -- the pager and `bee http` -- and a one-shot CLI run
+    computes once and remembers nothing: a missed event is never read as truth.
  -  NOT ASKED FOR: a bring-up walks from HEAD, or from a tip a verb NAMED
     ([BEE-005]) — never from every ref.  A commit no run has walked to has no
     CPAR rows, and `lite log` says so in plain words rather than answering
@@ -241,6 +246,7 @@ The gaps, stated so a reader does not go looking for them.
 [BEE-009]: /todo/BEE/BEE-009.mkd
 [BEE-022]: /todo/BEE/BEE-022.mkd
 [BEE-024]: /todo/BEE/BEE-024.mkd
+[BEE-027]: /todo/BEE/BEE-027.mkd
 [LITE-006]: /todo/LITE/LITE-006.mkd
 [TODO-003]: /todo/TODO/TODO-003.mkd
 [/meta/todo]: /meta/todo.mkd

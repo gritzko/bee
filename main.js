@@ -97,6 +97,16 @@ function runFork(args) {
   writeFd(1, utf8.Encode(require("fork.js").fork(args) + "\n"));
 }
 
+//  BEE-027: `bee wts` — the ticket worktrees under `$SRC_ROOT` (index/wts.js),
+//  one line each with the two board frames.  It is the pieces' own door until
+//  [BEE-025] lands the board that spends them; it takes no argument.
+function runWts() {
+  const ws = require("view/wtstat.js");
+  let out = "";
+  for (const w of require("index/wts.js").scan()) out += ws.line(w) + "\n";
+  writeFd(1, utf8.Encode(out));
+}
+
 //  LITE-026: `bee hook [<repo>]` — the PRE-COMMIT pass the planted
 //  `.git/hooks/pre-commit` runs: fresh `file:line(:col)` refs in the staged text
 //  become [LITE-025] permalinks, and the rewritten files are re-staged.  It
@@ -220,7 +230,7 @@ function pageHunks(hunks) {
 const SIDE = {
   index: runIndex, lindex: runLindex, merge: runMerge, install: runInstall,
   hook: runHook, chat: runChat, http: runHttp, now: runNow, mint: runMint,
-  mark: runMark, fork: runFork,
+  mark: runMark, fork: runFork, wts: runWts,
 };
 
 //  BEE-023:24 the CLI is TRIPARTITE — `bee [//context] verb args`.  The context

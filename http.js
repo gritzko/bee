@@ -625,6 +625,11 @@ function listen(args, door) {
       io.log(req.method + " " + req.uri + " " + code + "\n");
     });
   });
+  //  BEE-027: the server is process-resident, so the rev tree lives as long as
+  //  it does; the watcher fd rides the SAME `pol` loop the transport does.
+  const cache = require("index/cache.js");
+  if (cache.start(root)) cache.polWatch();
+
   srv.listen(port, HOST, function () {
     io.log("bee http: http://" + HOST + ":" + port + "/" + home.name +
            "/ browsing " + root + " and every registered repo\n");

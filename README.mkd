@@ -94,6 +94,11 @@ The standalone (bundled) `bee` binary call patterns:
      1. the split takes the LONGEST registry name followed by `-` (`//bee-journal-BEE-023` is the journal's); the tail is free text, usually a ticket code
      2. every submodule the HEAD records gets a worktree of its own repo at the same relative path, detached at the recorded commit, recursively
      3. an existing branch is checked out, not re-created; the tree is not registered, and `git worktree remove` is how it goes away
+ -  `bee wts` -- the ticket worktrees under `$SRC_ROOT`, one line each: `<name>-<tail>` then the two board frames
+     1. found by NAMING CONVENTION alone -- a dir `<registry name>-<tail>` holding a repo; `git worktree list` is never consulted and nothing is registered
+     2. the file frame `[v3 v1 v2 v5 !1]` is the BEE-022 quad's column counts -- upstream, head, stage, worktree, conflicted, position authoritative
+     3. the commit frame `[o2 o1 a1b2c]` is commits ahead, commits behind and the current tip
+     4. nothing is stored: the `bee todo` board (BEE-025) is what spends these rows
  -  `bee install [<repo>]` -- wire bee as the repo's git merge driver and pre-commit hook, list it in `~/.config/bee/repos`, index it
      1. a linked worktree is refused: a repo is known by its path (`bee index` redirects to the original instead)
      2. a submodule is an ordinary repo: each initialised one is registered, indexed and lindexed too
