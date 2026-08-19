@@ -1,25 +1,24 @@
-//  index/dag.js as per BEE-005: the INDEX read as two graphs — the COMMIT dag
-//  (CPAR rows) and, per path, the CONDENSED path-dag the REV rows already are
-//  (BEE-005:24:mJ), so be's `pathdag.of` is NOT ported (BEE-005:73:mJ): the floor is
-//  found INSIDE the index, in 20-bit rev space, and a commit that did not touch
-//  the path stands on its parents' revs (BEE-005:77:mJ).  Everything here is a KEYED
-//  read (BEE-005:43:mJ): no tree walked, no commit parsed; the one ODB read, blob
-//  bytes, lives in index/weave.js.  Walks are capped (BEE-005:45:mJ).
+//  index/dag.js — the index read as two graphs (BEE-005): the commit dag off
+//  the CPAR rows and, per path, the condensed rev dag the REV rows already
+//  form (BEE-005:24:mJ).  The merge floor is found inside the index in rev space
+//  (BEE-005:73:mJ), so nothing here walks a tree or parses a commit: every read
+//  is keyed (BEE-005:43:mJ) and every walk is capped (BEE-005:45:mJ).  The one
+//  ODB read a weave needs, the blob bytes, lives in index/weave.js.
 "use strict";
 
 const idx = require("./index.js");
 
-//  be/shared/dag.js WALK_CAP — a pathological history must not run unbounded.
+//  be/shared/dag.js WALK_CAP: a pathological history must not run unbounded.
 const WALK_CAP = 1 << 16;
 
 //  --- the commit dag (CPAR) -------------------------------------------------
-//  One commit's parents as hashlet60s, ord 0 first.  A ROOT commit's row
-//  carries the EMPTY parent slot, which says "indexed", not "has a parent".
+//  One commit's parents as hashlet60s, ord 0 first.  A root commit's row
+//  carries the empty parent slot, which says "indexed", not "has a parent".
 function parentsOf(ix, chl) {
   const key = idx.hlKey(chl, idx.K_CPAR);
   const rows = [];
-  //  index.js's KNOWN TRAP: `range`/`prefix` answer NOTHING when the upper
-  //  bound reaches 2^64, so every read here rides the seek cursor.
+  //  `range`/`prefix` answer nothing when the upper bound reaches 2^64
+  //  (index/index.js:416:hT), so every read here rides the seek cursor.
   const c = ix.seek(key);
   while (c.next()) {
     if (c.key !== key) break;
@@ -31,14 +30,14 @@ function parentsOf(ix, chl) {
   return out;
 }
 
-//  Is this commit in the index at all?  ANY CPAR row says yes.
+//  Is this commit in the index at all?  Any CPAR row says yes.
 function isIndexed(ix, chl) {
   const key = idx.hlKey(chl, idx.K_CPAR);
   const c = ix.seek(key);
   return c.next() && c.key === key;
 }
 
-//  The ancestor SET of `chl` (chl itself included), a bounded BFS over CPAR.
+//  The ancestor set of `chl` (itself included), a bounded BFS over CPAR.
 function ancestors(ix, chl, cap) {
   const lim = cap || WALK_CAP;
   const seen = new Set([chl]), queue = [chl];
@@ -48,10 +47,9 @@ function ancestors(ix, chl, cap) {
   return seen;
 }
 
-//  A MAXIMAL common ancestor of two commits (be dag.js `mergeBase`), or null.
-//  An ancestor of a common ancestor is common too, so the common set is closed
-//  under `parentsOf` — which makes "maximal" simply "no common commit names it
-//  as a parent", one CPAR seek per common commit instead of a topo sort.
+//  A maximal common ancestor of two commits (be dag.js `mergeBase`), or null.
+//  The common set is closed under `parentsOf`, so "maximal" is just "no common
+//  commit names it as a parent": one CPAR seek per common commit, no topo sort.
 function mergeBase(ix, a, b) {
   if (a === b) return a;
   const aa = ancestors(ix, a), ab = ancestors(ix, b);
@@ -66,10 +64,9 @@ function mergeBase(ix, a, b) {
 }
 
 //  --- the path index (REV-*) -------------------------------------------------
-//  ONE path's rev rows off the key span its `path_hl` owns (index.js loadPath's
-//  read, LITE-028:41:~1), filtered by KIND, never cut short by one.  Returns
-//  { phl, revs: Map(rev -> { rev, blob, commit, pars[] }), order: [rev asc],
-//    byCommit: Map(commit_hl -> rev) }.
+//  One path's rev rows off the key span its `path_hl` owns (LITE-028:41:~1),
+//  filtered by kind, never cut short by one.  Returns { phl, revs: Map(rev ->
+//  { rev, blob, commit, pars[] }), order: [rev asc], byCommit: Map(chl -> rev) }.
 function pathRevs(ix, path) {
   const phl = idx.pathHl(path);
   const revs = new Map(), byCommit = new Map();
@@ -86,7 +83,7 @@ function pathRevs(ix, path) {
     if (kind === idx.K_BLOB) at(rev).blob = idx.valHl60(v);
     else if (kind === idx.K_CMMT) at(rev).commit = idx.valHl60(v);
     else if (kind === idx.K_PARS) {
-      //  BEE-005: a val holds THREE parent revs; a 4th+ rides a second row.
+      //  A val holds three parent revs; a 4th+ rides a second row (BEE-005).
       const e = at(rev);
       for (const s of [(v >> 44n) & idx.REV_MAX, (v >> 24n) & idx.REV_MAX,
                        (v >> 4n) & idx.REV_MAX])
@@ -95,8 +92,8 @@ function pathRevs(ix, path) {
   }
   const order = [];
   for (const [rev, e] of revs) {
-    //  A DIR path carries REV-CMMT rows and no blob (LITE-044) — no content to
-    //  fold, so it is no rev of this index.
+    //  A dir path carries CMMT rows and no blob (LITE-044): nothing to fold,
+    //  so it is no rev of this index.
     if (e.blob === null || e.commit === null) { revs.delete(rev); continue; }
     byCommit.set(e.commit, rev);
     order.push(rev);
@@ -105,9 +102,9 @@ function pathRevs(ix, path) {
   return { phl: phl, revs: revs, order: order, byCommit: byCommit };
 }
 
-//  BEE-005:77:mJ: the revs a COMMIT's view of the path stands on — its own rev when
-//  it changed the path, else the nearest rev up EVERY parent, so a merge that
-//  took one side stands on that side's rev, a merge of two changed views on both.
+//  The revs a commit's view of the path stands on (BEE-005:77:mJ): its own rev
+//  when it changed the path, else the nearest rev up every parent, so a merge
+//  that took one side stands on that side's rev, one of two changed views on both.
 function repsOf(ix, index, chl, cap) {
   if (chl === null || chl === undefined) return [];   // no commit on that side
   const lim = cap || WALK_CAP;
@@ -132,10 +129,10 @@ function revAncestors(index, revs) {
   return seen;
 }
 
-//  BEE-005:73:mJ: the FLOOR, the LCA of the revs INSIDE the index.  Revs are minted
-//  oldest-first, so rev order IS topological and the HIGHEST common rev is
-//  maximal.  -> { floor, above } — `above` is every rev reachable from `reps`
-//  and NOT at or below the floor, rev-ordered: exactly what folds over the seed.
+//  The floor, the LCA of the revs inside the index (BEE-005:73:mJ).  Revs are
+//  minted oldest-first, so rev order is topological and the highest common rev
+//  is maximal.  Returns { floor, above }: `above` is every rev reachable from
+//  `reps` and not at or below the floor, rev-ordered, what folds over the seed.
 function floorRev(index, reps) {
   const need = Array.from(new Set(reps));
   for (let round = 0; round <= need.length + 1; round++) {
@@ -154,8 +151,8 @@ function floorRev(index, reps) {
     const below = floor === null ? new Set() : revAncestors(index, [floor]);
     const above = new Set();
     for (const rev of all) if (!below.has(rev)) above.add(rev);
-    //  A folded rev whose PARENT sits below the floor would fold against the seed
-    //  and spell a change nobody made: take that parent as a rep, descend, retry.
+    //  A folded rev whose parent sits below the floor would fold against the
+    //  seed and spell a change nobody made: take that parent as a rep and retry.
     const miss = [];
     for (const rev of above) {
       const e = index.revs.get(rev);

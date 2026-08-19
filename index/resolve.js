@@ -1,11 +1,10 @@
-//  index/resolve.js as per LITE-011: turn a PARTIAL path (`abc/TCP.c`, a bare
-//  `TCP.c`) into the full repo-relative path(s) it names IN A GIVEN COMMIT
-//  (LITE-011:51:a9).  The index is hash-only and hands back no text, so it only
-//  NARROWS and a real tree object answers: FSEG rows keyed by the filename hash
-//  carry the ancestor segment hashes that prune the descent (LITE-011:52:a9),
-//  iterative and batched, a LINE almost always (LITE-011:58:a9, LITE-011:59:a9).
-//  AMBIGUITY IS THE ANSWER, NOT AN ERROR (LITE-011:60:a9): a hash collision costs
-//  one tree read, never a wrong path, since the bottom verifies real names.
+//  index/resolve.js — a partial path (`abc/TCP.c`, a bare `TCP.c`) -> the
+//  full repo-relative paths it names in a given commit (LITE-011:51:a9).  The
+//  index is hash-only and hands back no text, so it only narrows and a real
+//  tree answers: FSEG rows keyed by the filename hash carry the ancestor
+//  segment hashes that prune the descent (LITE-011:52:a9, LITE-011:58:a9).
+//  Ambiguity is the answer, not an error (LITE-011:60:a9): a hash collision
+//  costs one tree read, never a wrong path, since the bottom verifies names.
 "use strict";
 
 const idx = require("./index.js");
@@ -22,8 +21,8 @@ function split(partial) {
            prnt: segs.length > 1 ? idx.segHl(segs[segs.length - 2], 20n) : null };
 }
 
-//  LITE-011:53:a9, the candidate rows.  The index is unkeyed and a crash can leave
-//  a byte-identical duplicate, so rows are deduped on (key, val).
+//  The candidate rows (LITE-011:53:a9).  The index is unkeyed and a crash can
+//  leave a byte-identical duplicate, so rows are deduped on (key, val).
 function candidates(ix, q) {
   const out = [], seen = new Set();
   const take = function (k, v) {
@@ -47,9 +46,8 @@ function candidates(ix, q) {
   return out;
 }
 
-//  LITE-011:56:a9, the text leg: the recovered path must END with the partial as
-//  typed, segment for segment — what makes a hash collision cost a tree read
-//  and never a wrong answer.
+//  The text leg (LITE-011:56:a9): the recovered path must end with the partial
+//  as typed, segment for segment, so a hash collision never yields a wrong path.
 function tailMatches(path, segs) {
   const p = path.split("/");
   if (p.length < segs.length) return false;
@@ -89,7 +87,7 @@ function resolve(ix, r, treeSha, partial) {
         if (deeper.length === 0) continue;
         const h10 = idx.segHl(name, 10n);
         //  Past the chain the row carries no expectation for this level, so
-        //  every subtree stays live — the depth said the tail is missing.
+        //  every subtree stays live: the depth said the tail is missing.
         const keep = [];
         for (const row of deeper)
           if (level >= idx.SEG_SLOTS || row.segs[level] === h10) keep.push(row);
@@ -106,9 +104,8 @@ function resolve(ix, r, treeSha, partial) {
   return uniq;
 }
 
-//  resolveAt(ctx, ix, commitName, partial) — the same, naming the commit by any
-//  6..40 hexlet (a hashlet60 included).  Resolution is ALWAYS per-commit: a row
-//  that does not descend in THAT commit is simply not a hit.
+//  The same, naming the commit by any 6..40 hexlet (a hashlet60 included).
+//  Resolution is per-commit: a row that does not descend in that commit is no hit.
 function resolveAt(ctx, ix, commitName, partial) {
   const m = idx.readCommit(ctx.r, commitName);
   if (m === null) return [];
@@ -116,7 +113,7 @@ function resolveAt(ctx, ix, commitName, partial) {
 }
 
 //  The verb wiring: one path, or null when the partial names nothing in that
-//  commit (the caller's own "no such path" answer stands).  Several paths ARE
+//  commit (the caller's own "no such path" answer stands).  Several paths are
 //  the answer, so they are listed back in plain words.
 function pick(verb, ix, ctx, arg, commitName) {
   const at = commitName || ctx.head.sha;

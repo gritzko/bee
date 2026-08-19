@@ -1,10 +1,9 @@
-//  index/read.js as per LITE-017: what the four READ views (cat / blob / tree /
-//  list) share, so no two own a copy (LITE-017:44:Cv) — the repo-relative path
-//  gate, the `?<rev>` resolution, the tree descent and the bytes->hunk builder.
-//  The arg is a URI slot split through `uri._parse`, never a hand-rolled scan
-//  (LITE-017:45:Cv); the path is CONFINED to the repository, a climb above the root
-//  refused in plain words (LITE-017:46:Cv, LITE-017:59:Cv) — the bare `bee <path>`
-//  pager is a filesystem view and confines nothing.
+//  index/read.js — what the four read views (cat, blob, tree, list) share, so
+//  no two own a copy (LITE-017:44:Cv): the repo-relative path gate, the `?<rev>`
+//  resolution, the tree descent and the bytes-to-hunk builder.  The arg is a
+//  URI slot split through `uri._parse` (LITE-017:45:Cv) and the path is confined
+//  to the repository (LITE-017:46:Cv, LITE-017:59:Cv); the bare `bee <path>` pager
+//  is a filesystem view and confines nothing.
 "use strict";
 
 const idx = require("./index.js");
@@ -20,10 +19,9 @@ function argSplit(arg) {
 }
 
 //  --- the path gate ---------------------------------------------------------
-//  A repo path arg -> its root-relative spelling ("" = the root itself).  The
-//  arg resolves against `from` — the dir the verb was invoked in, the cwd by
-//  default (log/diff's own convention); anything landing outside the worktree
-//  is refused by `verb`, in plain words.
+//  A repo path arg -> its root-relative spelling ("" is the root).  The arg
+//  resolves against `from`, the dir the verb was invoked in (the cwd by
+//  default); anything landing outside the worktree is refused by `verb`.
 function repoRel(verb, ctx, path, from) {
   const p = String(path === undefined || path === null ? "" : path);
   if (p === "" || p === ".") return "";
@@ -35,14 +33,13 @@ function repoRel(verb, ctx, path, from) {
   throw verb + ": " + p + " is outside " + ctx.root;
 }
 
-//  A repo-relative path -> the target a pager click carries.  ABSOLUTE, so a
-//  session started in a subdirectory navigates as correctly as one at the root
-//  (repoRel takes an absolute arg unchanged).
+//  A repo-relative path -> the target a pager click carries, absolute so that
+//  a session started in a subdirectory navigates like one at the root.
 function navPath(ctx, rel) { return rel === "" ? ctx.root + "/" : ctx.root + "/" + rel; }
 
 //  --- the rev ---------------------------------------------------------------
-//  `?<rev>` -> { sha, m }: a REFNAME first (a branch beats a hashlet, be's own
-//  order), then any 6..40 hexlet through the ODB.  Empty = the checked-out tip.
+//  `?<rev>` -> { sha, m }: a refname first (a branch beats a hashlet, be's own
+//  order), then any 6..40 hexlet through the ODB.  Empty is the checked-out tip.
 function revCommit(verb, ctx, rev) {
   if (!rev) {
     const m = idx.readCommit(ctx.r, ctx.head.sha);
@@ -69,7 +66,7 @@ function revCommit(verb, ctx, rev) {
 
 //  --- the tree descent ------------------------------------------------------
 //  A root tree + a root-relative path -> that entry { sha, mode, dir }, or null
-//  when the path is not there AT THAT REV.  "" is the root tree itself.
+//  when the path is not there at that rev.  "" is the root tree itself.
 function entryAt(r, tree, rel) {
   if (!tree) return null;
   if (rel === "") return { sha: tree, mode: 0o40000, dir: true };
@@ -88,22 +85,21 @@ function entryAt(r, tree, rel) {
 }
 
 //  --- the hunk --------------------------------------------------------------
-//  Bytes -> the lite hunk record the pager takes: the bytes verbatim, tokenized
-//  by `ext` (an unknown ext yields no toks — view/fs.js buildFileHunk's own gate).
+//  Bytes -> the hunk record the pager takes: the bytes verbatim, tokenized by
+//  `ext` (an unknown ext yields no toks, view/fs.js buildFileHunk's own gate).
 function textHunk(uriStr, bytes, ext, kind) {
   let toks;
   try { toks = ext ? tok.parse(bytes, ext) : new Uint32Array(0); }
   catch (e) { toks = new Uint32Array(0); }
-  //  LITE-045:28:t2: a `cat`/`blob` hunk IS the file — on a pipe it writes those
-  //  bytes and nothing else, so `bee cat x | diff -` sees the source; no `plain` twin.
+  //  A `cat`/`blob` hunk is the file: on a pipe it writes those bytes and
+  //  nothing else, so `bee cat x | diff -` sees the source (LITE-045:28:t2).
   return { uri: uriStr, verb: "hunk", text: bytes, toks: toks, kind: kind,
            bare: true };
 }
 
-//  --- the age column (be view/render.js relAge, over epoch SECONDS) ---------
-//  lite reads a commit's time as epoch seconds off the ident header, so the
-//  ron60 decode be needs is not in the way: the thresholds and the spelling are
-//  be's, byte for byte.
+//  --- the age column (be view/render.js relAge, over epoch seconds) ---------
+//  bee reads a commit's time as epoch seconds off the ident header, so no
+//  ron60 decode is needed; the thresholds and the spelling are be's, byte for byte.
 function relAge(secs, now) {
   if (!secs) return "";
   let d = now - secs;

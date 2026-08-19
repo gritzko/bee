@@ -1,11 +1,10 @@
-//  index/lindex.js as per LITE-033 + BEE-002: the BACKLINK round of the one index
-//  — "who links to this page", answered as SUSPECTS, NOT PROOF (LITE-033:18:PS), so
-//  rows are never deleted and re-puts write nothing.  RECORD LINK, kind 7:
-//  BEE-002:46:qe — every slot a TEXT hashlet of the target's own segments, minted
-//  from the ref text alone (BEE-002:50:qe) with no dst repo id (BEE-002:55:qe), so
-//  indexing order cannot change a key.  Lazy, tip-only, new blobs, mark row LAST
-//  (LITE-033:20:PS, LITE-033:32:PS); the query fans out READ-ONLY over the registry
-//  (BEE-002:60:qe, BEE-002:65:qe).  `bee index` runs the scan too (BEE-007:42:BN).
+//  index/lindex.js — the backlink round of the one index: "who links to this
+//  page", answered as suspects, not proof (LITE-033:18:PS), so rows are never
+//  deleted and re-puts write nothing.  A LINK row (kind 7, BEE-002:46:qe) keys on
+//  text hashlets of the target's own segments, minted from the ref text alone
+//  (BEE-002:50:qe) with no repo id (BEE-002:55:qe), so indexing order cannot change
+//  a key.  The scan is lazy and tip-only (LITE-033:20:PS, LITE-033:32:PS); the
+//  query fans out read-only over the registry (BEE-002:60:qe, BEE-002:65:qe).
 "use strict";
 
 const idx = require("./index.js");
@@ -15,24 +14,24 @@ const wv = require("./weave.js");
 
 //  Nibble 7: LITE-006:17:Rc spends 1..5 and F, LITE-011:26:a9 took 6.
 const K_LINK = 0x7n;
-//  The RESERVED ref name the incremental mark hangs on (LITE-033:32:PS) — not a
-//  ref, so it can never collide with a real one's LITE-006 watermark.
+//  The reserved ref name the incremental mark hangs on (LITE-033:32:PS); not a
+//  real ref, so it can never collide with one's LITE-006 watermark.
 const LINDEX_REF = "lindex";
 
 const GPAR_MASK = (1n << 20n) - 1n;
 
-//  key = fn_hl:40 | par:20 | 7 — a rev key whose rev slot holds the parent dir.
+//  key = fn_hl:40 | par:20 | 7, a rev key whose rev slot holds the parent dir.
 function linkKey(fn, par) { return idx.revKey(fn, par, K_LINK); }
-//  val = src path_hl:40 | gpar:20 | vnib:4 — the B2P value shape, the rev slot
-//  holding the target's GRANDPARENT dir.
+//  val = src path_hl:40 | gpar:20 | vnib:4, the B2P value shape with the rev
+//  slot holding the target's grandparent dir.
 function linkVal(srcPhl, gpar) { return idx.pathRevVal(srcPhl, gpar); }
 function linkSrc(v) { return v >> 24n; }
 function linkGpar(v) { return (v >> 4n) & GPAR_MASK; }
 
 //  --- the target's own segments ---------------------------------------------
-//  BEE-002:50:qe: ONE text -> the three ruled slots, hashed by index.js's LITE-011
-//  helpers.  Nothing is resolved: a path, a partial one and a ticket code all go
-//  down the same three lines, which is what makes the mint order-free.
+//  One text -> the three ruled slots (BEE-002:50:qe), hashed by the LITE-011
+//  helpers.  Nothing is resolved: a path, a partial one and a ticket code all
+//  go down the same three lines, which is what makes the mint order-free.
 function slots(text) {
   const segs = [];
   for (const s of String(text === undefined ? "" : text).split("/"))
@@ -44,11 +43,10 @@ function slots(text) {
            gpar: n > 2 ? idx.segHl(segs[n - 3], 20n) : 0n };
 }
 
-//  --- the way back to TEXT ---------------------------------------------------
-//  LITE-033:78:PS: `path_hl` is one-way and the index hands back no name, so the
-//  suspects are named the LITE-011 way — the index narrows, a REAL TREE answers:
-//  one descent of the TIP tree keeps the paths the rows asked for.  No sidecar;
-//  a suspect gone from the tip simply does not print (it carries no link now).
+//  --- the way back to text ---------------------------------------------------
+//  `path_hl` is one-way and the index hands back no name (LITE-033:78:PS), so
+//  suspects are named the LITE-011 way: one descent of the tip tree keeps the
+//  paths the rows asked for.  A suspect gone from the tip simply does not print.
 function namePaths(r, treeSha, prefix, want, out) {
   const ents = idx.readTree(r, treeSha);
   if (ents === null) return;
@@ -60,9 +58,9 @@ function namePaths(r, treeSha, prefix, want, out) {
 }
 
 //  --- the index ---------------------------------------------------------------
-//  Every val already sitting on one key.  A wh128 index is UNKEYED, so a re-put
-//  is a duplicate ROW rather than an overwrite — this is what makes a re-scan
-//  of the same blob write nothing at all.
+//  Every val already sitting on one key.  A wh128 index is unkeyed, so a re-put
+//  is a duplicate row rather than an overwrite; checking here is what makes a
+//  re-scan of the same blob write nothing at all.
 function valsOn(ix, key, cache) {
   let s = cache.get(key);
   if (s !== undefined) return s;
@@ -78,10 +76,10 @@ function valsOn(ix, key, cache) {
 
 function markKey() { return idx.hlKey(idx.hlOfText(LINDEX_REF), idx.K_MARK); }
 
-//  Every commit the lindex mark names.  Bumping a mark writes a SECOND row on
-//  the same key and nothing in a row says which is newer — which is fine: they
-//  are all commits whose tip blobs were scanned, so every one of them is a legal
-//  base for the diff, and `descend` prunes a path unchanged since ANY of them.
+//  Every commit the lindex mark names.  Bumping a mark writes a second row on
+//  the same key and nothing says which is newer, which is fine: all of them
+//  had their tip blobs scanned, so each is a legal base for the diff, and
+//  `descend` prunes a path unchanged since any of them.
 function markCommits(ix) {
   const key = markKey();
   const out = [];
@@ -100,12 +98,12 @@ function blobBytes(ctx, sha) {
 
 //  --- the scan ---------------------------------------------------------------
 //  scan(ctx, ix) -> the summary record.  Brings the LINK rows up to the tip and
-//  writes the mark LAST.
+//  writes the mark last.
 function scan(ctx, ix) {
   const r = ctx.r, tip = ctx.head.sha, tipHl = idx.hlOfSha(tip);
   const rec = { ref: ctx.head.ref, tip: tip, gitdir: ctx.gitdir,
                 upToDate: false, files: 0, links: 0, rows: 0 };
-  //  1. the O(1) no-op: the tip is already scanned, so nothing is even read.
+  //  1. The O(1) no-op: the tip is already scanned, so nothing is even read.
   const marks = markCommits(ix);
   for (const m of marks) if (m === tipHl) { rec.upToDate = true; return rec; }
 
@@ -113,7 +111,7 @@ function scan(ctx, ix) {
   if (tipC === null || !tipC.tree)
     throw "lindex: cannot read the commit " + tip.slice(0, 8) + " at " + ctx.head.ref;
 
-  //  2. the changed paths of mark..tip, each with its NEW tip blob; an unreadable
+  //  2. The changed paths of mark..tip, each with its new tip blob; an unreadable
   //  mark (a rewritten history) drops out and the run walks the whole tip tree.
   const pTrees = [];
   for (const m of marks) {
@@ -123,27 +121,27 @@ function scan(ctx, ix) {
   const changed = [];
   idx.descend(r, tipC.tree, pTrees, "", changed);
 
-  //  3. one tokenised pass per new blob.
+  //  3. One tokenised pass per new blob.
   const wr = idx.idxWriter(ix);
   const cache = new Map();
-  const splitRef = require("door.js").splitRef;   // the ONE ref split point
+  const splitRef = require("door.js").splitRef;   // the one ref split point
   for (const c of changed) {
-    //  LITE-044: `descend` now yields changed DIRS as well; a subtree carries
-    //  no prose, so it is skipped here rather than read back off the ODB.
+    //  `descend` yields changed dirs as well (LITE-044); a subtree carries no
+    //  prose, so it is skipped here rather than read back off the ODB.
     if (c.dir) continue;
     const bytes = blobBytes(ctx, c.blob);
     if (bytes === null) continue;
-    //  Only PROSE-bearing blobs are scanned: a binary blob and one over the
-    //  shared source cap are not tokenised at all ([LITE-014]'s one gate).
+    //  Only prose-bearing blobs are scanned: a binary blob and one over the
+    //  shared source cap are not tokenised at all (LITE-014's one gate).
     if (bytes.length > wv.MAX_SOURCE_SIZE || wv.isBinary(bytes)) continue;
     rec.files++;
     for (const t of hk.fTokens(bytes, wv.extOf(c.path))) {
-      //  The anchor is shed through main.js's ONE `splitRef` — the row names a
-      //  FILE, not a place, so `:12:24` and `:58:mJ` alike drop here.
+      //  The anchor is shed through the one `splitRef`: the row names a file,
+      //  not a place, so `:12:24` and `:58:mJ` alike drop here.
       const sp = splitRef(t.text);
       if (sp.path === "") continue;
       if (sp.path === c.path) continue;           // a self-link mints no row
-      //  BEE-002: the ref's OWN segments, resolved through nothing at all.
+      //  The ref's own segments, resolved through nothing at all (BEE-002).
       const q = slots(sp.path);
       if (q === null) continue;
       rec.links++;
@@ -157,7 +155,7 @@ function scan(ctx, ix) {
   }
   wr.seal();
 
-  //  4. the MARK is the run's LAST write (DOG-027), so a scan killed half way
+  //  4. The mark is the run's last write (DOG-027), so a scan killed half way
   //  leaves rows that are all true and a mark that simply lags.
   ix.put(markKey(), idx.hlVal(tipHl, 0n));
   ix.commit(true);
@@ -166,10 +164,9 @@ function scan(ctx, ix) {
 }
 
 //  --- the query --------------------------------------------------------------
-//  BEE-002:60:qe: ONE index's carriers of `q`.  Two EXACT-key seeks — `fn|0` for a
-//  bare-filename ref, `fn|par` for one naming the parent — and a `gpar` row is
-//  kept only when it is the target's.  Deeper spellings key like a 3-segment
-//  ref, so depth costs false suspects, never a wider probe.
+//  One index's carriers of `q` (BEE-002:60:qe): two exact-key seeks, `fn|0` for
+//  a bare-filename ref and `fn|par` for one naming the parent, keeping a `gpar`
+//  row only when it is the target's.  Depth costs false suspects, never a probe.
 function carriers(ix, q, want) {
   const keys = q.par === 0n ? [linkKey(q.fn, 0n)]
                             : [linkKey(q.fn, 0n), linkKey(q.fn, q.par)];
@@ -184,8 +181,8 @@ function carriers(ix, q, want) {
   }
 }
 
-//  The `path_hl` set named back to TEXT by one descent of a tip tree, sorted
-//  and deduped — the [LITE-033] naming pass, now run once PER REPO.
+//  The `path_hl` set named back to text by one descent of a tip tree, sorted
+//  and deduped: the LITE-033 naming pass, run once per repo.
 function nameIn(r, treeSha, want) {
   const out = [];
   namePaths(r, treeSha, "", want, out);
@@ -195,9 +192,9 @@ function nameIn(r, treeSha, want) {
   return uniq;
 }
 
-//  BEE-002:65:qe: ONE registered repo's answer, repo-qualified.  Its index is opened
-//  READ-ONLY and never brought up — a stale foreign index answers with fewer
-//  suspects, never a wrong one — and anything unopenable is skipped in silence.
+//  One registered repo's answer, repo-qualified (BEE-002:65:qe).  Its index is
+//  opened read-only and never brought up, since a stale foreign index answers
+//  with fewer suspects, never a wrong one; anything unopenable is skipped.
 function foreign(path, q) {
   let ctx = null, ix = null;
   try {
@@ -219,9 +216,9 @@ function foreign(path, q) {
   }
 }
 
-//  suspects(ctx, ix, target, opts) -> the paths that MAY link to `target`,
-//  repo-qualified, the LOCAL repo first, registered ones after (BEE-002:68:qe).
-//  The target's full path is resolved LOCALLY (the one descent a query keeps);
+//  suspects(ctx, ix, target, opts) -> the paths that may link to `target`,
+//  repo-qualified, the local repo first, registered ones after (BEE-002:68:qe).
+//  The target's full path is resolved locally (the one descent a query keeps);
 //  several files answering is an ambiguity the caller settles, in plain words.
 function suspects(ctx, ix, target, opts) {
   const tipC = idx.readCommit(ctx.r, ctx.head.sha);
@@ -231,7 +228,7 @@ function suspects(ctx, ix, target, opts) {
   if (paths.length > 1)
     throw "lindex: " + target + " names " + paths.length + " files at " +
           ctx.head.sha.slice(0, 8) + " — say which:\n  " + paths.join("\n  ") + "\n";
-  //  The slots come from TEXT exactly as the scan minted them: the resolved
+  //  The slots come from text exactly as the scan minted them: the resolved
   //  path when one file answers, the target verbatim (a ticket code) otherwise.
   const q = slots(paths.length === 1 ? paths[0] : target);
   if (q === null) return [];
@@ -254,10 +251,9 @@ function suspects(ctx, ix, target, opts) {
 }
 
 //  --- the run ----------------------------------------------------------------
-//  lindex(target) -> { rec, paths }.  `paths` is null for the bare form (bring
-//  the rows up to date and report), the suspect list otherwise.  Either way the
-//  LITE-006 index is brought up first: the FSEG rows the resolver descends are
-//  its, so a stale base index would answer with fewer files than exist.
+//  lindex(target) -> { rec, paths }, `paths` being null for the bare form and
+//  the suspect list otherwise.  Either way the LITE-006 index is brought up
+//  first: the resolver descends its FSEG rows, and stale ones would miss files.
 function lindex(target, opts) {
   opts = opts || {};
   const ctx = idx.openRepo(opts.repo === undefined ? io.cwd() : opts.repo, true);

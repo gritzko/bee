@@ -1,35 +1,33 @@
-//  index/mount.js as per BEE-003: the REPO is an axis of the TARGET, never
-//  process state (BEE-003:45:xS).  THE MOUNT TABLE is the BEE-001:25:Po registry read
-//  as `<name> -> <worktree root>`, the basename being the URL prefix (BEE-003:50:xS);
-//  a SUBMODULE is addressed THROUGH its parent (BEE-003:64:xS), its own line only
-//  redirects; a `git worktree` family folds to ONE mount (BEE-009:50:28O).  THE
-//  AMBIENT `{repo, path, anchor}` is where a run/request/view stands, the cwd
-//  only the CLI's default.  Lines are re-read per call; the tip-tree submodule
-//  walk is memoized per process, since only the FSEG fan-out pays for it.
+//  index/mount.js — the repo is an axis of the target, never process state
+//  (BEE-003:45:xS).  The mount table is the BEE-001:25:Po registry read as `<name>
+//  -> <worktree root>`, the basename being the URL prefix (BEE-003:50:xS); a
+//  submodule is addressed through its parent (BEE-003:64:xS) and a `git worktree`
+//  family folds to one mount (BEE-009:50:28O).  The ambient `{repo, path, anchor}`
+//  is where a run, request or view stands, the cwd being only the CLI default.
 "use strict";
 
 const idx = require("./index.js");
 
-//  The last segment of a path: a mount's NAME.  Trailing slashes are the
-//  registry's business, not ours — a line is one absolute worktree path.
+//  The last segment of a path, a mount's name.  A registry line is one
+//  absolute worktree path, so no trailing slash is expected here.
 function basename(p) {
   const s = String(p);
   const i = s.lastIndexOf("/");
   return i < 0 ? s : s.slice(i + 1);
 }
 
-//  Is `inner` a path INSIDE `outer` (never equal)?  Segment-wise, so
+//  Is `inner` a path inside `outer` (never equal)?  Segment-wise, so
 //  `/src/bee2` is not inside `/src/bee`.
 function under(outer, inner) {
   return inner.length > outer.length + 1 &&
          inner.slice(0, outer.length + 1) === outer + "/";
 }
 
-//  Does `root` HOLD the path `p` (itself included)?
+//  Does `root` hold the path `p` (itself included)?
 function holds(root, p) { return p === root || under(root, p); }
 
-//  BEE-009:50:28O: a legacy line naming a LINKED WORKTREE must stop competing in the
-//  fan-out — a family folds to ONE, and the user's file is never rewritten.
+//  A legacy line naming a linked worktree must stop competing in the fan-out:
+//  a family folds to one mount and the user's file is never rewritten (BEE-009:50:28O).
 function fold(lines) {
   const here = at();
   const fam = new Map(), out = [];
@@ -37,7 +35,7 @@ function fold(lines) {
     const key = idx.mainOf(root);
     const e = fam.get(key);
     //  The ambient checkout when the reader stands in one, else the first line;
-    //  the NAME stays that line's, so `///bee` names the repo from `bee2` too.
+    //  the name stays that line's, so `///bee` names the repo from `bee2` too.
     if (e === undefined) {
       const n = { name: basename(root), root: root };
       fam.set(key, n); out.push(n);
@@ -46,10 +44,10 @@ function fold(lines) {
   return out;
 }
 
-//  BEE-003:50:xS: the registry as a mount table.  Lines are realpath'd (a symlinked
-//  line and its target are ONE repo, BEE-003:106:xS) and deduped; a line inside
-//  another becomes that one's SUB mount, addressed through it (BEE-003:64:xS).
-//  -> [{ name, root, prefix, own, top, dup }], registry order.
+//  The registry as a mount table (BEE-003:50:xS).  Lines are realpath'd (a
+//  symlinked line and its target are one repo, BEE-003:106:xS) and deduped; a line
+//  inside another becomes that one's sub mount, addressed through it (BEE-003:64:xS).
+//  Returns [{ name, root, prefix, own, top, dup }] in registry order.
 function list(home) {
   const lines = [], seen = new Set();
   for (const line of idx.repos(home)) {
@@ -63,7 +61,7 @@ function list(home) {
   const out = [], named = new Set();
   for (let i = 0; i < fam.length; i++) {
     const root = fam[i].root;
-    let top = null, topName = null;                // the OUTERMOST line above it
+    let top = null, topName = null;                // the outermost line above it
     for (let j = 0; j < roots.length; j++)
       if (under(roots[j], root) && (top === null || roots[j].length < top.length))
         { top = roots[j]; topName = fam[j].name; }
@@ -72,8 +70,8 @@ function list(home) {
       ? { name: fam[i].name, root: root, prefix: "", own: own, top: root, dup: false }
       : { name: topName, root: root, prefix: root.slice(top.length + 1),
           own: own, top: top, dup: false };
-    //  BEE-003:69:xS, open: the basename IS the name.  A second line claiming
-    //  a taken name is not reachable by it — no disambiguator is invented here.
+    //  The basename is the name (BEE-003:69:xS, open): a second line claiming a
+    //  taken name is not reachable by it, and no disambiguator is invented here.
     if (m.prefix === "") {
       if (named.has(m.name)) m.dup = true; else named.add(m.name);
     }
@@ -82,16 +80,16 @@ function list(home) {
   return out;
 }
 
-//  The mount a NAME answers to — a top-level line only, first line wins.
+//  The mount a name answers to: a top-level line only, first line wins.
 function named(name, home) {
   for (const m of list(home))
     if (m.prefix === "" && !m.dup && m.name === name) return m;
   return null;
 }
 
-//  BEE-003: an absolute path -> its CANONICAL address `{ mount, rel }` — the
-//  OUTERMOST registered root holding it, so a submodule file is addressed
-//  through its parent (BEE-003:64:xS).  null = no registered repo holds it.
+//  An absolute path -> its canonical address `{ mount, rel }`, the outermost
+//  registered root holding it, so a submodule file is addressed through its
+//  parent (BEE-003:64:xS).  null when no registered repo holds it.
 function canon(abs, home) {
   let best = null;
   for (const m of list(home)) {
@@ -103,14 +101,14 @@ function canon(abs, home) {
   return { mount: best, rel: abs === best.root ? "" : abs.slice(best.root.length + 1) };
 }
 
-//  The repo a path is SERVED from: the deepest worktree holding it, submodule
-//  or not — `discover`'s own climb, a plain fs probe and no registry at all.
+//  The repo a path is served from: the deepest worktree holding it, submodule
+//  or not, by `discover`'s own climb, a plain fs probe and no registry at all.
 function deepest(abs) { return idx.discover(abs); }
 
-//  BEE-020:55: the worktree that SERVES `rel` under `root`.  `deepest` realpaths
-//  and so answers null for a path that does not exist — a hexlet, a file gone at
-//  that rev — while the SUB it belongs to is still perfectly nameable, so the
-//  probe climbs to the nearest live ancestor.  null = no repo above it at all.
+//  The worktree that serves `rel` under `root` (BEE-020:55:Lc).  `deepest` answers
+//  null for a path that does not exist (a hexlet, a file gone at that rev)
+//  while the sub it belongs to is still nameable, so the probe climbs to the
+//  nearest live ancestor.  null when no repo is above it at all.
 function serves(root, rel) {
   let abs = rel === "" ? root : root + "/" + rel;
   while (abs.length >= root.length) {
@@ -124,12 +122,12 @@ function serves(root, rel) {
 }
 
 //  --- the fan-out's mounts ---------------------------------------------------
-//  BEE-003: every worktree a partial may resolve in — the registry's own lines
-//  plus the submodules a registered parent carries WITHOUT a line of their own
-//  (BEE-006:49:3B installs them, an older registry has none).  The tip-tree walk is
-//  the one costly step here, so it is memoized per root for the process.
+//  Every worktree a partial may resolve in (BEE-003): the registry's own lines
+//  plus the submodules a registered parent carries without a line of their own
+//  (BEE-006:49:3B installs them, an older registry has none).
 const SUBS = new Map();
 
+//  The tip-tree walk is the one costly step here, so it is memoized per root.
 function subsOf(root) {
   const hit = SUBS.get(root);
   if (hit !== undefined) return hit;
@@ -145,8 +143,8 @@ function subsOf(root) {
   return out;
 }
 
-//  Every mount a lookup fans over, deduped by root, each carrying the PREFIX it
-//  sits at under its top mount — which is what lets a partial spanning the
+//  Every mount a lookup fans over, deduped by root, each carrying the prefix
+//  it sits at under its top mount, which is what lets a partial spanning the
 //  boundary (`abc/TCP.c` -> `dog/abc/TCP.c`) resolve at all.
 function mounts(home) {
   const out = [], seen = new Set();
@@ -169,9 +167,9 @@ function mounts(home) {
 }
 
 //  --- the ambient ------------------------------------------------------------
-//  BEE-003: `{ repo, path, anchor }` — the position a run / a request / a view
-//  reads from.  `within` is the ONLY way to set it, so it is always a scope and
-//  never a leak; nothing set = the CLI's cwd, exactly as before.
+//  `{ repo, path, anchor }`, the position a run, a request or a view reads from
+//  (BEE-003).  `within` is the only way to set it, so it is always a scope and
+//  never a leak; nothing set means the CLI's cwd, exactly as before.
 let POS = null;
 
 function within(pos, fn) {
@@ -182,11 +180,11 @@ function within(pos, fn) {
 
 function pos() { return POS; }
 
-//  The repo the ambient sits in — the cwd when nothing set a position.
+//  The repo the ambient sits in, the cwd when nothing set a position.
 function at() { return POS !== null && POS.repo ? POS.repo : io.cwd(); }
 
-//  The DIR OF THE FILE BEING READ (BEE-003:55:xS, the first leg), or the repo root
-//  when the position names no path.  null = no ambient at all.
+//  The dir of the file being read (BEE-003:55:xS, the first leg), or the repo
+//  root when the position names no path.  null when there is no ambient at all.
 function dir() {
   if (POS === null || !POS.repo) return null;
   const p = String(POS.path || "");

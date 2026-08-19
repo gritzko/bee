@@ -1,30 +1,11 @@
-//  index/mint.js — BEE-016: `bee mint <file>...`, the VERB half of the minter.
-//  A `pre-commit` hook only ever sees a commit IN FLIGHT, so a ref that landed
-//  transient — committed before [BEE-014], with `--no-verify`, or on a commit
-//  the hook could not resolve — is reachable by no hook whatever, and [BEE-015]
-//  proved `--amend` cannot rescue it.  This verb can: it is index/hook.js's own
-//  pass with two ends changed, and NOTHING of the minter copied.
-//
-//  WHAT CHANGES, and only this
-//   1. THE SCAN drops the freshness gate.  The hook folds HEAD against the
-//      staged blob and keeps the ADDED tokens; nothing here is fresh, so every
-//      `F` token of the WORKING bytes with a `line >= 1` and no hashlet is a
-//      candidate — the refs that landed transient commits ago;
-//   2. THE RESOLUTION hands `targetOf` an EMPTY staged map: there is no commit
-//      in flight, and a file no commit carries has no blob for a hashlet to
-//      name, so it correctly answers nothing;
-//   3. THE WRITE-BACK is the working file ALONE — no `hash-object -w`, no
-//      `update-index`, so nothing joins a commit behind the author's back.  The
-//      author commits the result, and the hook then finds nothing fresh to do.
-//
-//  THE FILE LIST NAMES THE CARRIERS, never the targets: `bee mint doc/page.mkd`
-//  mints the refs WRITTEN IN that file, pointing anywhere the door reaches.
-//  Naming a file is the statement that it is going into the commit, which is
-//  what lets listed files anchor into each other; a target that is NOT listed
-//  and is DIRTY is refused outright — the author's `line:col` counts working
-//  lines while the only hashable bytes are HEAD's, so minting it would anchor
-//  to bytes the reader never sees.  Everything left alone is SAID, one line per
-//  ref: a verb can afford the conversation a hook cannot.
+//  index/mint.js — `bee mint <file>...`, the verb half of the minter (BEE-016).
+//  A pre-commit hook only sees a commit in flight, so a ref that landed
+//  transient (BEE-016:9:KH) is reachable by no hook; this verb is index/hook.js's
+//  own pass with two ends changed (BEE-016:42:KH): the scan drops the freshness
+//  gate (BEE-016:44:KH), the resolution sees no staged map (BEE-016:45:KH) and only
+//  the working file is written (BEE-016:46:KH).  The file list names the carriers
+//  (BEE-016:25:KH); a dirty unlisted target is refused (BEE-016:47:KH); everything
+//  left alone is said, one line per ref (BEE-016:28:KH).
 "use strict";
 
 const idx = require("./index.js");
@@ -36,16 +17,15 @@ const wv = require("./weave.js");
 const FLAG_DRY = "--dry-run";
 
 //  --- the scan ---------------------------------------------------------------
-//  Every TRANSIENT ref a file's working bytes carry: the hook's `freshRefs`
-//  without its HEAD->staged fold, because none of these is fresh.  The DOG-034
-//  lexer's `F` tokens through the ONE scanner ([LITE-033]) — no second
-//  recognizer here either.
+//  Every transient ref a file's working bytes carry: the hook's `freshRefs`
+//  without its HEAD-to-staged fold, because none of these is fresh.  The `F`
+//  tokens come through the one scanner (LITE-033), no second recognizer here.
 function transientRefs(rel, bytes) {
-  const split = require("door.js").splitRef;       // the ONE ref split point
+  const split = require("door.js").splitRef;       // the one ref split point
   const out = [];
   for (const t of hk.fTokens(bytes, wv.extOf(rel))) {
     const sp = split(t.text);
-    //  already a permalink, or no all-digit anchor at all: nothing to mint.
+    //  Already a permalink, or no all-digit anchor at all: nothing to mint.
     if (sp.hash || !(sp.line >= 1) || sp.path === "") continue;
     out.push({ lo: t.lo, hi: t.hi, path: sp.path, line: sp.line, col: sp.col });
   }
@@ -53,10 +33,9 @@ function transientRefs(rel, bytes) {
 }
 
 //  --- the arguments ----------------------------------------------------------
-//  One argument -> the repo-relative path of a REGULAR FILE inside this repo,
+//  One argument -> the repo-relative path of a regular file inside this repo,
 //  or null with the reason said out loud.  A glob hands over whatever the shell
-//  matched, so a dir or a stray path is ordinary input and never an error: the
-//  batch reports it and mints the rest, exactly as main.js's fs leg does.
+//  matched, so a dir or a stray path is reported and the rest is minted.
 function relOf(ctx, arg, errs) {
   let real;
   try { real = io.realpath(arg); } catch (e) { errs.push(arg + ": no such file"); return null; }
@@ -74,9 +53,8 @@ function relOf(ctx, arg, errs) {
 
 //  --- the dirt gate ----------------------------------------------------------
 //  Does this path's working copy differ from the one HEAD carries?  bee never
-//  reads `.git/index` (view/diff.js's own stance, `index/perma.js:171:mU`), so
-//  working-vs-HEAD is the honest question — and the only one that matters here,
-//  since a hashlet can only name a blob the ODB will hold.
+//  reads `.git/index` (index/perma.js:171:mU), so working-vs-HEAD is the only
+//  question that matters: a hashlet can only name a blob the ODB will hold.
 function dirty(ctx, rel) {
   const m = idx.readCommit(ctx.r, ctx.head.sha);
   if (m === null) return true;
@@ -88,9 +66,9 @@ function dirty(ctx, rel) {
 }
 
 //  --- the report -------------------------------------------------------------
-//  Why ONE ref that had a target still did not mint.  The rewrite hands back the
-//  refs it left ([BEE-016] `hook.js` `left`); the cause is asked of the FINAL
-//  bytes, which by the sink-first order are already settled for any target.
+//  Why one ref that had a target still did not mint.  The rewrite hands back
+//  the refs it left (hook.js `left`); the cause is asked of the final bytes,
+//  which by the sink-first order are already settled for any target.
 function whyLeft(ctx, images, ref, cyclic) {
   const dst = ref.dst;
   if (cyclic) return spell(dst) + " names text that names it back";
@@ -106,8 +84,8 @@ function spell(dst) { return typeof dst === "object" ? dst.root + "/" + dst.rel 
 
 //  --- the pass ---------------------------------------------------------------
 //  Report lines carry their own place, so the two phases below (resolution,
-//  then rewrite) come out as ONE list in file-and-line order — the order the
-//  reader would grep them in, never the order the pass happened to find them.
+//  then rewrite) come out as one list in file-and-line order, the order the
+//  reader would grep them in.
 function noted(notes, rel, line, text) {
   notes.push({ rel: rel, line: line, text: rel + ":" + line + ": " + text });
 }
@@ -120,14 +98,14 @@ function ordered(notes) {
 
 function pass(ctx, ix, args, dry, errs) {
   const notes = [];
-  //  The carriers, in the order given, deduped — a glob may name one twice.
+  //  The carriers in the order given, deduped, since a glob may name one twice.
   const rels = [];
   for (const a of args) {
     const rel = relOf(ctx, a, errs);
     if (rel !== null && rels.indexOf(rel) < 0) rels.push(rel);
   }
 
-  //  Their WORKING bytes and the transient refs each one carries.
+  //  Their working bytes and the transient refs each one carries.
   const base = new Map(), cands = new Map();
   for (const rel of rels) {
     const now = hk.readFile(ctx.root + "/" + rel);
@@ -138,9 +116,8 @@ function pass(ctx, ix, args, dry, errs) {
   }
   if (cands.size === 0) return { lines: [], minted: 0, done: [] };
 
-  //  Every ref's target, resolved ONCE against HEAD plus the [BEE-014] fan-out:
-  //  the answer is a question about paths, not bytes, so no rewrite moves it.
-  //  Edges only to carriers — a target no rewrite touches is already final.
+  //  Every ref's target, resolved once against HEAD plus the BEE-014 fan-out;
+  //  edges go only to carriers, since a target no rewrite touches is final.
   const none = new Map();                          // no commit in flight
   const edges = new Map();
   for (const [rel, refs] of cands) {
@@ -149,8 +126,8 @@ function pass(ctx, ix, args, dry, errs) {
       ref.dst = hk.targetOf(ctx, ix, none, ref.path);
       const at = pm.lineCol(src, ref.lo).line;
       if (ref.dst === null) { noted(notes, rel, at, "no one file answers " + ref.path); continue; }
-      //  A target this run does not rewrite must be CLEAN, or the anchor names
-      //  bytes the reader will never see.  Name the file too, or commit it.
+      //  A target this run does not rewrite must be clean, or the anchor names
+      //  bytes the reader will never see (BEE-016:47:KH).
       if (typeof ref.dst === "string" && !base.has(ref.dst) && dirty(ctx, ref.dst)) {
         noted(notes, rel, at, ref.dst + " has uncommitted edits — name it too, or commit it");
         ref.dst = null;
@@ -161,7 +138,7 @@ function pass(ctx, ix, args, dry, errs) {
     edges.set(rel, es);
   }
 
-  //  One pass, targets first ([LITE-027]): when a carrier's turn comes every
+  //  One pass, targets first (LITE-027): when a carrier's turn comes every
   //  file it names is already final in `images`, so nothing is ever re-minted.
   const comps = hk.components(cands.keys(), edges), comp = new Map();
   for (const c of comps) for (const rel of c) comp.set(rel, c);
@@ -174,11 +151,8 @@ function pass(ctx, ix, args, dry, errs) {
       noted(notes, rel, pm.lineCol(src, ref.lo).line,
             whyLeft(ctx, images, ref, comp.get(ref.dst) === c));
     if (r.bytes === null) continue;
-    //  DRY RUN: every upgrade SPELLED OUT, because vetting 75 refs before the
-    //  bytes move is the whole reason the flag exists.  `subs` is keyed by the
-    //  ref AS WRITTEN and knows no place, so the refs themselves are what is
-    //  walked — two refs of the same text each report from their own line.
-    //  A live run says nothing per ref; `git diff` reads what already landed.
+    //  A dry run spells out every upgrade, since vetting refs before the bytes
+    //  move is why the flag exists (BEE-016:29:KH); a live run leaves that to `git diff`.
     if (dry) for (const ref of cands.get(rel)) {
       const now = r.subs.get(utf8.Decode(src.slice(ref.lo, ref.hi)));
       if (now !== undefined)
@@ -191,14 +165,14 @@ function pass(ctx, ix, args, dry, errs) {
   }
   if (minted === 0) return { lines: ordered(notes), minted: 0, done: [] };
 
-  //  THE WORKING FILE, and nothing else: `stageBytes` is the hook's half.
+  //  The working file and nothing else; `stageBytes` is the hook's half.
   if (!dry) for (const rel of done) hk.writeFile(ctx.root + "/" + rel, images.get(rel));
   return { lines: ordered(notes), minted: minted, done: done };
 }
 
-//  A hashlet into a LISTED file names `pm.blobIdOf` of the post-mint image — an
-//  object git writes when the commit lands, so until then it follows through
-//  perma.js's worktree tier.  Said here rather than left as a surprise.
+//  A hashlet into a listed file names the post-mint image, an object git
+//  writes when the commit lands; until then it follows through perma.js's
+//  worktree tier (BEE-016:48:KH).
 function summary(r, dry) {
   const what = r.minted + " reference" + (r.minted === 1 ? "" : "s");
   if (r.minted === 0) return "mint: nothing to upgrade";
@@ -206,9 +180,8 @@ function summary(r, dry) {
          (dry ? " — nothing written" : "");
 }
 
-//  mint(argv) -> { out, err, usage } — the CLI writes them; this owns no exit
-//  convention.  `usage` is the bare word: 75 files rewritten by accident is not
-//  a thing a verb should be able to do.
+//  mint(argv) -> { out, err, usage }; the CLI writes them and this owns no
+//  exit convention.  The bare word is usage, not a tree sweep (BEE-016:49:KH).
 function mint(argv) {
   const dry = argv.indexOf(FLAG_DRY) >= 0;
   const args = argv.filter(function (a) { return a !== FLAG_DRY; });

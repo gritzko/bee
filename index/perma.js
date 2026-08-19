@@ -1,17 +1,11 @@
-//  index/perma.js as per LITE-025: FOLLOW a permalink `file.c:58:mJ` — the LINE in
-//  the anchored blob plus that BLOB's HASHLET (see LITE-025:11:zc, BEE-019:33:Xc).  
-//  Scope is ONE file's blob history, EARLIEST match wins (see LITE-025:21:zc, 
-//  LITE-025:22:zc); the walk is one CFOLD pair,
-//
-//  ^^^ What Claude wanted to say here: just writing `file.js:58` will go off target
-//  after `file.js` edits. To make it durable, we add `:mJ` the prefix of a git blob
-//  hash so the line is relative to that historical blob. Then, `bee` can find what
-//  the line was and show it in any other revision where it exists.
-//  Use `bee mint` to turn links into permalinks. Use `bee see` to find the target.
-//
-//  The MINT half lives here too so one file owns the ron64 packing
-//  both ways (LITE-026:102:xo).  A stem path takes the door's ladder and the follow
-//  fans out over the mount table like the minter (BEE-014:44:P7, BEE-014:51:P7).
+//  index/perma.js — permalinks (LITE-025).  A plain `file.js:58` goes off
+//  target once `file.js` is edited; `file.js:58:mJ` adds a prefix of the git
+//  blob hash, so the line is relative to that historical blob and bee can find
+//  it in any other revision where it still exists (LITE-025:11:zc, BEE-019:33:Xc).
+//  Scope is one file's blob history and the earliest match wins (LITE-025:21:zc).
+//  Both halves live here so one file owns the ron64 packing: `bee mint` turns
+//  links into permalinks (LITE-026:102:xo), `bee see` follows them; a stem path
+//  takes the door's ladder and the follow fans out over the mounts (BEE-014:51:P7).
 "use strict";
 
 const idx = require("./index.js");
@@ -26,8 +20,8 @@ const ID_WAS = "0000000000000001", ID_NOW = "0000000000000002";
 const DELETER_SCAN = 64;
 
 //  --- the anchor segments ---------------------------------------------------
-//  RON64 is 0-9 A-Z _ a-z ~.  `ron.decode` is THE reader for it (no alphabet
-//  table here); these two only gate what is handed to it.
+//  RON64 is 0-9 A-Z _ a-z ~.  `ron.decode` is the reader for it; these two
+//  only gate what is handed to it.
 function isRon64(s) {
   if (s.length === 0) return false;
   for (let i = 0; i < s.length; i++) {
@@ -49,17 +43,17 @@ function allDigits(s) {
   return true;
 }
 
-//  Is this pair of segments a permalink?  BEE-019:33:Xc: segment 1 is the LINE, in
-//  decimal as typed, and segment 2 a HASHLET — 2..10 ron64 chars carrying a
-//  non-digit; an all-digit segment 2 is a COLUMN and the ref stays line:col.
+//  Is this pair of segments a permalink (BEE-019:33:Xc)?  Segment 1 is the line
+//  in decimal, segment 2 a hashlet of 2..10 ron64 chars carrying a non-digit;
+//  an all-digit segment 2 is a column and the ref stays line:col.
 function isHashlet(s) {
   return isRon64(s) && s.length >= 2 && s.length <= 10 && !allDigits(s);
 }
 //  dog/tok/LINK.rl:96 caps an anchor segment at 10 chars; so does this.
 function isLine(s) { return allDigits(s) && s.length <= 10; }
 
-//  The hashlet -> the sha1 BIT PREFIX it names: 6 bits a ron64 char, so k chars
-//  are the top 6k bits and an ODD length means something (BEE-019:55:Xc).
+//  The hashlet -> the sha1 bit prefix it names: 6 bits a ron64 char, so k chars
+//  are the top 6k bits and an odd length means something (BEE-019:55:Xc).
 function hashletBits(h) {
   if (!isHashlet(h)) return null;
   let v;
@@ -67,18 +61,17 @@ function hashletBits(h) {
   return { bits: 6 * h.length, val: v };
 }
 
-//  The same prefix off a blob sha1 (hex).  16 hex digits are 64 bits — more than
-//  the 60 a 10-char hashlet can carry — so ONE BigInt answers every comparison.
+//  The same prefix off a blob sha1 (hex).  16 hex digits are 64 bits, more than
+//  the 60 a 10-char hashlet can carry, so one BigInt answers every comparison.
 function shaBits(sha, bits) {
   return BigInt("0x" + sha.slice(0, 16)) >> BigInt(64 - bits);
 }
 function hasBits(sha, hb) { return shaBits(sha, hb.bits) === hb.val; }
 
 //  --- the mint (LITE-026) ---------------------------------------------------
-//  BEE-019:55:Xc: a blob sha1 (hex) -> the SHORTEST hashlet naming it among
-//  `others`, the path's own blobs — from 2 chars up, ONE at a time, until no
-//  other blob shares those bits AND it holds a non-digit (what tells segment 2
-//  from a column).  null = 10 chars still collide, so nothing is minted.
+//  A blob sha1 (hex) -> the shortest hashlet naming it among `others`, the
+//  path's own blobs (BEE-019:55:Xc): from 2 chars up until no other blob shares
+//  those bits and it holds a non-digit.  null when 10 chars still collide.
 function mintHashlet(sha, others) {
   for (let k = 2; k <= 10; k++) {
     const bits = 6 * k, mine = shaBits(sha, bits);
@@ -92,10 +85,10 @@ function mintHashlet(sha, others) {
   return null;
 }
 
-//  The INVERSE of lineCol: a 1-based line:col -> the byte offset, -1 when the
-//  blob has no such line (the caller then mints nothing — never a guess).  A
-//  column past the line's own bytes clamps to it: a compiler counts columns its
-//  own way, and the LINE is what the ref means.
+//  The inverse of lineCol: a 1-based line:col -> the byte offset, or -1 when
+//  the blob has no such line, so the caller mints nothing rather than guess.  A
+//  column past the line's own bytes clamps to it, since the line is what the
+//  ref means and a compiler counts columns its own way.
 function byteAt(bytes, line, col) {
   if (!(line >= 1)) return -1;
   let at = 0;
@@ -113,7 +106,7 @@ function byteAt(bytes, line, col) {
 }
 
 //  --- the anchored version --------------------------------------------------
-//  EARLIEST WINS: a younger blob sharing the prefix was minted a longer hashlet
+//  Earliest wins: a younger blob sharing the prefix was minted a longer hashlet
 //  of its own, so the old link keeps its old meaning.  The sha breaks a
 //  same-second tie, so the answer never depends on the walk order.
 function earliest(cands) {
@@ -124,8 +117,8 @@ function earliest(cands) {
   return best;
 }
 
-//  The path's own commits (fileLog IS the `git log -- <path>` graph), oldest
-//  first — the history order every "earliest" here means.
+//  The path's own commits (fileLog is the `git log -- <path>` graph), oldest
+//  first: the history order every "earliest" here means.
 function historyOf(ix, r, rel) {
   const out = [];
   const w = lg.fileLog(ix, r, rel, 0);
@@ -147,9 +140,8 @@ function blobAt(ctx, commit, rel) {
   return o === null || o.type !== "blob" ? null : o.bytes;
 }
 
-//  LITE-026: the DISTINCT blob ids this path ever held, oldest first — the
-//  hashlet SCOPE both halves share: the follow filters it, the mint extends
-//  against it.  One file's blobs, never the repository's.
+//  The distinct blob ids this path ever held, oldest first (LITE-026): the
+//  hashlet scope both halves share, one file's blobs, never the repository's.
 function blobHistory(ctx, ix, rel) {
   const out = [];
   for (const c of historyOf(ix, ctx.r, rel)) {
@@ -160,8 +152,8 @@ function blobHistory(ctx, ix, rel) {
   return out;
 }
 
-//  The commits of this path whose blob AT THIS PATH carries the bit prefix.  A
-//  file reverted to an older version answers twice — that is `earliest`'s job.
+//  The commits of this path whose blob at this path carries the bit prefix.  A
+//  file reverted to an older version answers twice; that is `earliest`'s job.
 function blobsFor(ctx, ix, rel, hb) {
   const out = [];
   for (const c of historyOf(ix, ctx.r, rel)) {
@@ -173,8 +165,8 @@ function blobsFor(ctx, ix, rel, hb) {
   return out;
 }
 
-//  The WORKING copy's own blob id — a link minted on content no commit carries
-//  (bee reads no `.git/index`, so staged-only reads as worktree: LITE-025:104:zc).
+//  The working copy's own blob id, for a link minted on content no commit
+//  carries (bee reads no `.git/index`, so staged reads as worktree: LITE-025:104:zc).
 function blobIdOf(bytes) {
   const head = utf8.Encode("blob " + bytes.length);   // then the NUL git puts
   const all = new Uint8Array(head.length + 1 + bytes.length);
@@ -184,8 +176,8 @@ function blobIdOf(bytes) {
   return hex.encode(sha1(all));
 }
 
-//  The bytes the pager will actually PAINT: the worktree file, which is what
-//  main.js's openPath opens.  A file gone from the checkout has no landing.
+//  The bytes the pager will actually paint: the worktree file, which is what
+//  door.js openPath opens.  A file gone from the checkout has no landing.
 function nowBytes(abs) {
   let st = null;
   try { st = io.lstat(abs); } catch (e) { return null; }
@@ -212,7 +204,7 @@ function lineCol(bytes, at) {
 }
 
 //  --- the weave walks -------------------------------------------------------
-//  At the ANCHOR rev: the token covering `off`, named by its BODY OFFSET (the
+//  At the anchor rev: the token covering `off`, named by its body offset (the
 //  weave's identity) plus how far into it the byte sits.
 function tokenAt(w, off) {
   w.rewind(ID_WAS);
@@ -231,10 +223,9 @@ function tokenAt(w, off) {
   return null;
 }
 
-//  At the HEAD rev: where that same token sits now — `at` is the byte, `dead`
-//  says the token is gone and `at` is merely where it stood.
-//  LITE-029: `lo`/`hi` are the token's own bytes today — the identity the pager
-//  selects, so nothing has to be re-derived from the column.
+//  At the HEAD rev: where that same token sits now.  `at` is the byte, `dead`
+//  says the token is gone and `at` is merely where it stood; `lo`/`hi` are the
+//  token's own bytes today, the identity the pager selects (LITE-029).
 function tokenNow(w, id, delta) {
   w.rewind(ID_NOW);
   let pos = 0;
@@ -251,7 +242,7 @@ function tokenNow(w, id, delta) {
   return null;
 }
 
-//  --- the fold scratch (view/diff.js's own reason: no per-call 16 MB maps) --
+//  --- the fold scratch, so no call maps 16 MB anew (view/diff.js's reason) --
 let _wWas = null, _wNow = null;
 function scratch() {
   if (_wWas === null) {
@@ -259,7 +250,7 @@ function scratch() {
     _wNow = abc.ram("CFOLD", wv.MAX_SOURCE_MARKED_UP);
   }
 }
-//  was -> now as ONE fold pair; a lexer that cannot take the source falls back
+//  was -> now as one fold pair; a lexer that cannot take the source falls back
 //  to the plain tokenizer, as view/diff.js's fold2 does.
 function foldPair(was, now, ext) {
   scratch();
@@ -274,10 +265,10 @@ function foldPair(was, now, ext) {
   }
 }
 
-//  LITE-026: walk the NOW side of a was->now fold, handing every ALIVE token to
-//  `at(tok, lo, hi, fresh)` — `lo`/`hi` are its bytes in NOW, `fresh` says the
-//  WAS side does not carry it (ADDED TEXT).  The mint's added-line scan and the
-//  follow share this one fold pair; false = the pair is not weavable.
+//  Walk the now side of a was->now fold, handing every alive token to
+//  `at(tok, lo, hi, fresh)`: `lo`/`hi` are its bytes now, `fresh` says the was
+//  side does not carry it (LITE-026).  The mint's added-line scan and the
+//  follow share this one fold pair; false means the pair is not weavable.
 function walkNew(was, now, ext, at) {
   if (!weavable(was, now)) return false;
   const w = foldPair(was, now, ext);
@@ -298,9 +289,9 @@ function walkNew(was, now, ext, at) {
 }
 
 //  --- the deleting commit ---------------------------------------------------
-//  Which commit took the line?  The path's own commits NEWER than the anchor,
+//  Which commit took the line?  The path's own commits newer than the anchor,
 //  oldest first: the first one whose blob no longer carries the token is it.
-//  Bounded — a long-dead line in a long history says "since <anchor>" instead.
+//  Bounded, so a long-dead line in a long history says "since <anchor>" instead.
 function deleterOf(ctx, ix, rel, anchor, id, ext) {
   const w = lg.fileLog(ix, ctx.r, rel, 0);
   const later = [];
@@ -328,8 +319,8 @@ function deleterOf(ctx, ix, rel, anchor, id, ext) {
 
 //  --- the follow ------------------------------------------------------------
 //  follow(partial, lineSeg, hash, from) -> null (a quiet miss, the caller's own
-//  message stands), { rels } when the partial names SEVERAL files that answer
-//  (the caller's chooser), or { rel, full, line, col, note } — the landing.
+//  message stands), { rels } when the partial names several files that answer
+//  (the caller's chooser), or { rel, full, line, col, note }, the landing.
 function follow(partial, lineSeg, hash, from) {
   const hb = hashletBits(hash);
   const line = Number(lineSeg);
@@ -340,13 +331,13 @@ function follow(partial, lineSeg, hash, from) {
     const ix = idx.openIndex(ctx.gitdir);
     try {
       idx.bringUp(ctx, ix, { track: false });       // the lazy contract, as ever
-      //  A chooser row hands back the ABSOLUTE path it painted; the LITE-011
+      //  A chooser row hands back the absolute path it painted; the LITE-011
       //  descent reads the root-relative one, so the root prefix is shed first.
       let p = String(partial);
       const pre = ctx.root + "/";
       if (p.slice(0, pre.length) === pre) p = p.slice(pre.length);
-      //  BEE-014: a permalink's path may be a STEM — the minter keeps the path
-      //  AS WRITTEN, so a ticket code stays a code and needs the door's ladder.
+      //  A permalink's path may be a stem: the minter keeps the path as
+      //  written, so a ticket code stays a code and needs the door's ladder (BEE-014).
       const rsv = require("./resolve.js");
       let rels = [];
       for (const t of require("door.js").refSpellings(p)) {
@@ -360,8 +351,8 @@ function follow(partial, lineSeg, hash, from) {
         hits.push({ rel: rel, full: ctx.root + "/" + rel });
         seats.push(seat);
       }
-      //  BEE-014: the minter fans out over the mount table, so the follower
-      //  must too — a permalink minted against a sibling repo lands THERE.
+      //  The minter fans out over the mount table, so the follower must too:
+      //  a permalink minted against a sibling repo lands there (BEE-014).
       if (hits.length === 0) return foreignFollow(ctx, p, hb, line);
       if (hits.length > 1) return { rels: hits };
       return seats[0];
@@ -370,9 +361,9 @@ function follow(partial, lineSeg, hash, from) {
   finally { idx.closeRepo(ctx); }
 }
 
-//  BEE-014:51:P7: the follow's FAN-OUT, the minter's mirror — every OTHER registered
-//  repo opened READ-ONLY, never brought up; the first that spells the path AND
-//  carries the anchored blob is the landing, a path-only answer is no answer.
+//  The follow's fan-out, the minter's mirror (BEE-014:51:P7): every other
+//  registered repo opened read-only, never brought up; the first that spells
+//  the path and carries the anchored blob is the landing.
 function foreignFollow(home, partial, hb, line) {
   const mnt = require("./mount.js");
   const spellings = require("door.js").refSpellings(partial);
@@ -404,9 +395,9 @@ function foreignFollow(home, partial, hb, line) {
   return null;
 }
 
-//  The anchored version: the path's own blob history first (EARLIEST match), the
-//  staged/working blob after it — the whole scope, in order.
-//  -> { was, commit, tier } — `commit` is null for a working-copy anchor.
+//  The anchored version: the path's own blob history first (earliest match),
+//  the staged/working blob after it, the whole scope in order.  Returns
+//  { was, commit, tier }; `commit` is null for a working-copy anchor.
 function anchorOf(ctx, ix, rel, full, hb) {
   const b = earliest(blobsFor(ctx, ix, rel, hb));
   if (b !== null) {
@@ -425,15 +416,15 @@ function land(ctx, ix, rel, hb, line) {
   const a = anchorOf(ctx, ix, rel, full, hb);
   if (a === null) return null;
   const anchor = a.commit, was = a.was;
-  //  BEE-019:34:Xc: the LINE is what the ref names; its first byte is how the walk
-  //  below carries it across.  No such line in the anchored blob = no landing.
+  //  The line is what the ref names (BEE-019:34:Xc); its first byte is how the
+  //  walk below carries it across.  No such line in the anchored blob, no landing.
   const off = byteAt(was, line, 1);
   if (off < 0) return null;
   const now = nowBytes(full);
   if (now === null) return null;
   const seat = { rel: rel, full: full, line: 0, col: 0, note: "", tier: a.tier,
                  anchor: anchor === null ? "" : anchor.sha.slice(0, 8) };
-  //  Nothing moved: the anchored line IS today's line, no fold needed.
+  //  Nothing moved: the anchored line is today's line, no fold needed.
   if (wv.bytesEq(was, now)) {
     const lc = lineCol(now, off);
     seat.line = lc.line; seat.col = lc.col;
@@ -442,7 +433,7 @@ function land(ctx, ix, rel, hb, line) {
   const ext = wv.extOf(rel);
   if (!weavable(was, now)) {
     //  Unweavable (binary, or over the source cap): the anchored blob is all
-    //  there is — the line as the commit saw it.
+    //  there is, the line as the commit saw it.
     const lc = lineCol(was, off);
     seat.line = lc.line; seat.col = lc.col;
     return seat;
@@ -455,7 +446,7 @@ function land(ctx, ix, rel, hb, line) {
   if (at === null) return null;
   const lc = lineCol(now, at.at);
   seat.line = lc.line; seat.col = lc.col;
-  //  LITE-029: an ALIVE token hands the pager its bytes, not just a column.
+  //  An alive token hands the pager its bytes, not just a column (LITE-029).
   if (!at.dead) { seat.lo = at.lo; seat.hi = at.hi; }
   if (at.dead) {
     const who = anchor === null ? null : deleterOf(ctx, ix, rel, anchor, tk.id, ext);

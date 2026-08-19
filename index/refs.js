@@ -1,10 +1,9 @@
-//  index/refs.js as per LITE-006: ref resolution for a foreign `.git` — HEAD,
-//  loose refs and packed-refs chased to a sha.  It sits ABOVE the ODB waist BY
-//  DESIGN (LITE-006:49:Rc): quickjab/git.c rules refs stay above it and dog/git
-//  carries no ref-store reader, so this mirrors quickjab/test/gitverify.js, cut
-//  to the calls the indexer needs; object bytes still go through git.parseCommit
-//  and git.tree, never a parser of our own.  A linked worktree keeps HEAD in its
-//  own gitdir and the branches in the common one (`commondir`, BEE-009:21:28O).
+//  index/refs.js — ref resolution for a foreign `.git`: HEAD, loose refs and
+//  packed-refs chased to a sha (LITE-006).  It lives above the ODB waist by
+//  design (LITE-006:49:Rc): dog/git carries no ref-store reader, so this mirrors
+//  quickjab/test/gitverify.js, cut to the calls the indexer needs; object bytes
+//  still go through git.parseCommit and git.tree.  A linked worktree keeps HEAD
+//  in its own gitdir and the branches in the common one (BEE-009:21:28O).
 "use strict";
 
 //  A full git object id: 40 lowercase-hex characters (be/shared/util/sha.js).
@@ -53,10 +52,10 @@ function packedRefs(gitdir) {
   return out;
 }
 
-//  Resolve one refname ("HEAD", "refs/heads/x") to a 40-hex sha, or null.  The
-//  loose file first (worktree gitdir, then the common dir), then packed-refs;
-//  "ref: <name>" chains follow, bounded.  `seen` collects the chain so the
-//  caller learns WHICH ref HEAD finally names.
+//  Resolve one refname ("HEAD", "refs/heads/x") to a 40-hex sha, or null: the
+//  loose file first (worktree gitdir, then the common dir), then packed-refs,
+//  following bounded "ref: <name>" chains.  `seen` collects the chain so the
+//  caller learns which ref HEAD finally names.
 function resolve(gitdir, name, packed, seen, depth) {
   if ((depth || 0) > 8)
     throw "index: the ref chain from " + name + " never ends";
@@ -83,12 +82,10 @@ function head(gitdir) {
   return { ref: chain[chain.length - 1], sha: sha };
 }
 
-//  BEE-022:39: the ONE thing a status needs out of `<gitdir>/config` — the
-//  `[branch "<b>"]` section's `remote` and `merge`.  dog/git/CFG.h parses this
-//  grammar properly but has NO JS binding yet (see the ticket's report), so
-//  this reads those two keys and nothing else: a `[section "sub"]` header, a
-//  `key = value` line, comments dropped.  No value is a URI and none is
-//  resolved here — the refname it yields goes through `resolve` above.
+//  The `[branch "<b>"]` section's `remote` and `merge`, the one thing a status
+//  needs out of `<gitdir>/config` (BEE-022:39:wX).  dog/git/CFG.h parses the
+//  grammar properly but has no JS binding yet, so this reads those two keys
+//  and nothing else; the refname it yields goes through `resolve` above.
 function branchConf(gitdir, branch) {
   const out = { remote: "", merge: "" };
   const t = readText(commonDir(gitdir) + "/config");
@@ -112,12 +109,10 @@ function branchConf(gitdir, branch) {
   return out;
 }
 
-//  upstream(gitdir, headRef) -> { name, short, sha } | null: the tip a branch
-//  TRACKS.  `branch.<b>.merge` names the ref on the remote and
-//  `branch.<b>.remote` which remote, so the local ref is the remote-tracking
-//  one; a `.` remote means the merge ref is local already.  Detached HEAD, no
-//  config and an unresolvable ref all answer null — the degenerate roots of
-//  [/wiki/Status], where the caller reads track = HEAD.
+//  upstream(gitdir, headRef) -> { name, short, sha } | null, the tip a branch
+//  tracks: `branch.<b>.merge` names the ref on the remote `branch.<b>.remote`,
+//  so the local ref is the remote-tracking one (a `.` remote is local already).
+//  Detached HEAD, no config or an unresolvable ref answer null (wiki/Status).
 function upstream(gitdir, headRef) {
   if (typeof headRef !== "string" || headRef.slice(0, 11) !== "refs/heads/") return null;
   const c = branchConf(gitdir, headRef.slice(11));
