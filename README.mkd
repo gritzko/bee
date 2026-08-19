@@ -42,6 +42,13 @@ The standalone (bundled) `bee` binary call patterns:
 
  -  `bee` -- in a git repo: index it, open the `list` browser;
  -  `bee <path>...` -- page files/dirs off the filesystem
+ -  `bee //<name> <verb> [args]` -- the CONTEXT slot (BEE-023): the verb runs in
+    the repo `<name>`, and `//<name>/<rel>` is a path inside it wherever an arg is
+    a path (`bee cat //bee-journal/todo/BEE/BEE-023.mkd`)
+     1. `<name>` is a basename off `~/.config/bee/repos`, else the directory `$SRC_ROOT/<name>` (`$HOME/src` by default) when a git repo or a linked worktree sits there
+     2. a `$SRC_ROOT` hit is read-only for that run -- it is never registered; use `bee install` for that
+     3. the slot is POSITIONAL and first: after a verb, `//<name>` is an argument like any other
+     4. bare `bee //<name>` is the zero-arg story in that repo: index it, open the `list` browser
  -  `bee index [<repo>]` -- build/refresh `<repo>/.git/be/`; lazy, fully derived;
     BOTH passes, the commit walk and the tip-blob link scan, each off its own
     mark, both on the one summary line

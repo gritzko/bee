@@ -76,6 +76,11 @@ Each query is a scan of ONE key prefix; no ODB ancestry walk happens at query ti
     [BEE-003] FANS that over the registry — the dir of the file being read, the
     ambient repo, then every registered repo — never the REV lane, whose
     `path_hl` hashes the WHOLE path and so answers no suffix.
+ -  `//name/rel` ([BEE-023]) is the spelling that SKIPS all that: the name is a
+    registry basename, else the directory `$SRC_ROOT/name`, and the rest is a
+    plain path under that root — one lookup, no fan-out and no ambiguity.  A
+    leading `//name` alone is the CLI's context slot, the repo a run stands in,
+    which is the same address without a path.
  -  A DIFF is a projection of ONE weave per path ([BEE-005], `index/dag.js` +
     `index/weave.js weaveDiff`): `repsOf` reads the rev a commit's view stands
     on (its own, else its nearest ancestor's over `CPAR` — a merge that touched
@@ -177,6 +182,7 @@ The gaps, stated so a reader does not go looking for them.
 [BEE-003]: /todo/BEE/BEE-003.mkd
 [BEE-003]: /todo/BEE/BEE-003.mkd
 [BEE-005]: /todo/BEE/BEE-005.mkd
+[BEE-023]: /todo/BEE/BEE-023.mkd
 [BEE-007]: /todo/BEE/BEE-007.mkd
 [LITE-006]: /todo/LITE/LITE-006.mkd
 [LITE-007]: /todo/LITE/LITE-007.mkd

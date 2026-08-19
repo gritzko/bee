@@ -56,6 +56,38 @@ const VERBS = {
   blob: function (arg, opts) { return require("view/blob.js").blob(arg, vopts(opts)).hunks; }
 };
 
+//  BEE-023:25 a `//name/rel` word is a path in the repo `name`, wherever an
+//  arg is a path.  The table is WRAPPED rather than edited row by row, so the
+//  spelling is read ONCE, here, and no view ever parses a repo name.
+for (const k in VERBS) VERBS[k] = rootView(VERBS[k]);
+
+function rootView(fn) {
+  return function (arg, opts) {
+    const o = {};
+    if (opts) for (const k in opts) o[k] = opts[k];
+    return fn(rootArg(arg, o), o);
+  };
+}
+
+//  The arg word by word, a `//name/rel` one replaced by the path it names, its
+//  repo taken as `opts.from` (the first such word wins — an arg names its own
+//  repo more closely than the context slot does).  A name that resolves nowhere
+//  is refused in words, never read as a file called `//name`.
+function rootArg(arg, o) {
+  if (typeof arg !== "string" || arg.indexOf("//") < 0) return arg;
+  const words = arg.split(" ");
+  let from = null;
+  for (let i = 0; i < words.length; i++) {
+    const sp = mnt.splitRooted(words[i]);
+    if (sp === null) continue;
+    const root = mnt.byName(sp.name);
+    if (root === null) throw mnt.noRepo(sp.name);
+    words[i] = sp.rel === "" ? root : root + "/" + sp.rel;
+    if (from === null) { from = root; o.from = root; }
+  }
+  return words.join(" ");
+}
+
 //  Verb name -> view | null; own-property test, so `constructor` is a path.
 function verbOf(name) {
   return Object.prototype.hasOwnProperty.call(VERBS, name) ? VERBS[name] : null;
@@ -67,11 +99,16 @@ function verbOf(name) {
 //     lo, hi, note } (the landing).
 function seatOf(target) {
   const ref = splitRef(target);
+  //  BEE-023:26 `//name/rel` names its repo OUTRIGHT, so a pager click and an
+  //  http href on such a reference land there, not in the repo it was read in.
+  const rt = mnt.rooted(ref.path);
+  if (rt !== null) ref.path = rt.full;
   //  LITE-025:44 a permalink names a commit; the fs alone cannot answer it.
   if (ref.hash) {
     let seat;
     //  BEE-003: a permalink follows in the AMBIENT repo, like every other ref.
-    try { seat = require("index/perma.js").follow(ref.path, ref.line, ref.hash, mnt.at()); }
+    try { seat = require("index/perma.js").follow(ref.path, ref.line, ref.hash,
+                                                  rt === null ? mnt.at() : rt.root); }
     catch (e) { return null; }
     if (seat === null) return null;
     if (seat.rels) return { rels: seat.rels, arg: ref.path + ref.tail, tail: ref.tail };

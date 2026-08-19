@@ -87,6 +87,53 @@ function named(name, home) {
   return null;
 }
 
+//  --- BEE-023: the `//name` axis of a CLI arg --------------------------------
+//  The dir an unregistered repo is looked for under, read HERE and nowhere
+//  else, so `$SRC_ROOT` is one env lookup and never a composed path (BEE-023:28).
+function srcRoot() {
+  const v = io.getenv("SRC_ROOT");
+  return v ? v : (io.getenv("HOME") || "") + "/src";
+}
+
+//  `//name` or `//name/rel` -> { name, rel }, else null.  A bare double slash
+//  with no scheme: the split is on the first `/` after the `//`, so the
+//  retired `///name` authority spelling (BEE-003) is none of this one's business.
+function splitRooted(arg) {
+  const s = String(arg);
+  if (s.length < 3 || s.slice(0, 2) !== "//" || s.charAt(2) === "/") return null;
+  const cut = s.indexOf("/", 2);
+  const name = cut < 0 ? s.slice(2) : s.slice(2, cut);
+  if (name === "" || name === "." || name === "..") return null;
+  return { name: name, rel: cut < 0 ? "" : s.slice(cut + 1) };
+}
+
+//  The root a name resolves to: the registry first, then `$SRC_ROOT/name` when
+//  a git repo or a linked worktree sits exactly there (BEE-023:27).  The second
+//  leg is a read-only mount for the run — a hit is never registered.
+function byName(name, home) {
+  const m = named(name, home);
+  if (m !== null) return m.root;
+  const dir = srcRoot() + "/" + name;
+  if (idx.gitdirOf(dir) === null) return null;
+  try { return io.realpath(dir); } catch (e) { return dir; }
+}
+
+//  A `//name/rel` word -> { root, full }, the path it names; null when the word
+//  is no such word OR the name resolves nowhere, which the caller words.
+function rooted(arg, home) {
+  const sp = splitRooted(arg);
+  if (sp === null) return null;
+  const root = byName(sp.name, home);
+  if (root === null) return null;
+  return { root: root, full: sp.rel === "" ? root : root + "/" + sp.rel };
+}
+
+//  The words a `//name` miss gets (BEE-023:27): both places that were searched,
+//  since the next move is a `bee install` or a fix to the name itself.
+function noRepo(name) {
+  return "bee: //" + name + ": no such repo (registry, " + srcRoot() + ")";
+}
+
 //  An absolute path -> its canonical address `{ mount, rel }`, the outermost
 //  registered root holding it, so a submodule file is addressed through its
 //  parent (BEE-003:64:xS).  null when no registered repo holds it.
@@ -196,6 +243,9 @@ function dir() {
 
 module.exports = { list: list, named: named, canon: canon, deepest: deepest,
                    serves: serves,
+                   //  BEE-023: the `//name` axis — one resolver, one $SRC_ROOT.
+                   srcRoot: srcRoot, splitRooted: splitRooted, byName: byName,
+                   rooted: rooted, noRepo: noRepo,
                    mounts: mounts, subsOf: subsOf, basename: basename,
                    under: under,
                    within: within, pos: pos, at: at, dir: dir };

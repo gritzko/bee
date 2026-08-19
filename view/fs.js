@@ -12,8 +12,15 @@
 
 //  Strip a single trailing '/' for the fs ops, which take the bare path; the
 //  banner keeps the argument verbatim, so `arg` itself is never mutated.
+//  BEE-023:25 a `//name/rel` arg is resolved HERE too, so the fs leg keeps that
+//  spelling in the hunk URI and only the fs ops ever see the repo root.
 function fsPath(path) {
-  return path.length > 1 && path.endsWith("/") ? path.slice(0, -1) : path;
+  let p = String(path);
+  if (p.slice(0, 2) === "//" && p.charAt(2) !== "/") {
+    const rt = require("index/mount.js").rooted(p);
+    if (rt !== null) p = rt.full;
+  }
+  return p.length > 1 && p.endsWith("/") ? p.slice(0, -1) : p;
 }
 
 //  Build a file hunk: mmap the bytes and tok.parse them by extension.  An

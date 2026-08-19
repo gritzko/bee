@@ -17,6 +17,8 @@
 //  LITE-045: main.js is DISPATCH + the one mode pick.  The door (targets ->
 //  hunks) is door.js; the renderers are render/* and `renderOf` picks one.
 const door = require("door.js");
+//  BEE-023: the repo a `//name` word names, and the words a miss gets.
+const mnt = require("index/mount.js");
 
 function writeFd(fd, bytes) {
   const b = io.buf(bytes.length + 8);
@@ -35,7 +37,11 @@ function pathView(paths) {
   let hunks = [];
   for (const p of paths) {
     const hs = door.openPath(p);
-    if (hs !== null) hunks = hunks.concat(hs);
+    if (hs !== null) { hunks = hunks.concat(hs); continue; }
+    //  BEE-023:27 a `//name/rel` whose name is nowhere is refused by NAME, so
+    //  the reader learns it is the repo that is missing, not the file.
+    const sp = mnt.splitRooted(p);
+    if (sp !== null && mnt.byName(sp.name) === null) writeStderr(mnt.noRepo(sp.name) + "\n");
     else writeStderr("cannot open " + p + "\n");
   }
   return hunks;
@@ -48,7 +54,9 @@ function pathView(paths) {
 //  over the tip blobs — each off its own mark, both on the one summary line.
 function runIndex(args) {
   const idx = require("index/index.js");
-  const rec = idx.index(args.length ? args[0] : io.cwd());
+  //  BEE-023: with a `//name` context the run STANDS there, so that is the
+  //  repo an argless `index` brings up; `mnt.at()` is the cwd without one.
+  const rec = idx.index(args.length ? args[0] : mnt.at());
   writeFd(1, utf8.Encode(idx.summary(rec) + "\n"));
 }
 
@@ -79,7 +87,7 @@ function runMerge(args) { require("merge.js").merge(args); }
 
 function runInstall(args) {
   const mg = require("merge.js");
-  writeFd(1, utf8.Encode(mg.install(args.length ? args[0] : undefined) + "\n"));
+  writeFd(1, utf8.Encode(mg.install(args.length ? args[0] : mnt.at()) + "\n"));
 }
 
 //  LITE-026: `bee hook [<repo>]` — the PRE-COMMIT pass the planted
@@ -87,7 +95,7 @@ function runInstall(args) {
 //  become [LITE-025] permalinks, and the rewritten files are re-staged.  It
 //  reports on the message stream only, so a commit's own output stays clean.
 function runHook(args) {
-  const note = require("index/hook.js").precommit(args.length ? args[0] : undefined);
+  const note = require("index/hook.js").precommit(args.length ? args[0] : mnt.at());
   if (note) writeStderr(note + "\n");
 }
 
@@ -208,8 +216,31 @@ const SIDE = {
   mark: runMark,
 };
 
+//  BEE-023:24 the CLI is TRIPARTITE — `bee [//context] verb args`.  The context
+//  slot is POSITIONAL and FIRST, so `bee todo //x` is a verb with a path arg and
+//  nothing here looks ahead; the repo it names is where the whole run stands.
 function main(argv) {
   const argl = argv.slice(2);
+  const root = contextOf(argl);
+  if (root === null) return run(argl, null);
+  argl.shift();
+  return mnt.within({ repo: root, path: "", anchor: "" },
+                    function () { return run(argl, root); });
+}
+
+//  The repo a leading `//name` (no further slash) names, or null when the first
+//  word is no such word.  A name that resolves nowhere ENDS the run in words:
+//  creating it is BEE-026's verb, and no verb here guesses at it.
+function contextOf(argl) {
+  const sp = argl.length ? mnt.splitRooted(argl[0]) : null;
+  if (sp === null || sp.rel !== "") return null;
+  const r = mnt.byName(sp.name);
+  if (r !== null) return r;
+  writeStderr(mnt.noRepo(sp.name) + "\n");
+  throw "BRONONE";
+}
+
+function run(argl, from) {
   const word = argl.length ? argl[0] : "";
   if (Object.prototype.hasOwnProperty.call(SIDE, word))
     return SIDE[word](argl.slice(1));
@@ -230,13 +261,19 @@ function main(argv) {
   const render = paged ? null : renderOf(flags);
 
   const opts = {};
+  if (from !== null) opts.from = from;         // BEE-023: the context slot
   let arg = rest.join(" ");
   if (view === null) {
     //  LITE-018: ZERO args inside a git repo == `bee index && bee list`, one
     //  process.  `list` owns the bring-up, so the index is built (visibly, on
     //  stderr) strictly before the pager takes the tty, and `track` makes this
     //  run the `index` half proper — the repo joins the repo list.
-    if (rest.length === 0 && inRepo()) { view = door.VERBS.list; opts.track = true; }
+    //  BEE-023:38 with a context that is the same story in THAT repo — and a
+    //  `$SRC_ROOT` hit is a read-only mount, so a context never registers one.
+    if (rest.length === 0 && (from !== null || inRepo())) {
+      view = door.VERBS.list;
+      if (from === null) opts.track = true;
+    }
     else { view = pathView; arg = rest; }         // the fs leg: the path LIST
   }
 
