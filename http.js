@@ -52,6 +52,9 @@ const ROUTE = {
   diff:     "diff",                 //  /diff/<hex|path>
   //  BEE-022: the quad of the LIVE worktree; it takes no path and no rev.
   status:   "status",               //  /status
+  //  BEE-025: the ticket board of THIS repo; the segments after it are the arg
+  //  LINE (`/todo/BEE/Sev:HIGH`), which is why a slash separates words there.
+  todo:     "todo",                 //  /todo[/<TOPIC>][/<Key:Value>...]
   cat:      "cat",                  //  /cat/<path>[?<rev>]  a .md RENDERS here
   raw:      "cat",                  //  /raw/<path>[?<rev>]  the painted source
   tree:     "tree",                 //  /tree/<path|hex>[?<rev>]
@@ -193,11 +196,15 @@ function pathIn(pg, path) {
 //  A verb + arg -> `/<repo>/<verb>/<path>[?<rev>]`: a nav target names a path
 //  ABSOLUTELY, so the root comes off, and each SEGMENT escapes on its own.
 function argUrl(pg, verb, arg) {
+  //  BEE-023: a `//name/rel` arg names its repo outright, and abc/URI would read
+  //  the name as an authority — so the repo comes off FIRST, the rest splits as usual.
+  const rt = mnt.splitRooted(arg);
+  if (rt !== null) arg = rt.rel;
   //  A target abc/URI refuses (a raw space in a path) is all PATH — a link is
   //  built while PAINTING, so it may never throw a page away.
   let a;
   try { a = rd.argSplit(arg); } catch (e) { a = { path: arg, rev: "" }; }
-  const w = pathIn(pg, a.path);
+  const w = rt !== null ? { name: rt.name, rel: a.path } : pathIn(pg, a.path);
   if (w === null) return "";
   return "/" + w.name + "/" + verb + "/" + escPath(w.rel) +
          (a.rev ? "?" + URI.escape(a.rev) : "");

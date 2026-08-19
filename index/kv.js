@@ -426,10 +426,13 @@ function holds(cl, rows) {
 
 const EMPTY = { rows: new Map() };
 
-//  find(repo, filters, opts) -> { files, rec }.  The one door: the fs is
-//  scanned, the unindexed is indexed, and the filtered file list comes out of
-//  the index, AND-intersected on `path_hl`.  A path comes back through the
-//  sweep's OWN list, never decoded from a hash.
+//  find(repo, filters, opts) -> { files, rec } (+ `rows` on request).  The one
+//  door: the fs is scanned, the unindexed is indexed, and the filtered file list
+//  comes out of the index, AND-intersected on `path_hl`.  A path comes back
+//  through the sweep's OWN list, never decoded from a hash.
+//  `opts.rows` hands the matched files' CELLS back beside them, keyed by path:
+//  the [BEE-025] board reads `Now:` off them and answers its OR'd and absent-key
+//  clauses in memory, so one find per repo per run serves the whole question.
 function find(repo, filters, opts) {
   opts = opts || {};
   const ctx = idx.openRepo(repo === undefined ? io.cwd() : repo, true);
@@ -440,15 +443,17 @@ function find(repo, filters, opts) {
     finally { try { ix.close(); } catch (e) {} }
     const cls = [];
     for (const f of (filters || [])) cls.push(clauseOf(f));
-    const out = [];
+    const out = [], cells = opts.rows === true ? new Map() : null;
     for (const t of s.files) {
       //  A collided file carries its OWN rows, read directly this run.
       const rows = t.rows || (s.blocks.get(t.phl) || EMPTY).rows;
       let all = true;
       for (const cl of cls) if (!holds(cl, rows)) { all = false; break; }
-      if (all) out.push(t.file);
+      if (!all) continue;
+      out.push(t.file);
+      if (cells !== null) cells.set(t.file, rows);
     }
-    return { files: out, rec: s.rec };
+    return { files: out, rows: cells, rec: s.rec };
   } finally { idx.closeRepo(ctx); }
 }
 

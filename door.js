@@ -52,6 +52,9 @@ const VERBS = {
   //  BEE-017: the only view whose arg is a LIST of refs — one chunk each, and
   //  the one CLI door onto a permalink, which had none before it.
   see:  function (arg, opts) { return require("view/see.js").see(arg, vopts(opts)).hunks; },
+  //  BEE-025: the ticket board — the one view whose arg is neither a path nor a
+  //  rev but a TOPIC or a `Key:Value` filter; its rows click back into `see`.
+  todo: function (arg, opts) { return require("view/todo.js").todo(arg, vopts(opts)).hunks; },
   tree: function (arg, opts) { return require("view/tree.js").tree(arg, vopts(opts)).hunks; },
   blob: function (arg, opts) { return require("view/blob.js").blob(arg, vopts(opts)).hunks; }
 };

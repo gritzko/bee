@@ -156,6 +156,13 @@ The SWEEP owns staleness, since with the value in the row there is no confirming
     AND-intersected on `path_hl` — and a path comes back through the sweep's own
     list, never decoded from a hash. The lane decides WHICH files, never what
     to show ([TODO-003] rule): titles and bodies still come off the file.
+ -  THE CONSUMER is the [BEE-025] board (`view/todo.js`), one `find` per repo per
+    run: `opts.rows` hands the matched files' CELLS back beside them, so the
+    open test (`Now: OPEN`), the OR'd clauses a lane intersection cannot express
+    and the `Key:` absences are all answered in memory. A warm board therefore
+    opens only the files it renders — `Sev:`, `Sub:` and the title come off that
+    one head read, never off a packed row, and a ticket carrying no `Now:` pair
+    at all is the one case that costs a read the lane did not name.
 
 ##  The suspects contract
 
@@ -247,6 +254,7 @@ The gaps, stated so a reader does not go looking for them.
 [BEE-022]: /todo/BEE/BEE-022.mkd
 [BEE-024]: /todo/BEE/BEE-024.mkd
 [BEE-027]: /todo/BEE/BEE-027.mkd
+[BEE-025]: /todo/BEE/BEE-025.mkd
 [LITE-006]: /todo/LITE/LITE-006.mkd
 [TODO-003]: /todo/TODO/TODO-003.mkd
 [/meta/todo]: /meta/todo.mkd

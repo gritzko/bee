@@ -85,6 +85,11 @@ The standalone (bundled) `bee` binary call patterns:
  -  `bee see [-C<n>] <ref>...` -- the chunk each reference names, two lines of context each way; the only CLI door onto a permalink
      1. every shape `door.js` resolves: permalink, path, partial, ticket code, pocket page, another registered repo
      2. one hunk per ref, in the order given; a miss names the repos searched, an ambiguity shows the chooser, neither ends the batch
+ -  `bee todo [TOPIC] [Key:Value]...` -- the ticket board: `<●> KEY ┄ title` per open ticket, the row a click onto `bee see KEY`
+     1. bare, the board of the context repo's `todo/` -- topic headers with counts, `Sub:` families on dotted rails; with no context and no local `todo/`, every registered repo's, newest first, each row prefixed by its repo
+     2. `TOPIC` is one topic's list, `Key:Value` a filter -- keys AND, one key repeated ORs, `Key:*` is presence and `Key:` absence; `Sev:` paints the bullet CRIT red, HIGH orange, LOW dim
+     3. open is `Now: OPEN`, or no `Now:` and no closed header mark; `todo/done/` never lists and the answer comes off the BEE-024 lane, one query per repo per run
+     4. a ticket that has a `$SRC_ROOT` worktree carries the two BEE-027 frames; a worktree whose tail is no ticket code lists in a trailing `worktrees` block
  -  `bee http [--port <n>]` -- the same views over HTTP on localhost:8034, read-only, every registered repo, links to known files resolved and clickable
      1. `/<repo>/<path>` is the file itself,
      2. `/<repo>/raw/<path>` is the highlighted source, 
