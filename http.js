@@ -21,6 +21,7 @@ const wv = require("index/weave.js");
 const wrap = require("render/wrap.js");
 const html = require("render/html.js");
 const mark = require("mark/html.js");
+const front = require("mark/front.js");
 const rst = require("mark/rst.js");
 const hk = require("index/hook.js");
 
@@ -308,8 +309,9 @@ function openOnce(pg, full) {
 //  LITE-037: the two rendered dialects and their parsers — `.md` CommonMark
 //  (LITE-035), `.rst` reStructuredText.  The PARSER is all that differs: the
 //  emitter, the page shell and the link door below are one set for both.
-//  `.mkd` is StrictMark and keeps serving as painted source.
-const RENDER = { md: mark.toHtml, rst: rst.toHtml };
+//  `.mkd` is StrictMark and keeps serving as painted source.  BEE-029: the
+//  `.md` entry is `front.toHtml`, so a YAML preamble is metadata, not a ruler.
+const RENDER = { md: front.toHtml, rst: rst.toHtml };
 
 //  A path -> the function that renders it, or null for a painted-source file.
 function renderOf(path) {

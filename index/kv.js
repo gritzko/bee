@@ -122,15 +122,9 @@ const PAIR_RE = /^(?: {4})?([A-Z][a-z][a-z0-9]): (.*)$/;
 const YAML_RE = /^([A-Za-z_][A-Za-z0-9_.-]*):[ \t]+(\S.*)$/;
 
 //  Where the body starts: a `---` at line 1 opens a preamble, and the meta block
-//  a StrictMark title carries stands after it.
-function bodyStart(lines) {
-  if (!lines.length || lines[0].trim() !== "---") return 0;
-  for (let i = 1; i < lines.length; i++) {
-    const t = lines[i].trim();
-    if (t === "---" || t === "...") return i + 1;
-  }
-  return lines.length;
-}
+//  a StrictMark title carries stands after it.  BEE-029 moved the rule to
+//  `mark/front.js`, so the lane and the rendered page split a file alike.
+const bodyStart = require("mark/front.js").bodyLine;
 
 //  The file's OWN meta pairs: the block standing directly under the title
 //  ([/meta/todo]).  One leading non-pair line — the header itself — is skipped,

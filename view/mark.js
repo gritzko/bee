@@ -29,8 +29,11 @@ function doc(title, body) {
 //  rendering StrictMark is what this verb is for.
 function toHtmlOf(ext) {
   if (ext === "rst") return require("mark/rst.js").toHtml;
+  //  BEE-029: through `mark/front.js`, so a YAML preamble is dropped here as
+  //  it is on the served page (http.js:313:ht); the kv lane reads one off either
+  //  markdown ext (index/kv.js:126:De), and so does this verb.
   if (ext === "mkd" || ext === "md" || ext === "markdown")
-    return require("mark/html.js").toHtml;
+    return require("mark/front.js").toHtml;
   return null;
 }
 
