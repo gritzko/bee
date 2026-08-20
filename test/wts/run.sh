@@ -116,19 +116,23 @@ if grep -q 'repo-NOGIT' "$WORK/one"
 then bad "a matching dir with no repo is skipped" "$WORK/one"
 else ok "a matching dir with no repo is skipped"; fi
 
-# be's widths (todo.js:721): the file frame 16 cells, the commit frame 13.
+# be's CI-004 widths (todo.js:721): the file frame 16 cells, the commit frame 13.
+# BEE-039: the frames wear multibyte button faces now, so the cells are counted
+# on a transliterated copy — awk measures bytes.
+sed 's/≡/=/g; s/✓/V/g; s/⇄/x/g' "$WORK/one" > "$WORK/one.cells"
 if awk '{ i = index($0, "[")
           if (i == 0 || length($0) != i + 29) { bad = 1; next }
           if (substr($0, i, 1) != "[" || substr($0, i + 15, 1) != "]") bad = 1
           if (substr($0, i + 17, 1) != "[" || substr($0, i + 29, 1) != "]") bad = 1 }
-        END { exit bad ? 1 : 0 }' "$WORK/one"
+        END { exit bad ? 1 : 0 }' "$WORK/one.cells"
 then ok "the frames are 16 and 13 cells wide"
-else bad "the frames are 16 and 13 cells wide" "$WORK/one"; fi
+else bad "the frames are 16 and 13 cells wide" "$WORK/one.cells"; fi
 
-# A quiet worktree has nothing to count, and its commit frame still names a tip.
-if grep -q '^repo-TKT-2 \[ *\] \[ *[0-9a-f][0-9a-f]*\]$' "$WORK/one"
-then ok "a quiet worktree counts nothing and names its tip"
-else bad "a quiet worktree counts nothing and names its tip" "$WORK/one"; fi
+# A quiet worktree has nothing to count, so both frames are their button face
+# and blanks — BEE-039 retired the 5-hex tip cell with be's CI-004 geometry.
+if grep -q '^repo-TKT-2 \[ i *\] \[ ≡ *\]$' "$WORK/one"
+then ok "a quiet worktree counts nothing"
+else bad "a quiet worktree counts nothing" "$WORK/one"; fi
 
 # ==========================================================================
 # leg 1b — a no-op run repeats byte for byte; an edit moves exactly one row
@@ -140,9 +144,11 @@ else bad "a no-op run prints the same bytes" "$WORK/one" "$WORK/two"; fi
 
 printf 'UNTRACKED\n' > "$SRC/repo-TKT-1/new.txt"
 bee wts > "$WORK/three" 2> "$WORK/three.err"
-if grep -q '^repo-TKT-1 \[ *v1 *\] ' "$WORK/three"
-then ok "an edit lights the worktree column of the file frame"
-else bad "an edit lights the worktree column of the file frame" "$WORK/three"; fi
+# BEE-039: an untracked file is UNSTAGED WORK of class `add` — the axis the
+# staging button acts on, not the quad column it sits in.
+if grep -q '^repo-TKT-1 \[ i *+1 *\] ' "$WORK/three"
+then ok "an untracked file lights the add slot of the file frame"
+else bad "an untracked file lights the add slot of the file frame" "$WORK/three"; fi
 
 if [ "$(grep -c '^repo-TKT-2 ' "$WORK/three")" = 1 ] &&
    [ "$(grep '^repo-TKT-2 ' "$WORK/two")" = "$(grep '^repo-TKT-2 ' "$WORK/three")" ]
@@ -162,7 +168,7 @@ else bad "an ignored file changes no frame" "$WORK/three" "$WORK/four"; fi
 git -C "$SRC/repo-TKT-2" config branch.TKT-2.remote . || exit 2
 git -C "$SRC/repo-TKT-2" config branch.TKT-2.merge refs/heads/master || exit 2
 bee wts > "$WORK/five" 2> "$WORK/five.err"
-if grep -q '^repo-TKT-2 .* \[o1 *[0-9a-f][0-9a-f]*\]$' "$WORK/five"
+if grep -q '^repo-TKT-2 .* \[ ≡ +1 *\]$' "$WORK/five"
 then ok "a commit the upstream lacks lights the ahead slot"
 else bad "a commit the upstream lacks lights the ahead slot" "$WORK/five"; fi
 

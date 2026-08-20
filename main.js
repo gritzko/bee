@@ -19,6 +19,9 @@
 const door = require("door.js");
 //  BEE-023: the repo a `//name` word names, and the words a miss gets.
 const mnt = require("index/mount.js");
+//  BEE-038: the WRITER verbs (`add`, `push`, …) — one table, shared with the
+//  pager, so a click runs the same row this file spells on the CLI.
+const act = require("act.js");
 
 function writeFd(fd, bytes) {
   const b = io.buf(bytes.length + 8);
@@ -83,6 +86,8 @@ function runLindex(args) {
 //  git merge-driver contract (result over <ours>, exit code = clean/conflict),
 //  and `bee install [<repo>]` which points a repo's git at it.  Both are silent
 //  on success bar install's one report line; a conflict THROWS (exit 1).
+//  BEE-037: BARE `bee merge` is the history verb instead, and BEE-038 picks it
+//  by shape in run() — git never calls the driver with zero files.
 function runMerge(args) { require("merge.js").merge(args); }
 
 function runInstall(args) {
@@ -90,11 +95,14 @@ function runInstall(args) {
   writeFd(1, utf8.Encode(mg.install(args.length ? args[0] : mnt.at()) + "\n"));
 }
 
-//  BEE-026: `bee fork //repo-TKT-123` — the ticket worktree of the work loop,
-//  branch named by the tail, submodules recursed into, at `$SRC_ROOT`.  One
-//  report line; a refusal is fork.js's throw.  The verb's name is fork.js:17 VERB.
-function runFork(args) {
-  writeFd(1, utf8.Encode(require("fork.js").fork(args) + "\n"));
+//  BEE-038: a WRITER verb's CLI leg is its act.js row and nothing more — run it,
+//  print the one report line.  A git refusal is git's own words on stderr plus
+//  the verb's throw, so `fork`, the BEE-036 staging pair and the BEE-037 history
+//  verbs all reach the CLI through this one function.
+function runAct(word) {
+  return function (args) {
+    writeFd(1, utf8.Encode(require("act.js").rowOf(word).run(args) + "\n"));
+  };
 }
 
 //  BEE-027: `bee wts` — the ticket worktrees under `$SRC_ROOT` (index/wts.js),
@@ -236,8 +244,20 @@ function pageHunks(hunks) {
 const SIDE = {
   index: runIndex, lindex: runLindex, merge: runMerge, install: runInstall,
   hook: runHook, chat: runChat, http: runHttp, now: runNow, mint: runMint,
-  mark: runMark, fork: runFork, wts: runWts,
+  mark: runMark, wts: runWts,
 };
+
+//  BEE-038: every WRITER verb joins from the ONE mutation table, so registering
+//  a new one is a row in act.js and nothing here.  A SHAPE-SPLIT word stays out:
+//  `commit <rev>` and LITE-014's three-file `merge` are views, and run() picks
+//  the writing shape before this table is consulted at all.
+for (const w in act.ACTS)
+  if (!act.ACTS[w].shape && !Object.prototype.hasOwnProperty.call(SIDE, w)) {
+    SIDE[w] = runAct(w);
+    //  BEE-036 r2: the forceful `!` form of every writer — act.rowOf strips the
+    //  flag and the verb interprets it (or refuses in one line).
+    SIDE[w + "!"] = runAct(w + "!");
+  }
 
 //  BEE-023:24 the CLI is TRIPARTITE — `bee [//context] verb args`.  The context
 //  slot is POSITIONAL and FIRST, so `bee todo //x` is a verb with a path arg and
@@ -265,6 +285,11 @@ function contextOf(argl) {
 
 function run(argl, from) {
   const word = argl.length ? argl[0] : "";
+  //  BEE-038: a word that is a VERB and a VIEW both (`commit`, `merge`) is told
+  //  apart by the arg SHAPE, here — the writing side never reaches the scan below.
+  const row = act.rowOf(word);
+  if (row !== null && row.shape && row.shape(argl.slice(1)))
+    return writeFd(1, utf8.Encode(row.run(argl.slice(1)) + "\n"));
   if (Object.prototype.hasOwnProperty.call(SIDE, word))
     return SIDE[word](argl.slice(1));
 

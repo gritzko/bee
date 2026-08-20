@@ -130,6 +130,9 @@ const bodyStart = require("mark/front.js").bodyLine;
 //  ([/meta/todo]).  One leading non-pair line — the header itself — is skipped,
 //  blanks pass, and the first other construct ends the block, so the four-space
 //  pairs buried in a bulletpoint below are not the file's meta.  First wins.
+//  BEE-043: a pair also says WHERE it stands — its line and the indent the
+//  grammar found it at — so done.js edits the very line this lexer read and no
+//  writer needs a second regex ([BEE-043]).
 function metaPairs(lines) {
   const out = [];
   let header = false;
@@ -137,7 +140,11 @@ function metaPairs(lines) {
     const ln = lines[i];
     if (ln.trim() === "") continue;
     const m = PAIR_RE.exec(ln);
-    if (m) { out.push({ key: m[1], value: m[2].trim() }); continue; }
+    if (m) {
+      out.push({ key: m[1], value: m[2].trim(), line: i,
+                 indent: ln.charAt(0) === " " ? "    " : "" });
+      continue;
+    }
     if (header || out.length) break;
     header = true;
   }

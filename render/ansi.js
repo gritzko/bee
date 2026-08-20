@@ -27,10 +27,23 @@ const A0 = { fm: 0, fg: 0, bm: 0, bg: 0, fl: 0 };
 function aFgB(n)   { return { fm: 1, fg: n, bm: 0, bg: 0, fl: 0 }; }  // basic 30-37/90-97
 function aFg256(n) { return { fm: 2, fg: n, bm: 0, bg: 0, fl: 0 }; }
 function aFg24(n)  { return { fm: 3, fg: n, bm: 0, bg: 0, fl: 0 }; }  // 24-bit
+//  BEE-035: its bg twin — the button wash, which no palette slot ever names.
+function aBg24(n)  { return { fm: 0, fg: 0, bm: 3, bg: n, fl: 0 }; }
 function aFlag(f)  { return { fm: 0, fg: 0, bm: 0, bg: 0, fl: f }; }
 function aOr(a, b) {
   return { fm: a.fm | b.fm, fg: a.fg | b.fg, bm: a.bm | b.bm,
            bg: a.bg | b.bg, fl: a.fl | b.fl };
+}
+//  BEE-035: OVERRIDE, not OR — a slot `over` NAMES replaces the base's.  A
+//  colour code is a value, not a bit field: OR-ing a basic fg with a truecolor
+//  one yields a third, wrong colour.  This is what lets a button wear a legacy
+//  tag as its FALLBACK and still paint truecolor (be view/bro.js:94 aOver).
+function aOver(base, over) {
+  return { fm: over.fm !== 0 ? over.fm : base.fm,
+           fg: over.fm !== 0 ? over.fg : base.fg,
+           bm: over.bm !== 0 ? over.bm : base.bm,
+           bg: over.bm !== 0 ? over.bg : base.bg,
+           fl: base.fl | over.fl };
 }
 function aEq(a, b) {
   return a.fm === b.fm && a.fg === b.fg && a.bm === b.bm &&
@@ -89,6 +102,9 @@ function washBg(bg, steps) {
 //  Shift `a`'s background `steps` darker; fg/flags ride through untouched.
 function aWash(a, steps) {
   if (!steps) return a;
+  //  BEE-035: a BUTTON's own truecolor wash is not a cube step — leave it, as
+  //  the basic-16 bg above is left; the button keeps reading as a button.
+  if (a.bm === 3) return a;
   const bg = a.bm === 2 ? washBg(a.bg, steps) : 255 - 2 * steps;
   return { fm: a.fm, fg: a.fg, bm: 2, bg: bg, fl: a.fl };
 }
@@ -133,6 +149,22 @@ function cellAnsi(tag, pass, side) {
   return aOr(want, side === SIDE_IN ? WASH_IN_PALE : WASH_RM_PALE);
 }
 
+//  BEE-035: the BUTTON pair a visible token's own hidden `O` carries — peek the
+//  NEXT token, read its `#<bg><fg> ` look (wrap.oLook) and hand back the ansi64
+//  that OVERRIDES the token's tag.  A0 when there is no `O` or it is a bare
+//  spell, so a face with no pair still paints by its fallback tag.
+function oAnsi(hunk, ti) {
+  const toks = hunk.toks;
+  if (ti + 1 >= toks.length || wrap.TOK_TAG(toks[ti + 1]) !== "O") return A0;
+  const lo = wrap.TOK_END(toks[ti]), hi = wrap.TOK_END(toks[ti + 1]);
+  const look = hi > lo ? wrap.oLook(utf8.Decode(hunk.text.slice(lo, hi))) : null;
+  if (!look) return A0;
+  let want = A0;
+  if (look.bg) want = aOr(want, aBg24(parseInt(look.bg.slice(1), 16)));
+  if (look.fg) want = aOr(want, aFg24(parseInt(look.fg.slice(1), 16)));
+  return want;
+}
+
 //  BRO-011: emit one row to a BYTE sink — `enc` appends SGR/ASCII, `raw(lo,hi)` the
 //  VERBATIM text bytes.  BRO-010: colour = the SHARED THEME, runs batched, U/O hidden.
 //  LITE-023: `wash` (or null) is the CURSOR wash for THIS row — {lo,hi} the
@@ -148,6 +180,9 @@ function emitBody(hunk, off, end, color, pass, enc, raw, wash, els) {
     if ((toks[m] & 0xffffff) <= off) lo = m + 1; else hi = m; }
   let ti = lo;
   let cur = A0, pos = off, runLo = -1;
+  //  BEE-035: the `O` look is per TOKEN, so it is re-read only when `ti` moves
+  //  — a decode + regex per byte would be felt on a long hunk.
+  let lookTi = -1, look = A0;
   let elsDone = els === undefined || els === null;
   while (pos < end) {
     //  BEE-030: the elastic insert/skip — emit `ins` at els.lo, resume at els.hi.
@@ -169,7 +204,8 @@ function emitBody(hunk, off, end, color, pass, enc, raw, wash, els) {
     if (wrap.passHides(tag, pass, side)) {       // BEE-021: a split pass hides the other side
       if (runLo >= 0) { raw(runLo, pos); runLo = -1; } pos += clen; continue; }
     if (color) {
-      let want = cellAnsi(tag, pass, side);
+      if (ti !== lookTi) { lookTi = ti; look = oAnsi(hunk, ti); }
+      let want = aOver(cellAnsi(tag, pass, side), look);
       if (wash) want = aWash(want, pos >= wash.lo && pos < wash.hi
                                       ? WASH_CUR_TOK : WASH_CUR_LINE);
       if (!aEq(want, cur)) {
@@ -258,6 +294,8 @@ module.exports = {
   //  The pager paints each cell through the SAME machinery (cellAnsi →
   //  deltaSGR), so it needs the ansi64 identity (A0) + equality (aEq) too.
   cellAnsi: cellAnsi,
+  //  BEE-035: the button pair an `O` carries, and the override it applies.
+  oAnsi: oAnsi, aOver: aOver,
   themeAt: themeAt,
   deltaSGR: deltaSGR,
   resetSGR: resetSGR,

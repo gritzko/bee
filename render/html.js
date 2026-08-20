@@ -98,6 +98,12 @@ function stylesheet(thm) {
     const css = sgrCss(thm.slots[tag]);
     if (css) out.push(".tok-" + tag + "{" + css + "}");
   }
+  //  BEE-035: one class per BUTTON tone — the tone as fg over its derived pale
+  //  wash, the CSS twin of the `#<bg><fg> ` pair a button's `O` carries.  A view
+  //  that names the class and a face that carries the pair paint identically.
+  for (const name in theme.BTN)
+    out.push(".btn-" + name + "{color:" + theme.BTN[name] +
+             ";background:" + theme.pale(theme.BTN[name]) + "}");
   out.push(".side-in{" + sgrCss(thm.washIn) + "}");
   out.push(".side-rm{" + sgrCss(thm.washRm) + "}");
   out.push(".side-in.pale{" + sgrCss(thm.washInPale) + "}");
@@ -153,9 +159,17 @@ function spansHtml(hunk, from, to, pass, link, ord, seen, out) {
     if (e <= s && !(tag === "B" && start >= from && end <= to)) continue;
     //  The target, exactly as pager.js reads it: a hidden `U` span right
     //  behind this one, else an `F` token's own bytes — a reference (LITE-015).
-    let target = "";
+    let target = "", look = null;
     if (i + 1 < toks.length && TOK_TAG(toks[i + 1]) === "U")
       target = dec(text, end, TOK_END(toks[i + 1]));
+    //  BEE-034: an `O` follower is the BUTTON channel — this face becomes its
+    //  action, the `#<bg><fg> ` look shed as the pager's `_spellAt` sheds it.
+    //  BEE-035: that same prefix is the face's COLOUR PAIR.
+    else if (i + 1 < toks.length && TOK_TAG(toks[i + 1]) === "O") {
+      const o = dec(text, end, TOK_END(toks[i + 1]));
+      target = wrap.oSpell(o);
+      look = wrap.oLook(o);
+    }
     else if (tag === "F" && hunk.kind !== "dir")
       target = dec(text, start, end);
     const href = (target && link) ? link(target) : "";
@@ -164,8 +178,14 @@ function spansHtml(hunk, from, to, pass, link, ord, seen, out) {
     //  BEE-030: the elastic span — or the `<a>` around it — wears `els`, the
     //  flex item blob/style.css stretches and ellipsizes (BRO-036's css twin).
     const els = tag === "B" ? " els" : "";
+    //  BEE-035: the button PAIR rides inline — a face's tone is its own token's
+    //  data (a count wears its class's colour), so no generated class can carry
+    //  it; the .btn-* rules stand for the named buttons a view asks for.
+    const sty = look ? ' style="' + (look.fg ? "color:" + look.fg : "") +
+                       (look.bg ? (look.fg ? ";" : "") + "background:" + look.bg : "") +
+                       '"' : "";
     const span = '<span class="tok-' + tag + (href ? "" : els) +
-                 sideClass(side, pass) + '"' + id + '>' +
+                 sideClass(side, pass) + '"' + id + sty + '>' +
                  esc(dec(text, s, e)) + "</span>";
     //  A reference that resolves to nothing is PLAIN PAINTED TEXT — never a
     //  link that 404s (ruling 2026-08-15).

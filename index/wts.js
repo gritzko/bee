@@ -10,6 +10,11 @@
 const idx = require("./index.js");
 const mnt = require("./mount.js");
 
+//  BEE-043: the RETIREMENT root `done.js` parks a closed ticket's worktree in.
+//  The scan is one readdir of `$SRC_ROOT`, so what sits below never lists — and
+//  the root itself is skipped by NAME, since retired work is no ticket's work.
+const DONE_ROOT = "done";
+
 //  The top-level registry names, LONGEST first, so a split takes the longest
 //  name that prefixes a dir — fork.js:58 `longest`, read backwards.
 function names(home) {
@@ -44,7 +49,7 @@ function scan(home) {
   for (const raw of es) {
     if (raw.slice(-1) !== "/") continue;
     const base = raw.slice(0, -1);
-    if (own.has(base)) continue;
+    if (own.has(base) || base === DONE_ROOT) continue;
     const sp = split(base, ns);
     if (sp === null) continue;
     const root = src + "/" + base;
@@ -55,4 +60,5 @@ function scan(home) {
   return out;
 }
 
-module.exports = { scan: scan, split: split, names: names };
+module.exports = { scan: scan, split: split, names: names,
+                   DONE_ROOT: DONE_ROOT };

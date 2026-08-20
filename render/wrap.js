@@ -33,6 +33,29 @@ function passHides(tag, pass, side) {
          (pass === PASS_IN && side === SIDE_RM);
 }
 
+//  BEE-034: an `O` token's bytes are a BUTTON — `#<bg><fg> <verb args>`, one
+//  token spelling both the look and the click (be views/todo/todo.js:750
+//  btnSpell).  This sheds the look: everything through the FIRST space.  ""
+//  means colour and no click, so the caller falls through to the row.
+function oSpell(s) {
+  if (s.charCodeAt(0) !== 0x23) return s;        // no `#` prefix: all spell
+  const sp = s.indexOf(" ");
+  return sp < 0 ? "" : s.slice(sp + 1);
+}
+
+//  BEE-035: the LOOK half of that same prefix — TWO ordered slots, each opened
+//  by `#` and each optional: `#<bg><fg> ` is a button (tone over its derived
+//  wash), `##<fg> ` is INFO (the tone alone, no wash).  -> { bg, fg } as `#rrggbb`
+//  or "", or null when the bytes are a bare spell.  ONE grammar, read by the
+//  ansi painter and the html twin alike (be view/bro.js:229 whyBgAt).
+const LOOK_RE = /^#([0-9a-fA-F]{6})?(?:#([0-9a-fA-F]{6}))?/;
+function oLook(s) {
+  if (s.charCodeAt(0) !== 0x23) return null;
+  const m = LOOK_RE.exec(s);
+  if (!m || (!m[1] && !m[2])) return null;
+  return { bg: m[1] ? "#" + m[1] : "", fg: m[2] ? "#" + m[2] : "" };
+}
+
 //  ---- row index (BROAppendLines) ------------------------------------------
 //  One row per logical line, codepoint soft-wrapped at `cols` (default 80 when
 //  not a tty).  A row = { off, end, pass } byte span over the hunk text (the
@@ -375,6 +398,8 @@ module.exports = {
   PASS_NORMAL: PASS_NORMAL, PASS_RM: PASS_RM, PASS_IN: PASS_IN,
   SIDE_EQ: SIDE_EQ, SIDE_IN: SIDE_IN, SIDE_RM: SIDE_RM,
   passHides: passHides,
+  oSpell: oSpell,                        // BEE-034: the `O` button's click bytes
+  oLook: oLook,                          // BEE-035: ...and its colour pair
   indexRows: indexRows,
   rowEnd: rowEnd,
   //  BEE-030: the elastic `B` field + the width past which no index clamps.

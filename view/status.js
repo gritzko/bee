@@ -105,11 +105,12 @@ function statClean(st, e, idxRon) {
 
 //  The bytes on disk at one tracked path -> its blob sha, or null when gone.
 //  A gitlink answers with the submodule's own head, so an advanced one reads
-//  `v`; an uninitialised one reads as unchanged rather than as removed.
-function wtSha(ctx, path, sub, e, st, idxRon) {
+//  `v`; an uninitialised one reads as unchanged rather than as removed, which
+//  is `rec` — the sha the commit recorded — standing in ([BEE-040]).
+function wtSha(ctx, path, sub, e, st, idxRon, rec) {
   if (sub) {
     const hd = refs.head(idx.gitdirOf(ctx.root + "/" + path) || "");
-    return hd === null ? null : hd.sha;
+    return hd === null ? (rec === undefined ? null : rec) : hd.sha;
   }
   if (statClean(st, e, idxRon)) return e.sha;
   const bytes = (st.kind === "reg" && st.size === 0) ? new Uint8Array(0)
@@ -125,7 +126,11 @@ function wtOf(ctx, base, stage, cache) {
   let idxRon = 0n;
   try { idxRon = io.lstat(ctx.gitdir + "/index").mtime; } catch (e) { idxRon = 0n; }
   const tracked = new Map();                       // path -> is it a gitlink?
-  for (const e of base) tracked.set(e.path, e.sub === true);
+  const rec = new Map();                           // [BEE-040] gitlink -> recorded sha
+  for (const e of base) {
+    tracked.set(e.path, e.sub === true);
+    if (e.sub === true) rec.set(e.path, e.sha);
+  }
   for (const e of (stage || []))
     if (!tracked.has(e.path)) tracked.set(e.path, false);
   const out = [];
@@ -134,7 +139,7 @@ function wtOf(ctx, base, stage, cache) {
     try { st = io.lstat(ctx.root + "/" + path); } catch (e) { st = null; }
     if (st === null && !sub) continue;              // gone from the worktree
     const sha = wtSha(ctx, path, sub, cache ? cache.get(path) : undefined,
-                      st, idxRon);
+                      st, idxRon, rec.get(path));
     if (sha !== null) out.push({ path: path, sha: sha });
   }
   scanUntracked(ctx, tracked, out);
@@ -194,7 +199,9 @@ function scanUntracked(ctx, tracked, out) {
           if (name === ".git") continue;
           const rel = dir ? dir + "/" + name : name;
           if (isDir) {
-            if (!ig.match(rel, true)) walk(rel);
+            //  BEE-040: a declared gitlink is a REPO BOUNDARY, as it is for git
+            //  — its files are its own repo's rows, folded there (wtstat.js:110:sb).
+            if (tracked.get(rel) !== true && !ig.match(rel, true)) walk(rel);
             continue;
           }
           if (tracked.has(rel) || ig.match(rel, false)) continue;

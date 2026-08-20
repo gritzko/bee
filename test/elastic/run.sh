@@ -3,8 +3,8 @@
 # One JS leg (board.js) over a fixture board: at a REAL no-wrap width a todo
 # row's title …-cuts when the line overflows and ┄-pads when it falls short, so
 # the [BEE-027] frames column stays visible and flush right; soft-wrap and the
-# unclamped (piped) index carry no elastic at all; a pager click on the
-# flush-right frames still opens `list <wt>/`; the html page wears the flex
+# unclamped (piped) index carry no elastic at all; the flush-right frames carry
+# no region nav of their own ([BEE-042] retired it); the html page wears the flex
 # `.row`/`.els` twin.
 #
 # THE GAP THIS REPROS: the board tagged its title `S`, so a long title pushed

@@ -30,7 +30,7 @@ const SHORTCUTS = [
   ["space / b", "page down / up"],
   ["g / G", "jump to top / bottom"],
   ["m", "toggle mouse tracking (wheel + click-to-follow)"],
-  [":", "open the path bar (type a file or dir path)"],
+  [":", "open the path bar (a path, or a writer verb — BEE-038)"],
   ["Enter", "follow the active token, else the active line"],
   ["- / BS", "back — pop to the previous view"],
   ["R / r", "refresh — re-open the current view (keep the scroll pos)"],
@@ -186,6 +186,16 @@ Pager.prototype._viewDir = function () {
   return h && h.kind === "dir" ? p : dirOf(p);
 };
 
+//  BEE-038: the ambient the CURRENT view stands in, for a spell typed at the `:`
+//  bar — a hunk that names its own repo wins (BEE-020:55:Uh), else the dir the view
+//  reads from, which is what `_follow` hands the door.
+Pager.prototype._viewPos = function () {
+  const h = this.view && this.view.hunks && this.view.hunks[0];
+  if (h && h.pos) return h.pos;
+  const dir = this._viewDir();
+  return dir ? dir + "/" : undefined;
+};
+
 //  BRO-014: (re)index the view's rows for `cols`, cached by (cols, wrap) — a `w`
 //  toggle re-indexes and a resize re-wraps, a scroll does not.
 Pager.prototype.rows = function (cols) {
@@ -221,7 +231,9 @@ Pager.prototype._rowToks = function (r) {
     if (e <= s || text[s] === 0x0a) continue;    // empty / the row terminator
     const next = ti + 1 < toks.length
                ? String.fromCharCode(65 + ((toks[ti + 1] >>> 27) & 0x1f)) : "";
-    if (tag === "F" || next === "U") out.push({ lo: s, hi: e });
+    //  BEE-034: an `O` follower makes the token a BUTTON, so `h`/`l` hop it and
+    //  Enter fires it exactly as they do a `U`-backed one.
+    if (tag === "F" || next === "U" || next === "O") out.push({ lo: s, hi: e });
   }
   return out;
 };
@@ -525,6 +537,8 @@ Pager.prototype._followRow = function (ri) {
   //  resolves in the submodule it walked, never in the parent.
   const target = this._targetAt(r.hunk, r.off);
   if (target) { this._openPush(target, r.hunk.pos); return; }
+  const spell = this._spellAt(r.hunk, r.off);   // BEE-034: an `O` button leading
+  if (spell) { this._spell(spell, r.hunk.pos); return; }
   const name = this._uriAt(r.hunk, r.off);
   if (!name) { this.message = "(nothing to follow)"; return; }
   this._follow(r.hunk, name);
@@ -557,13 +571,29 @@ Pager.prototype._targetAt = function (hunk, off) {
   return hi > lo ? utf8.Decode(hunk.text.slice(lo, hi)) : "";
 };
 
+//  BEE-034: a CLICK SPELL — the `_targetAt` twin on the SEPARATE `O` tag, so a
+//  row's nav click (`U`) and its button clicks coexist on one row.  The hidden
+//  bytes carry the look too, so the `#<bg><fg> ` prefix is shed (wrap.oSpell);
+//  a spell-less button is colour only and reads as "" — the row wins.
+Pager.prototype._spellAt = function (hunk, off) {
+  const toks = hunk.toks;
+  if (!toks || !toks.length) return "";
+  let ti = 0;
+  while (ti < toks.length && (toks[ti] & 0xffffff) <= off) ti++;
+  if (ti + 1 >= toks.length) return "";
+  if (String.fromCharCode(65 + ((toks[ti + 1] >>> 27) & 0x1f)) !== "O") return "";
+  const lo = toks[ti] & 0xffffff, hi = toks[ti + 1] & 0xffffff;
+  return hi > lo ? wrap.oSpell(utf8.Decode(hunk.text.slice(lo, hi))) : "";
+};
+
 //  LITE-023: what the ACTIVE TOKEN names — its `U` target, else its `F` bytes;
 //  "" when there is no active token (the status bar then keeps the `#L`).
 Pager.prototype._curTarget = function (r, cur) {
   if (!r || r.banner || !cur || cur.tok < 0) return "";
   const span = this._curSpan(r);
   if (span.lo < 0) return "";
-  return this._targetAt(r.hunk, span.lo) || this._uriAt(r.hunk, span.lo);
+  return this._targetAt(r.hunk, span.lo) || this._spellAt(r.hunk, span.lo) ||
+         this._uriAt(r.hunk, span.lo);
 };
 
 //  LITE-023: Enter — follow the ACTIVE TOKEN exactly as a click on it would,
@@ -578,6 +608,8 @@ Pager.prototype._followCur = function () {
     if (span.lo >= 0) {
       const target = this._targetAt(r.hunk, span.lo);
       if (target) { this._openPush(target, r.hunk.pos); return; }
+      const spell = this._spellAt(r.hunk, span.lo);   // BEE-034: the button
+      if (spell) { this._spell(spell, r.hunk.pos); return; }
       const name = this._uriAt(r.hunk, span.lo);
       if (name) { this._follow(r.hunk, name); return; }
     }
@@ -587,17 +619,45 @@ Pager.prototype._followCur = function () {
 
 //  REFRESH — re-`open` the view's path and swap the hunks IN PLACE (no push, no
 //  stack entry), keeping the scroll pos; render() clamps a now-shorter one.
+//  BEE-038: it answers whether it re-opened, so `_actSpell` knows whether the
+//  bar is free for the mutation's own report.
 Pager.prototype._refresh = function () {
   const v = this.view;
-  if (!v || !v.path || !this.open) { this.message = "(nothing to refresh)"; return; }
+  if (!v || !v.path || !this.open) { this.message = "(nothing to refresh)"; return false; }
   cache.bumpRoot();          // BEE-027: a forced reload misses EVERY memo
   const scroll = v.scroll;
   let hunks;
   try { hunks = this.open(v.path, v.from); }
-  catch (e) { this.message = "cannot open " + v.path + ": " + String(e); return; }
-  if (!hunks || hunks.length === 0) { this.message = "cannot open " + v.path; return; }
+  catch (e) { this.message = "cannot open " + v.path + ": " + String(e); return false; }
+  if (!hunks || hunks.length === 0) { this.message = "cannot open " + v.path; return false; }
   v.hunks = hunks; v.rows = null; v.scroll = scroll;   // re-index, keep the pos
   this.message = "refreshed";
+  return true;
+};
+
+//  BEE-038: a spell whose verb WRITES (act.js's table, shape and all) runs HERE
+//  and pushes NOTHING — the mutation lands, this view re-opens on its own
+//  recorded spell with the scroll and the cursor kept, and the report (or the
+//  refusal) takes the bar.  false = a VIEW spell, which navigates as ever.
+Pager.prototype._actSpell = function (spell, from) {
+  const act = require("act.js");
+  if (act.actOf(spell) === null) return false;
+  let report;
+  try { report = act.run(spell, from); }
+  catch (e) { this.message = String(e); return true; }
+  //  The write moved the index or a ref, so no memo is worth trusting — the
+  //  re-open re-asks (BEE-038:16) and only then does the report take the bar.
+  if (!this._refresh()) report = String(report) + " (" + this.message + ")";
+  //  BEE-043: a multi-key writer answers a row per key, and the bar is ONE line
+  //  (`_render`: message + "  " + left) — so the rows join rather than break it.
+  this.message = String(report).split("\n").join("; ");
+  return true;
+};
+
+//  BEE-038: the ONE `O` dispatch every follow site shares — a writer runs in
+//  place, everything else opens the view it names.
+Pager.prototype._spell = function (spell, from) {
+  if (!this._actSpell(spell, from)) this._openPush(spell, from);
 };
 
 //  BRO-007: `h` — SHORTCUTS as a plain (tok-less) hunk, pushed like any other
@@ -682,12 +742,15 @@ Pager.prototype._keyCommand = function (b) {
   if (b >= 0x20 && b < 0x7f) this.cmd += String.fromCharCode(b);     // printable
 };
 
-//  The `:` bar takes `q`/`quit` (leave the TUI) or a PATH — absolute as-is, `./x`,
-//  `../x` or a bare name against the view's dir.  No verbs, no spells.
+//  The `:` bar takes `q`/`quit` (leave the TUI), a WRITER verb (BEE-038) or a
+//  PATH — absolute as-is, `./x`, `../x` or a bare name against the view's dir.
 Pager.prototype._applyPath = function (cmd) {
   const s = (cmd || "").trim();
   if (!s) return;
   if (s === "q" || s === "quit") { this.quit = true; return; }
+  //  BEE-038: a typed mutation is the CLICK's twin — it runs and this view
+  //  refreshes; every other line is still a path, never a view spell.
+  if (this._actSpell(s, this._viewPos())) return;
   this._openPush(resolvePath(this._viewDir(), s));
 };
 
@@ -767,6 +830,8 @@ Pager.prototype._mouse = function (seq, press) {
   if (hit) {
     const target = this._targetAt(hit.hunk, hit.off);   // a `U` click-target
     if (target) { this._openPush(target, hit.hunk.pos); return; }
+    const spell = this._spellAt(hit.hunk, hit.off);     // BEE-034: an `O` button
+    if (spell) { this._spell(spell, hit.hunk.pos); return; }
     const name = this._uriAt(hit.hunk, hit.off);
     if (name) { this._follow(hit.hunk, name); return; }
   }

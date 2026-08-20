@@ -12,6 +12,7 @@ const ansi = require("render/ansi.js");
 const html = require("render/html.js");
 const pager = require("pager.js");
 const wtstat = require("view/wtstat.js");
+const theme = require("render/theme.js");
 
 let n = 0, bad = 0;
 function w1(s) { const b = utf8.Encode(s); const x = io.buf(b.length + 8); x.feed(b); io.writeAll(1, x); }
@@ -26,6 +27,9 @@ function check(name, cond, got) {
 const SRC = io.getenv("SRC_ROOT");
 const ALPHA = SRC + "/alpha";
 const COLS = 72;
+//  BEE-043: the ticket-state panel now CLOSES an open row, so the flush-right
+//  region is the two [BEE-027] frames plus it (view/todo.js:523:TO doneCells).
+const PANEL = " [" + theme.BTN_FACE.done + " " + theme.BTN_FACE.dont + "]";
 
 const v = todo.todo("", { from: ALPHA });
 const h = v.hunks[0];
@@ -66,7 +70,7 @@ if (cut !== null) {
   check("cut-row-is-cols-wide", s.length === COLS, s.length + " |" + s + "|");
   check("cut-row-wears-the-ellipsis", s.indexOf("…") >= 0, s);
   check("cut-row-keeps-the-frames-flush-right",
-        s.endsWith(frames1.file + " " + frames1.commit), "|" + s + "|");
+        s.endsWith(frames1.file + " " + frames1.commit + PANEL), "|" + s + "|");
   check("cut-row-spans-the-whole-line",
         cut.end === h.text.length || h.text[cut.end] === 0x0a, cut.end);
 }
@@ -89,7 +93,7 @@ if (zero !== null) {
   const s = painted(zero);
   check("zero-row-is-cols-wide", s.length === COLS, s.length + " |" + s + "|");
   check("zero-row-keeps-the-frames-flush-right",
-        s.endsWith(frames3.file + " " + frames3.commit), "|" + s + "|");
+        s.endsWith(frames3.file + " " + frames3.commit + PANEL), "|" + s + "|");
 }
 
 //  --- 5. soft-wrap and the unclamped (piped) index never stretch -------------
@@ -104,7 +108,7 @@ check("plain-keeps-the-full-title-unpadded",
       plain.indexOf("wide margin") >= 0 && plain.indexOf("┄") < 0 &&
       plain.indexOf("…") < 0, plain);
 
-//  --- 6. a click on the flush-right frames opens `list <wt>/` ----------------
+//  --- 6. the flush-right frames carry no region nav of their own -------------
 const p = new pager.Pager(-1, { color: false });
 p.setHunks(v.hunks);
 const prows = p.rows(COLS);
@@ -116,9 +120,11 @@ if (ri >= 0) {
   const hit = p._screenToByte(ri + 1, COLS);     // the frames' last `]` cell
   check("the-last-cell-is-a-byte-again", hit !== null);
   if (hit !== null) {
+    //  BEE-042: the COMMIT frame's `list <wt>/` U retired with the panel that
+    //  replaced it — the last cell is a bracket and names nothing of its own.
     const spell = p._targetAt(hit.hunk, hit.off);
-    check("the-frames-click-opens-list-wt",
-          spell.indexOf("list ") === 0 && spell.indexOf("alpha-GET-001") > 0, spell);
+    check("the-frames-carry-no-list-target",
+          !spell && !p._spellAt(hit.hunk, hit.off), spell);
   }
   //  A cell inside the …-cut span maps to the CUT byte, never past the row.
   const mid = p._screenToByte(ri + 1, 30);

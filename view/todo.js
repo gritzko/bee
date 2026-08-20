@@ -15,6 +15,7 @@ const rd = require("index/read.js");
 const lst = require("./list.js");
 const wts = require("index/wts.js");
 const wtstat = require("./wtstat.js");
+const theme = require("render/theme.js");   // BEE-041: the button look, as data
 
 const EXTS = ["mkd", "md", "txt"];         // this board is .mkd-first
 const CAP = 1 << 16;                       // a ticket head sits at the very top
@@ -175,13 +176,20 @@ function todoOf(root) { const d = root + "/todo"; return isDir(d) ? d : null; }
 //  is the FAN-OUT over every registered repo that has one (ruling gritzko
 //  2026-08-19, BEE-028: over http EVERY url carries a repo, so `/bee/todo` must
 //  board something — the refusal of BEE-025:50 is gone).
+//  BEE-043: `opts.all` WIDENS a local answer to the fan-out, local first — a
+//  `done KEY` click carries no context and its page may live in any registered
+//  meta tree, so the closing verbs search them all through this one ladder.
 function rootsOf(opts) {
   const out = [];
   const here = opts.from || idx.discover(mnt.at()) || mnt.at();
   const dir = todoOf(here);
-  if (dir !== null) return [{ name: mnt.basename(here), root: here, dir: dir }];
+  if (dir !== null) {
+    if (!opts.all) return [{ name: mnt.basename(here), root: here, dir: dir }];
+    out.push({ name: mnt.basename(here), root: here, dir: dir });
+  }
   for (const m of mnt.list()) {
     if (m.prefix !== "" || m.dup) continue;
+    if (out.length && out[0].root === m.root) continue;
     const d = todoOf(m.root);
     if (d !== null) out.push({ name: m.name, root: m.root, dir: d });
   }
@@ -447,6 +455,7 @@ function wtsOf() {
 //  tok32 (dog/tok/TOK.h): tag in bits 31..27, end byte offset in 23..0.
 function tok32(tag, end) { return ((tag & 0x1f) << 27) | (end & 0xffffff); }
 const TAG_U = 20, TAG_S = 18, TAG_F = 5, TAG_D = 3, TAG_N = 13;
+const TAG_O = 14;                          // BEE-034: the hidden button channel
 const TAG_B = 1;                           // BEE-030: the elastic span (BRO-036)
 
 const KEYW = 22;                           // where the dotted leader gives out
@@ -481,6 +490,72 @@ function rowText(t) {
 function framesOf(t) {
   const f = wtstat.frames(t.wt.root);
   return f.file + " " + f.commit;
+}
+
+//  BEE-041: the `//name` word a row's buttons act IN — the worktree's own dir
+//  name (index/wts.js:33:Lc), but only where bee resolves that name back to THAT
+//  tree; a name answering elsewhere leaves the panel inert rather than staging
+//  the wrong repo.
+function wtWord(wt) {
+  const base = mnt.basename(wt.root);
+  return mnt.byName(base) === wt.root ? base : "";
+}
+
+//  BEE-041: a PANEL of wtstat cells — each 2-cell face on its class TAG (a lost `O`
+//  still reads as its class, never grey) followed by the hidden `O` carrying
+//  both the look and the click (render/wrap.js:40:ge).  Every cell of a face
+//  clicks; brackets, gaps and empty slots stay plain, never ┄-filled.
+function putPanel(put, cells) {
+  for (const c of cells) {
+    //  BEE-042: a DEAD cell is dim — grey is the DISABLED signal (theme.js:110:4o).
+    if (c.k !== "btn" && c.k !== "info")
+      { put(c.k === "br" || c.k === "dead" ? TAG_D : TAG_S, c.t); continue; }
+    const tone = theme.BTN[c.n];
+    put(theme.BTN_TAG[c.n].charCodeAt(0) - 65, c.t);
+    put(TAG_O, c.k === "btn" ? theme.pale(tone) + tone + " " + c.s : "#" + tone + " ");
+  }
+}
+
+//  BEE-044: the ONE creating act on the board (be todo.js:904 goSlot).  A
+//  wt-LESS row whose head names the repo it relates to offers ` [go]`, minting
+//  the context-LESS `fork //<repo>-<KEY>` (fork.js:110) — the tree does not
+//  exist yet, so there is no `//wt` to run the spell in.
+//  The repo a `Rep:` URI names is its LAST name segment, the value being most
+//  likely relative (`///bee`, BEE-044:16); "" when it names none.
+function repName(uri) {
+  const s = String(uri === undefined || uri === null ? "" : uri).trim()
+              .replace(/\/+$/, "");
+  const i = s.lastIndexOf("/");
+  return i < 0 ? s : s.slice(i + 1);
+}
+
+//  The go frame's cells: dim brackets outside the click zone, the 2-cell face
+//  the only live part.  A name no repo answers to greys the face DEAD rather
+//  than minting a doomed spell (BEE-044:16); no `Rep:` at all: no frame.
+function goCells(t) {
+  const rep = repName(headOf(t).meta.Rep);
+  if (rep === "") return null;
+  const c = wtstat.cell, live = mnt.byName(rep) !== null;
+  return [c("[", "br"),
+          live ? c(theme.BTN_FACE.go, "btn", "go", "fork //" + rep + "-" + t.key)
+               : c(theme.BTN_FACE.go, "dead"),
+          c("]", "br")];
+}
+
+//  BEE-044 r2 (gritzko 2026-08-20): the go frame is COMPACT — it rides the
+//  row's tail beside the ticket panel, never filling the frames region.
+
+//  BEE-043: the trailing ticket-state panel, be's donePanel (todo.js:892) — ONE
+//  frame, TWO live buttons: ` ✓` closes the ticket, ` ✗` shelves it.  Both
+//  spells are context-LESS (BEE-043:18): the KEY is the whole argument and
+//  done.js resolves the page and the worktree itself.
+function doneCells(key) {
+  const c = wtstat.cell;
+  return [c("[", "br"),
+          c(theme.BTN_FACE.done, "btn", "done", "done " + key),
+          c(" ", "gap"),
+          c(theme.BTN_FACE.dont, "btn", "dont", "dont " + key),
+          c("]", "br")];
 }
 
 //  A hunk builder over the row list: the visible bytes with each row's target
@@ -542,12 +617,27 @@ function build(uriStr, blocks) {
     put(TAG_D, fill >= 2 ? " " + "┄".repeat(fill - 1) + " " : " ");
     //  BEE-030: the title is the ONE elastic `B` span — the renderers …-cut or
     //  pad it to the live width, so the wt frames stay flush right (BRO-036).
-    put(TAG_B, bareTitle(t.key, headOf(t).title));
+    const bare = bareTitle(t.key, headOf(t).title);
+    put(TAG_B, bare);
     if (t.wt) {
       put(TAG_S, "  ");
-      put(TAG_F, framesOf(t));
-      put(TAG_U, "list " + t.wt.root + "/");
+      const s = wtstat.stat(t.wt.root), word = wtWord(t.wt);
+      putPanel(put, wtstat.fileCells(s, word));      // BEE-041: the staging panel
+      put(TAG_S, " ");
+      //  BEE-042: ...and the history panel, its ✓ carrying the message the row
+      //  mints off its own head read (be's WORK-008 form).  The old region-wide
+      //  `list <wt>/` nav retired with it, as the FILE frame's had.
+      putPanel(put, wtstat.commitCells(s, word, t.key + ": " + bare));
+    } else if (!CLOSED[t.now]) {
+      //  BEE-044 r2: no worktree — the one act that MINTS one sits at the tail,
+      //  beside the ticket panel.  A closed row gets none: nothing left to fork.
+      const go = goCells(t);
+      if (go !== null) { put(TAG_S, "  "); putPanel(put, go); }
     }
+    //  BEE-043: ...and the ticket's OWN panel last, worktree or none — a closing
+    //  needs no tree.  A row a `Now:` filter shows CLOSED wears none: there is
+    //  nothing left to close on it.
+    if (!CLOSED[t.now]) { put(TAG_S, " "); putPanel(put, doneCells(t.key)); }
     put(TAG_S, "\n");
   }
   const toks = new Uint32Array(spans.length);
