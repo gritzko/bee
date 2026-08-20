@@ -42,11 +42,11 @@ const all = [];
 }
 const NAMED = [["REV-BLOB", idx.K_BLOB], ["REV-CMMT", idx.K_CMMT], ["REV-PARS", idx.K_PARS],
                ["CPAR", idx.K_CPAR], ["B2P", idx.K_B2P], ["FSEG", idx.K_FSEG],
-               ["MARK", idx.K_MARK]];
+               ["CTS", idx.K_CTS], ["MARK", idx.K_MARK]];
 for (const [nm, k] of NAMED)
   check("kind-" + nm, (kinds.get(k) || 0) > 0, "rows " + (kinds.get(k) || 0));
-//  LITE-011 added FSEG (6) to the LITE-006 six.
-check("kinds-are-only-the-seven", kinds.size === 7, "distinct kinds " + kinds.size);
+//  LITE-011 added FSEG (6) to the LITE-006 six, BEE-033 the CTS date row (8).
+check("kinds-are-only-the-eight", kinds.size === 8, "distinct kinds " + kinds.size);
 
 //  --- 1b. FSEG: ONE row per distinct path, the ruled key/val split ----------
 //  The fixture holds 4 paths (a.txt, dir/b.txt, moved.txt, orphan.txt — the

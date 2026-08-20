@@ -159,9 +159,13 @@ function bareTitle(key, title) {
 //  --- the tables (be todo.js:160) -------------------------------------------
 const CLOSED = { DONE: true, DONT: true, STALE: true };   // header marks only
 const PRIO = { CRIT: 0, HIGH: 1, MED: 2, LOW: 3 };        // unmarked = MED
-//  The bullet's colour slot per PRIO, out of the slots view/status.js already
-//  spends (render/ansi.js:56:GZ): M red, V orange, the default, D dim.
-const PRIO_TAG = [12, 21, 18, 3];
+//  The bullet's colour slot per PRIO (ruling gritzko 2026-08-20): Y crimson,
+//  the quad's V orange, Z yellow, the quad's J green (render/theme.js:29:Lc).
+const PRIO_TAG = [24, 21, 25, 9];
+
+//  The bullet GLYPH per `Now:` state (ruling gritzko 2026-08-20) — the mark
+//  says WHICH state, its PRIO_TAG colour how bad, so one cell answers both.
+const NOW_GLYPH = { OPEN: "●", DONE: "✓", DONT: "✗", STALE: "~" };
 
 //  --- the board root --------------------------------------------------------
 function todoOf(root) { const d = root + "/todo"; return isDir(d) ? d : null; }
@@ -284,6 +288,13 @@ function prioOf(t) {
   return PRIO[w] !== undefined ? PRIO[w] : 2;
 }
 
+//  The `Now:` word off the file, the legacy `[MARK]` standing in where the pair
+//  is absent (BEE-025:41:hf); "" when neither names a state.
+function nowOf(t) {
+  const w = String(headOf(t).meta.Now || "").trim().toUpperCase();
+  return w || headerMark(t.key, headOf(t).title);
+}
+
 //  --- freshness (be todo.js:314 dateRows / :337 byFresh) --------------------
 //  A row is DIRTY when its bytes differ from the tip blob — then its fs mtime
 //  dates it — else the commit time of its REV-CMMT row does ([LITE-044]).  One
@@ -348,20 +359,27 @@ function byFresh(a, b) {
 }
 
 function pad2(n) { return n < 10 ? "0" + n : String(n); }
+const WDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-//  The DAY a row is dated on, the date separators' own key; "" when the row is
-//  undated.  An mtime is a local ron60 (view/status.js:83:9t ronOf), a commit time
-//  epoch seconds, so each is spelled by its own unpack.
-function dayOf(r) {
+//  The row's last touch as a local Date, null when undated.  An mtime is a
+//  local ron60 (view/status.js:83:9t ronOf), a commit time epoch seconds, so
+//  each is spelled by its own unpack.
+function dateOf(r) {
   if (r.dirty) {
-    if (r.mtime === undefined || r.mtime === 0n) return "";
+    if (r.mtime === undefined || r.mtime === 0n) return null;
     const d = [];
     for (let i = 0; i < 10; i++) d.push(Number((r.mtime >> BigInt(6 * i)) & 63n));
-    return String(2000 + d[9] * 10 + d[8]) + "-" + pad2(d[7]) + "-" + pad2(d[6] * 10 + d[5]);
+    return new Date(2000 + d[9] * 10 + d[8], d[7] - 1, d[6] * 10 + d[5]);
   }
-  if (r.ts === undefined) return "";
-  const d = new Date(r.ts * 1000);
-  return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+  if (r.ts === undefined) return null;
+  return new Date(r.ts * 1000);
+}
+
+//  The last touch as the 5 chars a glance needs, `Thu20` (ruling gritzko
+//  2026-08-20); "" when nothing dated the row (no repo, no index).
+function stampOf(r) {
+  const d = dateOf(r);
+  return d === null ? "" : WDAY[d.getDay()] + pad2(d.getDate());
 }
 
 //  --- `Sub:` families (be todo.js:649 nest) ---------------------------------
@@ -428,7 +446,7 @@ function wtsOf() {
 //  --- the hunk (the view/list.js row model) ---------------------------------
 //  tok32 (dog/tok/TOK.h): tag in bits 31..27, end byte offset in 23..0.
 function tok32(tag, end) { return ((tag & 0x1f) << 27) | (end & 0xffffff); }
-const TAG_U = 20, TAG_S = 18, TAG_F = 5, TAG_D = 3, TAG_N = 13, TAG_L = 11;
+const TAG_U = 20, TAG_S = 18, TAG_F = 5, TAG_D = 3, TAG_N = 13;
 const TAG_B = 1;                           // BEE-030: the elastic span (BRO-036)
 
 const KEYW = 22;                           // where the dotted leader gives out
@@ -491,17 +509,15 @@ function build(uriStr, blocks) {
       plain += blk.note + "\n";
       continue;
     }
-    if (blk.day !== undefined) {                   // a date separator
-      put(TAG_L, "-- " + blk.day + "\n");
-      plain += "-- " + blk.day + "\n";
-      continue;
-    }
     const t = blk.row;
     plain += rowText(t);
     const nav = navOf(t);
-    const lead = (t.indent || "") + (t.rails || "");
-    if (lead) { put(TAG_S, lead); put(TAG_U, nav); }
-    put(PRIO_TAG[t.prio], "●");               // the `Sev:` bullet
+    //  Every row opens on a SPACE, so the bullet never sits flush against the
+    //  frame and a topic header still reads as the outdented one.
+    const lead = " " + (t.indent || "") + (t.rails || "");
+    put(TAG_S, lead);
+    put(TAG_U, nav);
+    put(PRIO_TAG[t.prio], NOW_GLYPH[t.now] || "●");   // `Now:` glyph, `Sev:` colour
     put(TAG_U, nav);
     put(TAG_S, " ");
     const key = keyCol(t);
@@ -509,12 +525,17 @@ function build(uriStr, blocks) {
     put(TAG_U, nav);
     let vw = 0;
     for (const v of t.vals || []) {
+      if (BULLET_KEYS[v.key]) continue;
       put(TAG_S, " [");
       put(TAG_N, v.text);
       if (v.spell) put(TAG_U, v.spell);
       put(TAG_S, "]");
       vw += v.text.length + 3;
     }
+    //  The last-touch stamp rides the key column in the DIM slot: a date is
+    //  context, never the row's subject, so it must not pull the eye.
+    const stamp = stampOf(t);
+    if (stamp) { put(TAG_S, " "); put(TAG_D, stamp); put(TAG_U, nav); vw += 6; }
     //  A dotted leader to ONE title column, be's KEYW discipline; an over-long
     //  key region degrades to a single space rather than eating the title.
     const fill = KEYW - lead.length - 2 - key.length - vw;
@@ -671,6 +692,7 @@ function gather(bd, a, g, topics) {
       t.repo = bd.name;
       t.root = bd.root;
       t.prio = prioOf(t);
+      t.now = nowOf(t);
       out.push(t);
     }
   }
@@ -690,10 +712,15 @@ function valsOf(t, a, g) {
     const raw = String(headOf(t).meta[k] || "").trim();
     if (raw === "") continue;
     const fv = filterVal(raw);
-    vals.push({ text: raw, spell: fv === null ? null : spellWith(a, k, fv) });
+    vals.push({ key: k, text: raw, spell: fv === null ? null : spellWith(a, k, fv) });
   }
   return vals;
 }
+
+//  `Now:` wears no bracket on a pager row: the bullet's GLYPH already spells it
+//  and the stamp took its column.  `--plain` has no bullet, so it keeps the
+//  bracket; `Sev:` keeps its own, being a WORD the colour only ranks.
+const BULLET_KEYS = { Now: true };
 
 //  A ticket's worktree, when one is named for its code.
 function wtOf(t) {
@@ -702,19 +729,11 @@ function wtOf(t) {
 }
 
 //  --- the blocks a hunk is built from ---------------------------------------
-//  A flat, freshest-first listing with its date separators; the rows are dated
-//  per repo, since freshness is a repo's own question.
-function flatBlocks(rows, groups) {
-  for (const bd of groups) dateRows(bd.bd, bd.rows);
+//  A flat, freshest-first listing.  It carries no date separator: every row
+//  wears its own `Thu20` stamp, so a band would say it twice (gritzko 2026-08-20).
+function flatBlocks(rows) {
   rows.sort(byFresh);
-  const out = [];
-  let day = null;
-  for (const t of rows) {
-    const d = dayOf(t);
-    if (d !== "" && d !== day) { out.push({ day: d }); day = d; }
-    out.push({ row: t });
-  }
-  return out;
+  return rows.map(function (t) { return { row: t }; });
 }
 
 //  The trailing `worktrees` block: a scanned worktree whose tail is NO ticket
@@ -783,11 +802,13 @@ function todo(arg, opts) {
     for (const t of rows) all.push(t);
   }
 
+  for (const bd of groups) dateRows(bd.bd, bd.rows);   // every row wears a stamp
+
   const blocks = [];
   //  A filter listing and the ALL-REPOS board read FRESHEST FIRST and so wear
   //  no rails; a board and a topic list keep the code order (BEE-025:44).
   if (a.filters.length || (mixed && !a.subject)) {
-    for (const blk of flatBlocks(all, groups)) blocks.push(blk);
+    for (const blk of flatBlocks(all)) blocks.push(blk);
     if (!all.length) blocks.push({ note: "(no ticket matches " + (line || "todo") + ")" });
   } else if (a.subject) {
     const rows = nest(all);
@@ -822,6 +843,8 @@ module.exports = { todo: todo,
                    stripMark: stripMark, bareTitle: bareTitle,
                    listTopic: listTopic, topicsOf: topicsOf, rootsOf: rootsOf,
                    byCode: byCode, byFresh: byFresh, dateRows: dateRows,
+                   stampOf: stampOf,
                    nest: nest, parseArgs: parseArgs, argLineWith: argLineWith,
                    spellWith: spellWith, filterVal: filterVal,
-                   PRIO: PRIO, PRIO_TAG: PRIO_TAG, CLOSED: CLOSED, RAIL: RAIL };
+                   PRIO: PRIO, PRIO_TAG: PRIO_TAG, NOW_GLYPH: NOW_GLYPH,
+                   nowOf: nowOf, CLOSED: CLOSED, RAIL: RAIL };

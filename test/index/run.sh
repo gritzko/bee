@@ -6,7 +6,7 @@
 #           the repo list (append + dedup), the no-op second run, the gap run
 #           after a new commit, a rewritten history (non-ancestor mark -> rewalk,
 #           re-puts idempotent) and the `rm -rf .git/be` rebuild.
-#   rows  — rows.js: the seven ruled record kinds, one file's rev chain as ONE
+#   rows  — rows.js: the eight ruled record kinds, one file's rev chain as ONE
 #           prefix scan, the B2P rows of a shared blob, CPAR edges, the MARK.
 #
 # Standalone: `sh lite/test/index/run.sh` from anywhere (it cds itself).
@@ -341,7 +341,7 @@ elif ! grep -q '^DONE' "$WORK/r.out"; then
 else
     N=$(grep -c '^ok' "$WORK/r.out")
     CHECKS=$((CHECKS + N))
-    ok "rows leg: $N checks (seven kinds / rev chain / B2P / FSEG / CPAR / MARK)"
+    ok "rows leg: $N checks (eight kinds / rev chain / B2P / FSEG / CPAR / MARK)"
 fi
 
 # ==========================================================================

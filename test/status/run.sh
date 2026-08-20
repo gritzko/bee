@@ -163,9 +163,10 @@ if [ "$RC" = 0 ] && grep -q '↑' "$WORK/col" && grep -q '●' "$WORK/col"
 then ok "a coloured run substitutes the BRO-030 glyphs"
 else bad "no tty glyphs (rc $RC)" "$WORK/col" "$WORK/colerr"; fi
 # The quad owns FOUR slots (ruling 2026-08-18): I/J/K/V, never a borrowed
-# syntax or status tag, so 208 here is the worktree column's ORANGE and no
-# repaint of `list`'s brown del marker can reach it.
-if grep -q "$(printf '\033')\[38;5;208m↑" "$WORK/col"
+# syntax or status tag, so this hex is the worktree column's ORANGE and no
+# repaint of `list`'s brown del marker can reach it.  V went 24-bit when the
+# `Sev:` bullet took the same orange (ruling gritzko 2026-08-20).
+if grep -q "$(printf '\033')\[38;2;248;147;7m↑" "$WORK/col"
 then ok "...and paints the worktree cell in its own orange"
 else bad "no per-column cell paint" "$WORK/col"; fi
 

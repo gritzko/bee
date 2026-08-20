@@ -261,12 +261,16 @@ then ok "a filtered key shows its value inline"
 else bad "a filtered key shows its value inline" "$WORK/f"; fi
 
 # ==========================================================================
-# leg 1d — freshest first, with date rows
+# leg 1d — freshest first, each row stamped (gritzko 2026-08-20: the per-row
+# `Thu20` stamp replaced the `-- yyyy-mm-dd` separator bands)
 # ==========================================================================
-bee //alpha todo Now:OPEN --plain > "$WORK/fresh0" 2>&1
-if grep -q '^-- 20' "$WORK/fresh0"
-then ok "a flat listing carries date separators"
-else bad "a flat listing carries date separators" "$WORK/fresh0"; fi
+bee //alpha todo Now:OPEN --color > "$WORK/fresh0" 2>&1
+if grep -qE '[A-Z][a-z][a-z][0-9][0-9] ' "$WORK/fresh0"
+then ok "a row carries its last-touch stamp"
+else bad "a row carries its last-touch stamp" "$WORK/fresh0"; fi
+if grep -q -- '-- 20' "$WORK/fresh0"
+then bad "no date separator band survives" "$WORK/fresh0"
+else ok "no date separator band survives"; fi
 
 # An edited ticket is DIRTY and heads the list, above every committed one.
 printf '\nan edit that makes it the freshest\n' >> "$SRC/alpha/todo/GET/GET-004.mkd"
@@ -276,15 +280,16 @@ then ok "an edited ticket is the freshest row"
 else bad "an edited ticket is the freshest row" "$WORK/fresh1"; fi
 
 # ==========================================================================
-# leg 1e — the Sev: bullets, off the paint slots view/status.js already spends
+# leg 1e — the Sev: bullets: the 24-bit quartet of render/theme.js:29:Lc, CRIT and
+# MED on slots Y/Z of their own, HIGH and LOW on the quad's orange V and green J
 # ==========================================================================
 bee //alpha todo --color > "$WORK/color" 2>&1
-if grep -q '\[91m●' "$WORK/color"; then ok "CRIT paints the bullet red"
-else bad "CRIT paints the bullet red" "$WORK/color"; fi
-if grep -q '\[38;5;208m●' "$WORK/color"; then ok "HIGH paints the bullet orange"
+if grep -q '\[38;2;223;32;43m●' "$WORK/color"; then ok "CRIT paints the bullet crimson"
+else bad "CRIT paints the bullet crimson" "$WORK/color"; fi
+if grep -q '\[38;2;248;147;7m●' "$WORK/color"; then ok "HIGH paints the bullet orange"
 else bad "HIGH paints the bullet orange" "$WORK/color"; fi
-if grep -q '\[90m●' "$WORK/color"; then ok "LOW paints the bullet dim"
-else bad "LOW paints the bullet dim" "$WORK/color"; fi
+if grep -q '\[38;2;126;211;44m●' "$WORK/color"; then ok "LOW paints the bullet green"
+else bad "LOW paints the bullet green" "$WORK/color"; fi
 
 # ==========================================================================
 # leg 1f — the [BEE-027] worktree column and the trailing worktrees block
@@ -306,9 +311,9 @@ bee todo --plain > "$WORK/all" 2>&1
 if grep -q 'alpha/GET-001' "$WORK/all" && grep -q 'beta/OPS-007' "$WORK/all"
 then ok "the all-repos board prefixes each row with its repo"
 else bad "the all-repos board prefixes each row with its repo" "$WORK/all"; fi
-if grep -q '^-- 20' "$WORK/all"
-then ok "the all-repos board is dated, newest first"
-else bad "the all-repos board is dated, newest first" "$WORK/all"; fi
+if [ "$(grep -c 'alpha/\|beta/' "$WORK/all")" -gt 1 ]
+then ok "the all-repos board lists every repo, newest first"
+else bad "the all-repos board lists every repo, newest first" "$WORK/all"; fi
 
 # A CONTEXT with no `todo/` refuses, naming itself (BEE-025:75's default).
 # BEE-028: a context with no `todo/` is no refusal — it boards every repo that

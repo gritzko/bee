@@ -27,6 +27,8 @@ const TREE_CACHE_MAX = 1 << 14;
 //  --- the field split -------------------------------------------------------
 const K_BLOB = 0x1n, K_CMMT = 0x2n, K_PARS = 0x3n;
 const K_CPAR = 0x4n, K_B2P = 0x5n, K_FSEG = 0x6n, K_MARK = 0xFn;
+//  The commit date (BEE-033); 7 is lindex.js's LINK, 9..E are still free.
+const K_CTS = 0x8n;
 
 const REV_BITS = 20n, PHL_BITS = 40n;
 const REV_MAX = (1n << REV_BITS) - 1n;          // also the empty PARS slot
@@ -533,6 +535,41 @@ function row(st, k, v) {
   if (t !== undefined && t.rev === rev) t.commit = valHl60(v);
 }
 
+//  --- the commit date (BEE-033) ---------------------------------------------
+//  `CTS` (8) — key `commit_hl:60|8`, val `ats:60|vnib:4`: the AUTHOR time in
+//  epoch seconds, what every bee view displays.  A miss answers null and the
+//  caller falls back to `readCommit`, so a lane filled before the kind existed
+//  is slow, never wrong (BEE-033:46).
+function commitTs(ix, chl) {
+  const key = hlKey(chl, K_CTS);
+  const c = ix.seek(key);            // exact key: `range`/`prefix` answer none
+  if (!c.next() || c.key !== key) return null;
+  return Number(valHl60(c.val));
+}
+
+//  A blob -> the date of the OLDEST commit carrying it, off the index alone:
+//  `B2P` names the carriers, each carrier's `REV-CMMT` names the commit and
+//  `CTS` dates it (BRO-044's answer, no new lane).  ONE unknown carrier makes
+//  the fold null, so a half-filled lane can never answer a too-new date.
+function blobTs(ix, bhl) {
+  const key = hlKey(bhl, K_B2P);
+  const carriers = [];               // read whole: the fold opens its own cursors
+  const c = ix.seek(key);
+  while (c.next()) {
+    if (c.key !== key) break;
+    carriers.push([c.val >> 24n, (c.val >> 4n) & REV_MAX]);
+  }
+  let best = null;
+  for (const cr of carriers) {
+    const cv = revValAt(ix, cr[0], cr[1], K_CMMT);
+    if (cv === null) return null;
+    const ts = commitTs(ix, valHl60(cv));
+    if (ts === null) return null;
+    if (best === null || ts < best) best = ts;
+  }
+  return best;
+}
+
 //  --- the commit walk -------------------------------------------------------
 //  Climb from the tip, never entering a commit already in the index: presence,
 //  not a watermark, is the boundary (LITE-006:53:Rc), so any history converges,
@@ -905,6 +942,9 @@ function bringUp(ctx, ix, opts) {
       wr.seal();
       throw "index: injected mid-commit fault at commit " + rec.commits;
     }
+    //  The date is already parsed (the topo tiebreak read it), and it lands
+    //  BEFORE the CPAR rows, so the done flag proves it is on disk (BEE-033:32).
+    wr.put(hlKey(chl, K_CTS), hlVal(BigInt(m.ats || 0), 0n));
     //  CPAR is the done flag and goes last, since a seal persists a prefix
     //  (LITE-006:55:Rc): one row per parent, a root commit one CPAR_NONE row.
     if (m.parents.length === 0) wr.put(hlKey(chl, K_CPAR), hlVal(CPAR_NONE, 0n));
@@ -1040,6 +1080,8 @@ module.exports = {
   descend: descend, idxWriter: idxWriter, 
   //  The dir fuse (view/list.js) reads a dir's newest rev with these (LITE-044).
   lastRev: lastRev, revValAt: revValAt,
+  //  Dates off the index alone, no ODB read: commit and blob (BEE-033).
+  commitTs: commitTs, blobTs: blobTs,
   //  `diff` reads blob/commit objects straight off the ODB (LITE-010).
   object: object,
   firstLine: firstLine, identTs: identTs, heap: heap, hexOfHl: hexOfHl,
@@ -1048,7 +1090,7 @@ module.exports = {
   fresh: fresh,
   CPAR_NONE: CPAR_NONE,
   K_BLOB: K_BLOB, K_CMMT: K_CMMT, K_PARS: K_PARS,
-  K_CPAR: K_CPAR, K_B2P: K_B2P, K_FSEG: K_FSEG, K_MARK: K_MARK,
+  K_CPAR: K_CPAR, K_B2P: K_B2P, K_FSEG: K_FSEG, K_CTS: K_CTS, K_MARK: K_MARK,
   REV_MAX: REV_MAX,
   //  The FSEG split, shared with index/resolve.js (LITE-011).
   SEG_SLOTS: SEG_SLOTS, DEPTH_MAX: DEPTH_MAX, segHl: segHl, fnHl: fnHl,

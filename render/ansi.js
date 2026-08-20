@@ -26,6 +26,7 @@ const ESC = String.fromCharCode(27);
 const A0 = { fm: 0, fg: 0, bm: 0, bg: 0, fl: 0 };
 function aFgB(n)   { return { fm: 1, fg: n, bm: 0, bg: 0, fl: 0 }; }  // basic 30-37/90-97
 function aFg256(n) { return { fm: 2, fg: n, bm: 0, bg: 0, fl: 0 }; }
+function aFg24(n)  { return { fm: 3, fg: n, bm: 0, bg: 0, fl: 0 }; }  // 24-bit
 function aFlag(f)  { return { fm: 0, fg: 0, bm: 0, bg: 0, fl: f }; }
 function aOr(a, b) {
   return { fm: a.fm | b.fm, fg: a.fg | b.fg, bm: a.bm | b.bm,
@@ -53,7 +54,10 @@ const THEME = {
   //  repaint of a syntax or status tag can move a status column — I blue
   //  upstream, J green head, K amber stage, V orange worktree (be's own hues),
   //  plus BE-001's M, red and red ONLY for a conflict.
-  I: aFg256(33), J: aFg256(35), K: aFg256(178), V: aFg256(208), M: aFgB(91),
+  I: aFg256(33), J: aFg24(0x7ed32c), K: aFg256(178), V: aFg24(0xf89307), M: aFgB(91),
+  //  The `Sev:` quartet (ruling gritzko 2026-08-20) — CRIT red and MED yellow
+  //  are slots of their own; HIGH and LOW ride the quad's orange V and green J.
+  Y: aFg24(0xdf202b), Z: aFg24(0xf1e50e),
 };
 function themeAt(tag) { return THEME[tag] || A0; }
 const THEME_BANNER = { fm: 2, fg: 0, bm: 2, bg: 230, fl: 0 };

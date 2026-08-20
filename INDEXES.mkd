@@ -20,7 +20,7 @@ The three field types every record is built out of; all are hashes, so the index
 
 ##  Record kinds
 
-Eight kinds, the nibble in `key & 0xf`. Rows are never deleted and re-puts are idempotent.
+Nine kinds, the nibble in `key & 0xf`. Rows are never deleted and re-puts are idempotent.
 
  -  `REV-BLOB` (1) — key `path_hl:40|rev:20|1`, val `blob_hl:60|vnib:4`: which
     blob this path carries at this rev.
@@ -48,6 +48,14 @@ Eight kinds, the nibble in `key & 0xf`. Rows are never deleted and re-puts are i
     ticket code (`LITE-029`) keys as its own text with both ancestors absent, so
     a ticket's backlinks survive the thin↔fat layout move. Anchors are dropped:
     a row names files, not places.
+ -  `CTS` (8) — key `commit_hl:60|8`, val `ats:60|vnib:4`: the commit's AUTHOR
+    time in epoch seconds ([BEE-033]), the one every view displays. Minted at
+    seal off the commit the walk already parsed for its date tiebreak — no ODB
+    read of its own — and put BEFORE that commit's CPAR rows, so the done flag
+    proves the date landed. Immutable: a commit's date never changes; `vnib` 0
+    leaves room for a committer-time row. A lane brought up before the kind
+    existed carries NONE, and a reader answers `null` there rather than a date
+    it cannot know.
  -  `MARK` (F) — key `ref_hl:60|F`, val `tip commit_hl:60|vnib:4`: the per-ref
     watermark, the LAST write of a run (DOG-027). `lindex` keeps its own under
     the RESERVED ref `hlOfText("lindex")`, which is no ref and so never collides.
@@ -90,6 +98,13 @@ Each query is a scan of ONE key prefix; no ODB ancestry walk happens at query ti
     So the changed-path SET still comes off the trees, while the floor, the
     seed, the layers and their edges all come off the index — the only ODB read
     left in a fold is the BLOB BYTES of a rev (a `hashlet60` IS an object name).
+ -  BLOB -> DATE is PURE INDEX ([BEE-033], `blobTs`): `B2P` names the blob's
+    carriers, each carrier's `REV-CMMT` names the commit and `CTS` dates it —
+    three seeks, no ODB read, min-folded so the answer is the OLDEST carrier's.
+    ONE unknown carrier makes the whole fold `null`: a half-filled lane costs
+    the caller the `readCommit` it pays today and never answers a too-new date.
+    `lite list`'s last-commit fuse keeps its own ODB read, since it wants the
+    SUBJECT too; a time-only consumer takes `commitTs` instead.
  -  A layer id is the rev's commit hashlet shifted one nibble, so `blame(off)`
     on an emitted token names the COMMIT that inserted it and the low nibble 0
     keeps the reserved ids (an empty side, the worktree layer) off that space.
@@ -254,6 +269,7 @@ The gaps, stated so a reader does not go looking for them.
 [BEE-022]: /todo/BEE/BEE-022.mkd
 [BEE-024]: /todo/BEE/BEE-024.mkd
 [BEE-027]: /todo/BEE/BEE-027.mkd
+[BEE-033]: /todo/BEE/BEE-033.mkd
 [BEE-025]: /todo/BEE/BEE-025.mkd
 [LITE-006]: /todo/LITE/LITE-006.mkd
 [TODO-003]: /todo/TODO/TODO-003.mkd

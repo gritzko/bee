@@ -54,6 +54,13 @@ function sgrCss(params) {
       i += 2;
       continue;
     }
+    //  BEE-030 palette: a 24-bit slot ("38;2;r;g;b") spells its hex verbatim.
+    if ((n === 38 || n === 48) && p[i + 1] === "2") {
+      out.push((n === 38 ? "color:" : "background:") + "#" + hex2(Number(p[i + 2])) +
+               hex2(Number(p[i + 3])) + hex2(Number(p[i + 4])));
+      i += 4;
+      continue;
+    }
     if (n >= 30 && n <= 37) out.push("color:" + XTERM16[n - 30]);
     else if (n >= 90 && n <= 97) out.push("color:" + XTERM16[n - 90 + 8]);
     else if (n >= 40 && n <= 47) out.push("background:" + XTERM16[n - 40]);
@@ -193,9 +200,10 @@ function rowHasB(hunk, off, end) {
   return false;
 }
 
-function hunkHtml(hunk, link, ord) {
+function hunkHtml(hunk, link, ord, tog) {
   ord = ord || 0;
   const out = ['<div class="hunk"><div class="banner">', esc(hunk.uri || ""),
+               tog ? " " + tog : "",
                '</div><pre class="body">'];
   const seen = new Set();
   if (wrap.hasDiffSides(hunk.toks)) {
@@ -219,17 +227,25 @@ function hunkHtml(hunk, link, ord) {
   return out.join("");
 }
 
-function hunksHtml(hunks, link) {
+//  BEE-032: `tog` (a prebuilt toggle anchor) rides the FIRST hunk's own banner
+//  line, so the source view spends no separate bar on it.
+function hunksHtml(hunks, link, tog) {
   if (!hunks || !hunks.length) return '<pre class="note">(nothing to show)</pre>';
   const out = [];
-  for (let i = 0; i < hunks.length; i++) out.push(hunkHtml(hunks[i], link, i));
+  for (let i = 0; i < hunks.length; i++)
+    out.push(hunkHtml(hunks[i], link, i, i === 0 ? tog : ""));
   return out.join("");
 }
 
-//  LITE-035: the banner band on its own — a title and the link to the OTHER
-//  view of the same bytes (rendered <-> source).  Empty when there is neither.
+//  The toggle anchor to the OTHER view of the same bytes (rendered <-> source).
+function toggle(label, href) {
+  return label && href ? '<a href="' + esc(href) + '">' + esc(label) + "</a>" : "";
+}
+
+//  LITE-035: the banner band on its own — a title and the toggle.  Empty when
+//  there is neither.
 function viewBar(title, label, href) {
-  const tog = label && href ? '<a href="' + esc(href) + '">' + esc(label) + "</a>" : "";
+  const tog = toggle(label, href);
   if (!title && !tog) return "";
   return '<div class="hunk"><div class="banner">' + esc(title) +
          (title && tog ? " " : "") + tog + "</div></div>";
@@ -286,6 +302,7 @@ module.exports = {
   page: page,
   errorPage: errorPage,
   viewBar: viewBar,
+  toggle: toggle,
   markBody: markBody,
   esc: esc,
   sgrCss: sgrCss,

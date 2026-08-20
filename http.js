@@ -597,8 +597,9 @@ function handle(req, sock, st) {
   if (r.head !== "raw" && verb === "cat" && rend)
     body = mnt.within(pos, function () { return pageBody(pg, path, arg, hunks, rend); });
   else if (r.head === "raw")
-    body = html.viewBar("", rend ? "rendered" : "", argUrl(pg, "cat", arg)) +
-           html.hunksHtml(hunks, link);
+    //  BEE-032 nit: the toggle rides the hunk's own banner line, no bar of its own.
+    body = html.hunksHtml(hunks, link,
+                          rend ? html.toggle("rendered", argUrl(pg, "cat", arg)) : "");
   else body = html.hunksHtml(hunks, link);
   sendPage(sock, 200, "OK", title, html.page(title, body), only);
   return "200";
