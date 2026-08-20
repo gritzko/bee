@@ -65,12 +65,45 @@ function messageOf(args) {
   return null;
 }
 
+//  BEE-045: where the tracked branch is CHECKED OUT, off `worktree list
+//  --porcelain` (a plumbing format: `worktree <path>`, then `branch <ref>`,
+//  per entry); null when no worktree holds it.
+function landSite(at, u) {
+  const out = st.list(["git", "-C", at, "worktree", "list", "--porcelain"]);
+  if (out === null) return null;
+  let wt = null;
+  for (const ln of utf8.Decode(out).split("\n")) {
+    if (ln.indexOf("worktree ") === 0) wt = ln.slice(9);
+    else if (ln === "branch refs/heads/" + u) return wt;
+  }
+  return null;
+}
+
 //  `bee push` — to the tracked upstream and nowhere else.  A non-FF rejection
 //  is git's own hint on stderr, untouched, and the exit status stays non-zero.
+//  BEE-045: a fork tracks the LOCAL branch it forked off (`.` remote), and git
+//  refuses to move a ref checked out in another worktree — so landing runs from
+//  the PARENT's side: an `--autostash --ff-only` merge of OUR tip in that tree.
+//  Behind-or-diverged refuses in words (pull first); the parent's dirty files
+//  ride its autostash, the reapply-conflict degrading loud as integrate's does.
 function push(args) {
   if (args.length) throw "bee: usage: bee " + PUSH;
   const at = st.root();
   const u = upstream(at, PUSH);
+  const cur = word(at, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  const rem = cur === null ? null : word(at, ["config", "branch." + cur + ".remote"]);
+  const site = rem === "." ? landSite(at, u) : null;
+  if (site !== null) {
+    if (st.run(["git", "-C", at, "merge-base", "--is-ancestor", u, "HEAD"]) !== 0)
+      throw "bee: " + PUSH + ": " + u + " has commits this branch lacks — pull (or merge) first";
+    const was = stashTip(site);
+    if (st.run(["git", "-C", site, MERGE, "-q", "--ff-only", "--autostash", cur]) !== 0)
+      throw "bee: " + PUSH + ": " + u + " would not fast-forward";
+    if (stashTip(site) !== was)
+      throw "bee: " + PUSH + ": landed on " + u + ", but its autostash would not " +
+            "reapply — the edits are safe in `git stash` THERE";
+    return PUSH + " " + u + " " + head(at);
+  }
   if (st.run(["git", "-C", at, PUSH, "-q"]) !== 0) throw "bee: " + PUSH + ": git refused";
   return PUSH + " " + u + " " + head(at);
 }

@@ -123,10 +123,17 @@ function fork(args) {
   const gitdir = idx.gitdirOf(m.root);
   if (gitdir === null) throw "bee: " + word + ": there is no git repo at " + m.root;
   //  An existing branch is CHECKED OUT, never re-created (BEE-026:23); a fresh
-  //  one starts at this repo's HEAD, which is `worktree add -b`'s own default.
+  //  one starts at this repo's HEAD and TRACKS the branch it forked off (BEE-045
+  //  ruling 2026-08-20), which is what lights the board's ahbeh pair and gives
+  //  `pull`/`merge` their upstream.  A detached HEAD forks untracked, as before.
   const has = refs.resolve(gitdir, "refs/heads/" + tail, null, null, 0) !== null;
+  const hd0 = refs.head(gitdir);
+  const from = has || hd0 === null || !hd0.ref ? null
+             : hd0.ref.replace(/^refs\/heads\//, "");
   const argv = has ? ["git", "-C", m.root, "worktree", "add", "-q", dest, tail]
-                   : ["git", "-C", m.root, "worktree", "add", "-q", "-b", tail, dest];
+             : from !== null
+             ? ["git", "-C", m.root, "worktree", "add", "-q", "--track", "-b", tail, dest, from]
+             : ["git", "-C", m.root, "worktree", "add", "-q", "-b", tail, dest];
   if (run(argv) !== 0) throw "bee: " + word + ": git worktree add refused";
   const added = [{ repo: m.root, path: dest }];
   let n = 0;
