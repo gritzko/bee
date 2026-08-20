@@ -82,6 +82,9 @@ echo "land: runtime $RT, repo $REPO, r0 $R0"
 FAKEHOME="$WORK/home"; mkdir -p "$FAKEHOME"
 : "${XDG_CACHE_HOME:=${HOME}/.cache}"
 export XDG_CACHE_HOME
+#  BEE-031: every runtime call runs under a FIXTURE home — `install` and
+#  `index` write `$HOME/.config/bee/repos`, never the user's own registry.
+export HOME="$FAKEHOME"
 ln -sf "$LITE" "$WORK/jsrc"                      # unpacked-runtime require climb
 
 ( cd "$REPO" && HOME="$FAKEHOME" LITE_FIX="$REPO" LITE_R0="$R0" LITE_B0="$B0" \

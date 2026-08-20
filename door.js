@@ -295,12 +295,28 @@ function refSpellings(partial) {
   return t === null ? [s] : t;
 }
 
+//  BEE-031: a mount's lane, up to its tip.  `.git/be` is bee's OWN derived
+//  state and bee's to write (gritzko, BEE-031:8), so a reader is never the last
+//  to know; an up-to-date lane costs ONE watermark check (index/index.js:879:cn).
+//  A lane that will not take a write reopens read-only: stale rows beat no page.
+function laneUp(idx, ctx) {
+  let ix = null;
+  try {
+    ix = idx.openIndex(ctx.gitdir);
+    idx.bringUp(ctx, ix, { track: false });
+    return ix;
+  } catch (e) {
+    if (ix !== null) { try { ix.close(); } catch (e2) {} }
+    return idx.openIndex(ctx.gitdir, false, true);
+  }
+}
+
 //  BEE-003: ONE mount's answer, repo-relative paths.  The lookup is FSEG
 //  ([LITE-011] `index/resolve.js`, ruling 8) over the mount's own tip, plus the
 //  boundary leg above; an ANCHORED ref (a leading `/` — another repo's ROOT) is
-//  an exact tree descent instead, never a suffix match.  The lane is opened
-//  READ-ONLY and never brought up ([BEE-002]'s fan-out contract), and a repo
-//  with NO lane still answers the anchored and boundary legs.
+//  an exact tree descent instead, never a suffix match.  BEE-031: the lane is
+//  brought UP, the mount's GIT side untouched ([BEE-002] is about that half);
+//  a repo with NO lane still answers the anchored and boundary legs alone.
 //  BEE-008: the ticket spellings are tried INSIDE this one open — one repo, one
 //  tip read, one index — so a code answered locally never pays the fan-out.
 function inMount(m, partial, anchored, local) {
@@ -319,13 +335,9 @@ function inMount(m, partial, anchored, local) {
       if (rel === "") { out.push(""); return; }
       if (rd.entryAt(ctx.r, tip.tree, rel) !== null) out.push(rel);
     };
-    if (!anchored && local) {
-      //  The AMBIENT repo's own lane is brought up, as it always was — the
-      //  read-only, never-brought-up contract is the FAN-OUT's ([BEE-002]).
-      ix = idx.openIndex(ctx.gitdir);
-      idx.bringUp(ctx, ix, { track: false });
-    } else if (!anchored && !idx.fresh(ctx.gitdir))
-      ix = idx.openIndex(ctx.gitdir, false, true);
+    //  BEE-031: the AMBIENT repo's lane always came up; a FOREIGN one now does
+    //  too, but only when it exists — `fresh` is the kernel-clone guard.
+    if (!anchored && (local || !idx.fresh(ctx.gitdir))) ix = laneUp(idx, ctx);
     const rsv = require("index/resolve.js");
     for (const t of tries) {
       const segs = refSegs(t);

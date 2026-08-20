@@ -34,6 +34,12 @@ command -v git >/dev/null 2>&1 || { echo "todo: SKIP — no git to build a fixtu
 TMPROOT="${HOME}/tmp"
 mkdir -p "$TMPROOT" || { echo "todo: cannot mkdir $TMPROOT" >&2; exit 2; }
 WORK=$(mktemp -d "$TMPROOT/bee-todo.XXXXXX") || exit 2
+FAKEHOME="$WORK/home"; mkdir -p "$FAKEHOME"
+: "${XDG_CACHE_HOME:=${HOME}/.cache}"      # the pack cache stays on the REAL home
+export XDG_CACHE_HOME
+#  BEE-031: every runtime call runs under a FIXTURE home — `install` and
+#  `index` write `$HOME/.config/bee/repos`, never the user's own registry.
+export HOME="$FAKEHOME"
 WORK=$(cd "$WORK" && pwd -P)
 CHECKS=0; FAILED=0; SRVPID=""
 trap 'rc=$?; [ -n "$SRVPID" ] && kill "$SRVPID" 2>/dev/null

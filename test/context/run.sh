@@ -50,6 +50,10 @@ OUTSIDE="$WORK/reg"; mkdir -p "$OUTSIDE"
 NOWHERE="$WORK/nowhere"; mkdir -p "$NOWHERE"
 : "${XDG_CACHE_HOME:=${HOME}/.cache}"
 export XDG_CACHE_HOME
+FAKEHOME="$WORK/home"; mkdir -p "$FAKEHOME"
+#  BEE-031: every runtime call runs under a FIXTURE home — `install` and
+#  `index` write `$HOME/.config/bee/repos`, never the user's own registry.
+export HOME="$FAKEHOME"
 # Every run stands OUTSIDE the fixtures: only the `//name` word may name a repo.
 bee()  { ( cd "$NOWHERE" && HOME="$FH" SRC_ROOT="$SRC" "$RT" "$@" ); }
 beein() { D=$1; shift; ( cd "$D" && HOME="$FH" SRC_ROOT="$SRC" "$RT" "$@" ); }

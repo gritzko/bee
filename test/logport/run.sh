@@ -44,6 +44,9 @@ bad() {
 FAKEHOME="$WORK/home"; mkdir -p "$FAKEHOME"
 : "${XDG_CACHE_HOME:=${HOME}/.cache}"
 export XDG_CACHE_HOME
+#  BEE-031: every runtime call runs under a FIXTURE home — `install` and
+#  `index` write `$HOME/.config/bee/repos`, never the user's own registry.
+export HOME="$FAKEHOME"
 ln -sf "$LITE" "$WORK/jsrc"
 rtin() { D=$1; shift; ( cd "$D" && HOME="$FAKEHOME" "$RT" "$@" ); }
 

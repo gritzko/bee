@@ -109,10 +109,16 @@ function runWts() {
 
 //  LITE-026: `bee hook [<repo>]` — the PRE-COMMIT pass the planted
 //  `.git/hooks/pre-commit` runs: fresh `file:line(:col)` refs in the staged text
-//  become [LITE-025] permalinks, and the rewritten files are re-staged.  It
-//  reports on the message stream only, so a commit's own output stays clean.
+//  become [LITE-025] permalinks, re-staged.  BEE-031: `--post` is the other
+//  planted half, `index`'s passes minus the registry line (index/hook.js:471:_m).
+//  Both report on the message stream only, so a commit's own output stays clean.
 function runHook(args) {
-  const note = require("index/hook.js").precommit(args.length ? args[0] : mnt.at());
+  const hk = require("index/hook.js");
+  const post = args.length && args[0] === "--post";
+  const rest = post ? args.slice(1) : args;
+  const at = rest.length ? rest[0] : mnt.at();
+  if (post) { hk.postcommit(at); return; }
+  const note = hk.precommit(at);
   if (note) writeStderr(note + "\n");
 }
 

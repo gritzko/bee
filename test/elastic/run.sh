@@ -28,6 +28,12 @@ command -v git >/dev/null 2>&1 || { echo "elastic: SKIP — no git to build a fi
 TMPROOT="${HOME}/tmp"
 mkdir -p "$TMPROOT" || { echo "elastic: cannot mkdir $TMPROOT" >&2; exit 2; }
 WORK=$(mktemp -d "$TMPROOT/bee-elastic.XXXXXX") || exit 2
+FAKEHOME="$WORK/home"; mkdir -p "$FAKEHOME"
+: "${XDG_CACHE_HOME:=${HOME}/.cache}"      # the pack cache stays on the REAL home
+export XDG_CACHE_HOME
+#  BEE-031: every runtime call runs under a FIXTURE home — `install` and
+#  `index` write `$HOME/.config/bee/repos`, never the user's own registry.
+export HOME="$FAKEHOME"
 WORK=$(cd "$WORK" && pwd -P)
 CHECKS=0; FAILED=0
 trap 'rc=$?; if [ "$rc" = 0 ] && [ "$FAILED" = 0 ]; then rm -rf "$WORK";

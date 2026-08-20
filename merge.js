@@ -152,8 +152,8 @@ function attrAppend(gitdir, file) {
 
 //  install(repoArg) -> a one-line report.  BEE-001: install owns the bring-up —
 //  the driver via `git config` (git never reads driver commands from a tracked
-//  file), the `.git/info/attributes` line, the pre-commit hook, the repo path in
-//  `$HOME/.config/bee/repos`, then `index`.  Idempotent: a reinstall says so.
+//  file), the `.git/info/attributes` line, the two commit hooks, the repo path
+//  in `$HOME/.config/bee/repos`, then `index`.  Idempotent: a reinstall says so.
 function install(repoArg) {
   const idx = require("index/index.js");
   const arg = repoArg === undefined ? io.cwd() : repoArg;
@@ -190,14 +190,15 @@ function install(repoArg) {
   }
   const attrs = gitdir + "/info/attributes";
   if (!attrInstalled(attrs)) { attrAppend(gitdir, attrs); wrote = true; }
-  //  LITE-026: the same wiring plants the pre-commit hook, composing with one
-  //  already there — index/hook.js owns that half.
+  //  LITE-026 mints, BEE-031 indexes: the same wiring plants BOTH commit hooks,
+  //  composing with whatever is there — index/hook.js owns that half.
   if (require("index/hook.js").plant(gitdir, selfPath())) wrote = true;
   //  BEE-001: the registry is the one cross-repo state bee keeps, and this is
   //  the one verb that writes it — one absolute worktree path, deduped on read.
   const t = idx.track(root);
   return (wrote ? "installed" : "already installed") +
-         ": bee is the merge driver and the pre-commit hook for " + root +
+         ": bee is the merge driver and the pre- and post-commit hooks for " +
+         root +
          ", " + (t.added ? "registered in " : "already listed in ") + t.file +
          " — " + broughtUp(idx, root, unborn);
 }

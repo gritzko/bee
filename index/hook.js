@@ -468,6 +468,14 @@ function pass(ctx, ix, staged) {
          " upgraded to permalinks in " + done.join(", ") + (note ? "\n" + note : "");
 }
 
+//  BEE-031: the POST-commit pass, `bee hook --post`.  `precommit` runs while
+//  HEAD is still the PARENT, so this is what indexes the commit just made: the
+//  three `index` passes with `track: false`, because the registry has ONE
+//  writer and it is `install` (merge.js:196:rE), not a hook on every commit.
+function postcommit(repoArg) {
+  return idx.index(repoArg === undefined ? io.cwd() : repoArg, { track: false });
+}
+
 //  --- the plant --------------------------------------------------------------
 //  Our line goes first, after the shebang (LITE-026:48:xo): an existing hook
 //  gating on its own `exit 0` never reaches an appended line, and a later
@@ -475,23 +483,38 @@ function pass(ctx, ix, staged) {
 const MARK = "#  Beagle-lite (LITE-026): fresh `file:line` refs -> permalinks.";
 function hookLine(self) { return "\"" + self + "\" hook || exit $?"; }
 
-//  plant(gitdir, self) -> true when it wrote, false when the line was there.
+//  BEE-031: the POST-commit half.  `pre-commit` runs while HEAD is still the
+//  PARENT, so a commit only ever indexed the one before it.  It never `exit`s —
+//  git ignores the status, and a hook must not undo a commit.
+const POST_MARK = "#  Beagle-bee (BEE-031): index the commit just made.";
+//  `hook --post`, not `index`: the same passes with the REGISTRY left alone.
+function postLine(self) { return "\"" + self + "\" hook --post >/dev/null || true"; }
+
+//  plant(gitdir, self) -> true when it wrote either hook, false when both lines
+//  were already there.  BEE-031: pre-commit mints, post-commit indexes.
 function plant(gitdir, self) {
   const dir = gitdir + "/hooks";
   try { io.mkdir(dir); } catch (e) {}                 // already there is fine
-  const file = dir + "/pre-commit";
-  const line = hookLine(self);
+  let wrote = false;
+  if (compose(dir + "/pre-commit", MARK, hookLine(self))) wrote = true;
+  if (compose(dir + "/post-commit", POST_MARK, postLine(self))) wrote = true;
+  return wrote;
+}
+
+//  ONE hook file: our mark and line spliced in after the shebang, or a whole
+//  `#!/bin/sh` when there is no hook there yet.  false = the line was there.
+function compose(file, mark, line) {
   let old = null;
   const b = readFile(file);
   if (b !== null && b.length > 0) old = utf8.Decode(b);
   if (old !== null)
     for (const l of old.split("\n")) if (l.trim() === line) return false;
   let text;
-  if (old === null) text = "#!/bin/sh\n" + MARK + "\n" + line + "\n";
+  if (old === null) text = "#!/bin/sh\n" + mark + "\n" + line + "\n";
   else {
     const lines = old.split("\n");
     const at = lines[0].slice(0, 2) === "#!" ? 1 : 0;
-    lines.splice(at, 0, MARK, line);
+    lines.splice(at, 0, mark, line);
     text = lines.join("\n");
   }
   writeFile(file, utf8.Encode(text));
@@ -499,7 +522,8 @@ function plant(gitdir, self) {
   return true;
 }
 
-module.exports = { precommit: precommit, plant: plant, openUnborn: openUnborn,
+module.exports = { precommit: precommit, postcommit: postcommit,
+                   plant: plant, openUnborn: openUnborn,
                    freshRefs: freshRefs, stagedFiles: stagedFiles,
                    //  The one link scanner, shared with index/lindex.js (LITE-033).
                    fTokens: fTokens,

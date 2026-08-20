@@ -104,11 +104,13 @@ The standalone (bundled) `bee` binary call patterns:
      2. the file frame `[v3 v1 v2 v5 !1]` is the BEE-022 quad's column counts -- upstream, head, stage, worktree, conflicted, position authoritative
      3. the commit frame `[o2 o1 a1b2c]` is commits ahead, commits behind and the current tip
      4. nothing is stored: the `bee todo` board (BEE-025) is what spends these rows
- -  `bee install [<repo>]` -- wire bee as the repo's git merge driver and pre-commit hook, list it in `~/.config/bee/repos`, index it
+ -  `bee install [<repo>]` -- wire bee as the repo's git merge driver and its pre- and post-commit hooks, list it in `~/.config/bee/repos`, index it
      1. a linked worktree is refused: a repo is known by its path (`bee index` redirects to the original instead)
      2. a submodule is an ordinary repo: each initialised one is registered, indexed and lindexed too
+     3. the post-commit hook runs `bee hook --post` on the commit just made, quietly; git ignores its status, so it can never block or undo a commit
  -  `bee hook [<repo>]` -- the pre-commit pass: fresh `file:line(:col)` refs 
     in the staged text become `file:line:hash` permalinks, re-staged
+     1. `bee hook --post [<repo>]` is the post-commit pass: `index`'s three passes over the commit just made, quiet, and it never writes `~/.config/bee/repos` -- `install` is the one verb that registers a repo
  -  `bee mint [--dry-run] <file>...` -- the same upgrade for refs that ALREADY landed transient, in the working copy only; the hook cannot reach those
      1. the file list names the carriers: refs written in them, pointing anywhere; a target not listed must be clean, or it is refused
      2. everything left alone is reported, one line per ref -- unresolved, ambiguous, past the end, on a link cycle

@@ -74,6 +74,9 @@ FAKEHOME="$WORK/home"; mkdir -p "$FAKEHOME"
 ln -sf "$LITE" "$WORK/jsrc"                      # unpacked-runtime require climb
 : "${XDG_CACHE_HOME:=${HOME}/.cache}"
 export XDG_CACHE_HOME
+#  BEE-031: every runtime call runs under a FIXTURE home — `install` and
+#  `index` write `$HOME/.config/bee/repos`, never the user's own registry.
+export HOME="$FAKEHOME"
 echo "chat: runtime $RT, fixtures $WORK"
 
 # One leg's project dir + its mangled log dir under a private Claude home.

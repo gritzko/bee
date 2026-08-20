@@ -54,6 +54,11 @@ bad() {
 }
 ln -sf "$LITE" "$WORK/jsrc"                      # unpacked-runtime require climb
 FAKEHOME="$WORK/home"; mkdir -p "$FAKEHOME"
+: "${XDG_CACHE_HOME:=${HOME}/.cache}"      # the pack cache stays on the REAL home
+export XDG_CACHE_HOME
+#  BEE-031: every runtime call runs under a FIXTURE home — `install` and
+#  `index` write `$HOME/.config/bee/repos`, never the user's own registry.
+export HOME="$FAKEHOME"
 PORT="${LITEPORT:-18034}"
 BASE="http://127.0.0.1:$PORT"
 echo "http: runtime $RT, fixtures $WORK, port $PORT"
