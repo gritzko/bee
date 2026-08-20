@@ -10,6 +10,11 @@ body{margin:0;font:13px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospac
     the page, and an unbreakable atom (a URL, a long path) breaks, not scrolls.  */
 pre.body{margin:0;padding:4px 8px;overflow-x:auto;white-space:pre-wrap;overflow-wrap:anywhere}
 pre.note{margin:0;padding:4px 8px;font-style:italic}
+/*  BEE-030: the elastic field (BRO-036) — a `B`-tagged line is a flex row:
+    the `.els` item stretches/ellipsizes, trailing columns stay flush right.  */
+.row{display:flex;white-space:pre}
+.row>a,.row>span{flex:0 0 auto}
+.row .els,.row>a.els{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:pre}
 a{color:inherit;text-decoration:none;border-bottom:1px dotted currentColor}
 a:hover{border-bottom-style:solid}
 /*  LITE-035: the rendered Markdown body — geometry and currentColor only, so

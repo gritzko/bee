@@ -133,7 +133,9 @@ function cellAnsi(tag, pass, side) {
 //  VERBATIM text bytes.  BRO-010: colour = the SHARED THEME, runs batched, U/O hidden.
 //  LITE-023: `wash` (or null) is the CURSOR wash for THIS row — {lo,hi} the
 //  active token's byte span (lo<0: none); the line wash rides every cell.
-function emitBody(hunk, off, end, color, pass, enc, raw, wash) {
+//  BEE-030: `els` (or none) is the row's elastic insert/skip (BRO-036) — emit
+//  `ins` at byte `lo`, resume at `hi`, so a `B` span …-cuts or pads in place.
+function emitBody(hunk, off, end, color, pass, enc, raw, wash, els) {
   const text = hunk.text, toks = hunk.toks;
   //  bisect to the tok covering `off` (toks sorted by byte end) — the linear
   //  scan from 0 cost O(toks) per painted row, sluggish on a 100k-tok hunk.
@@ -142,7 +144,14 @@ function emitBody(hunk, off, end, color, pass, enc, raw, wash) {
     if ((toks[m] & 0xffffff) <= off) lo = m + 1; else hi = m; }
   let ti = lo;
   let cur = A0, pos = off, runLo = -1;
+  let elsDone = els === undefined || els === null;
   while (pos < end) {
+    //  BEE-030: the elastic insert/skip — emit `ins` at els.lo, resume at els.hi.
+    if (!elsDone && pos >= els.lo) {
+      if (runLo >= 0) { raw(runLo, pos); runLo = -1; }
+      enc(els.ins); elsDone = true;
+      if (els.hi > pos) { pos = els.hi; continue; }
+    }
     //  Per-BYTE: render/wrap.js's TOK_END/TOK_TAG spell exactly these two
     //  masks, but a call per byte is measurable on a 100k-tok hunk, so the
     //  painter's inner loop keeps them inline.
@@ -168,17 +177,19 @@ function emitBody(hunk, off, end, color, pass, enc, raw, wash) {
     pos += clen;
   }
   if (runLo >= 0) raw(runLo, pos);
+  //  BEE-030: a pad/cut landing exactly at the row end applies after the walk.
+  if (!elsDone && els.lo <= end) enc(els.ins);
   if (color) enc(resetSGR(cur));
 }
 
 //  STRING form of a painted row (pty tests + any string consumer): the SAME cell
 //  walk, text DECODED to real codepoints so a re-encoding caller sees no mojibake.
-function paintRow(hunk, off, end, color, pass, wash) {
+function paintRow(hunk, off, end, color, pass, wash, els) {
   let out = "";
   emitBody(hunk, off, end, color, pass,
            function (s) { out += s; },
            function (lo, hi) { if (hi > lo) out += utf8.Decode(hunk.text.subarray(lo, hi)); },
-           wash);
+           wash, els);
   return out;
 }
 
@@ -203,8 +214,9 @@ function bannerColor(uriStr, cols, enc) {
 //  and no column clamp, because a pipe has no width to lose bytes to: `lite
 //  --color <file> | less -R` sees every byte the file has, coloured.
 //  `opts.cols` is the width the banner band fills to (the terminal's when there
-//  is one, else 80); it never clamps a body row.
-const NO_CLAMP = 1 << 24;                 // wider than any tok32 end offset
+//  is one, else 80); it never clamps a body row — and past wrap.NO_CLAMP the
+//  index fires no elastic either (BEE-030), so a pipe pads nothing.
+const NO_CLAMP = wrap.NO_CLAMP;
 
 function termCols() {
   try { const sz = tty.size(1); if (sz && sz.cols > 0) return sz.cols; } catch (e) {}

@@ -141,7 +141,9 @@ function spansHtml(hunk, from, to, pass, link, ord, seen, out) {
     const side = TOK_SIDE(toks[i]);
     if (wrap.passHides(tag, pass, side)) continue;   // a target / the other side
     const s = start > from ? start : from, e = end < to ? end : to;
-    if (e <= s) continue;
+    //  BEE-030: a zero-width `B` span still renders — it is the flex slot that
+    //  keeps the trailing columns flush right when the title is empty.
+    if (e <= s && !(tag === "B" && start >= from && end <= to)) continue;
     //  The target, exactly as pager.js reads it: a hidden `U` span right
     //  behind this one, else an `F` token's own bytes — a reference (LITE-015).
     let target = "";
@@ -152,11 +154,16 @@ function spansHtml(hunk, from, to, pass, link, ord, seen, out) {
     const href = (target && link) ? link(target) : "";
     const id = seen.has(start) ? "" : ' id="' + anchorId(ord, start) + '"';
     seen.add(start);
-    const span = '<span class="tok-' + tag + sideClass(side, pass) + '"' + id + '>' +
+    //  BEE-030: the elastic span — or the `<a>` around it — wears `els`, the
+    //  flex item blob/style.css stretches and ellipsizes (BRO-036's css twin).
+    const els = tag === "B" ? " els" : "";
+    const span = '<span class="tok-' + tag + (href ? "" : els) +
+                 sideClass(side, pass) + '"' + id + '>' +
                  esc(dec(text, s, e)) + "</span>";
     //  A reference that resolves to nothing is PLAIN PAINTED TEXT — never a
     //  link that 404s (ruling 2026-08-15).
-    out.push(href ? '<a href="' + esc(href) + '">' + span + '</a>' : span);
+    out.push(href ? '<a' + (els ? ' class="els"' : "") + ' href="' + esc(href) +
+                    '">' + span + '</a>' : span);
   }
   //  Bytes past the last token — an untokenised tail, or a whole hunk with no
   //  toks (a blob, an unknown extension) — paint as one anchorable plain span.
@@ -164,6 +171,26 @@ function spansHtml(hunk, from, to, pass, link, ord, seen, out) {
   if (tail < to)
     out.push('<span class="tok-S" id="' + anchorId(ord, tail) + '">' +
              esc(dec(text, tail, to)) + "</span>");
+}
+
+//  BEE-030: does the hunk / the row [off, end] carry an elastic `B` span?  A
+//  zero-width one (an empty title) counts — it is still the flex slot.
+function hasElastic(toks) {
+  if (!toks) return false;
+  for (let i = 0; i < toks.length; i++) if (TOK_TAG(toks[i]) === "B") return true;
+  return false;
+}
+function rowHasB(hunk, off, end) {
+  const toks = hunk.toks;
+  let prev = 0;
+  for (let i = 0; i < toks.length; i++) {
+    const e = TOK_END(toks[i]);
+    if (TOK_TAG(toks[i]) === "B" &&
+        ((e > off && prev < end) || (prev === e && prev >= off && e <= end)))
+      return true;
+    prev = e;
+  }
+  return false;
 }
 
 function hunkHtml(hunk, link, ord) {
@@ -174,9 +201,18 @@ function hunkHtml(hunk, link, ord) {
   if (wrap.hasDiffSides(hunk.toks)) {
     //  BEE-021: a diff hunk is painted ROW by row — an inline row in place, a
     //  split block as its rm rows then its in rows (the pager's very index).
-    for (const r of wrap.indexRows(hunk, 1 << 24, false)) {
+    for (const r of wrap.indexRows(hunk, wrap.NO_CLAMP, false)) {
       spansHtml(hunk, r.off, r.end, r.pass, link, ord, seen, out);
       out.push("\n");
+    }
+  } else if (hasElastic(hunk.toks)) {
+    //  BEE-030: a line holding a `B` span becomes a flex `.row` the browser
+    //  stretches/ellipsizes to ITS width; a block box needs no '\n' of its own.
+    for (const r of wrap.indexRows(hunk, wrap.NO_CLAMP, false)) {
+      const b = rowHasB(hunk, r.off, r.end);
+      if (b) out.push('<span class="row">');
+      spansHtml(hunk, r.off, r.end, wrap.PASS_NORMAL, link, ord, seen, out);
+      out.push(b ? "</span>" : "\n");
     }
   } else spansHtml(hunk, 0, hunk.text.length, wrap.PASS_NORMAL, link, ord, seen, out);
   out.push('</pre></div>');

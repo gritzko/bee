@@ -170,6 +170,94 @@ function walkHunk(text, toks, emit) {
   }
 }
 
+//  ---- BEE-030: the elastic `B` field (be view/bro.js:685, BRO-036) ---------
+//  The producer tags ONE span per line `B`; at a REAL width the no-wrap index
+//  …-cuts the span when the line overflows `cols` and pads it when short, so
+//  trailing columns stay flush right.  Soft-wrap / unclamped never fire it.
+const NO_CLAMP = 1 << 24;                 // wider than any tok32 end offset
+
+//  The pad insert is the work-view dotted leader with one breathing space
+//  against the abutting byte; `tail` = no producer byte follows the span (the
+//  zero-width B), so the breath flips ends.  Each `┄` is ONE display column.
+function elasticPad(n, tail) {
+  if (n <= 1) return " ";
+  return tail ? "┄".repeat(n - 1) + " " : " " + "┄".repeat(n - 1);
+}
+
+//  Measure the logical line at `off` and find its first `B` run; too wide →
+//  cut the run's tail under a `…`, too narrow → pad after it.  Returns { end,
+//  els: { lo, hi, ins } } (skip bytes [lo,hi), emit `ins` there) or null (no
+//  B span / exact fit).
+function elasticRow(hunk, off, cols) {
+  const text = hunk.text, tlen = text.length, toks = hunk.toks;
+  if (!toks || !toks.length) return null;
+  let ti = 0;
+  while (ti < toks.length && (toks[ti] & 0xffffff) <= off) ti++;
+  let cp = 0, pos = off, bLo = -1, bHi = -1, bW = 0;
+  const bCells = [];                           // byte start of each B cell
+  while (pos < tlen) {
+    while (ti < toks.length && (toks[ti] & 0xffffff) <= pos) ti++;
+    const tag = ti < toks.length ? TOK_TAG(toks[ti]) : "S";
+    const ch = text[pos];
+    const hidden = tag === "U" || tag === "O";
+    if (ch === 0x0a && !hidden) break;         // visible '\n' ends the line
+    let clen = UTF8_LEN[ch >> 4];
+    if (clen === 0 || pos + clen > tlen) clen = 1;
+    if (!hidden) {
+      //  Only the FIRST contiguous run of B cells is THE elastic span.
+      if (tag === "B" && (bHi < 0 || pos === bHi)) {
+        if (bLo < 0) bLo = pos;
+        bCells.push(pos); bHi = pos + clen; bW++;
+      }
+      cp++;
+    }
+    pos += clen;
+  }
+  const lineEnd = pos;                         // at the '\n' (or tlen)
+  if (bW <= 0) {
+    //  A ZERO-WIDTH B tok (a bare-key title) still pads — the cell walk never
+    //  enters it, so find its slot in the tok list directly.
+    let prev = 0;
+    for (let i = 0; i < toks.length; i++) {
+      const e = toks[i] & 0xffffff;
+      if (TOK_TAG(toks[i]) === "B" && prev >= off && e <= lineEnd) { bLo = bHi = e; break; }
+      prev = e;
+    }
+    if (bHi < 0 || cp >= cols) return null;    // no B slot / nothing to pad
+    return { end: lineEnd, els: { lo: bHi, hi: bHi, ins: elasticPad(cols - cp, true) } };
+  }
+  if (cp === cols) return null;
+  if (cp < cols)                               // pad the span's tail to cols
+    return { end: lineEnd, els: { lo: bHi, hi: bHi, ins: elasticPad(cols - cp, false) } };
+  const cut = Math.min(cp - cols + 1, bW);     // the `…` itself takes 1 col
+  const els = { lo: bCells[bW - cut], hi: bHi, ins: "…" };
+  if (cp - cut + 1 <= cols) return { end: lineEnd, els: els };
+  //  The span shrunk to nothing and STILL too wide: hard-clip the tail as today.
+  return { end: elasticClip(hunk, off, cols, els), els: els };
+}
+
+//  rowEnd's twin that applies an els insert/skip — the clamp for a line that
+//  overflows even with its elastic span shrunk to nothing.
+function elasticClip(hunk, off, cols, els) {
+  const text = hunk.text, tlen = text.length, toks = hunk.toks;
+  let ti = 0;
+  while (ti < toks.length && (toks[ti] & 0xffffff) <= off) ti++;
+  let cp = 0, pos = off;
+  while (pos < tlen && cp < cols) {
+    if (pos === els.lo) { cp++; pos = els.hi; continue; }   // the 1-col `…`
+    while (ti < toks.length && (toks[ti] & 0xffffff) <= pos) ti++;
+    const tag = ti < toks.length ? TOK_TAG(toks[ti]) : "S";
+    const ch = text[pos];
+    const hidden = tag === "U" || tag === "O";
+    if (ch === 0x0a && !hidden) break;
+    let clen = UTF8_LEN[ch >> 4];
+    if (clen === 0 || pos + clen > tlen) clen = 1;
+    pos += clen;
+    if (!hidden) cp++;
+  }
+  return pos;
+}
+
 //  A diff hunk's row index: walkHunk's logical rows, each soft-wrapped by the
 //  pass-aware rowEnd (or one clamped row when `wrap` is false).
 function indexDiffRows(hunk, cols, wrap) {
@@ -196,10 +284,17 @@ function indexRows(hunk, cols, wrap) {
   const text = hunk.text, tlen = text.length;
   let off = 0;
   while (off < tlen) {
-    const end = rowEnd(hunk, off, cols);
-    rows.push({ off: off, end: end, pass: PASS_NORMAL });
+    let end = rowEnd(hunk, off, cols);
+    const row = { off: off, end: end, pass: PASS_NORMAL };
+    rows.push(row);
     let next;
     if (wrap === false) {
+      //  BEE-030: at a REAL width an elastic `B` span resizes the row to
+      //  `cols`; the row then spans the whole line, `els` riding to the paint.
+      if (cols < NO_CLAMP) {
+        const el = elasticRow(hunk, off, cols);
+        if (el) { end = row.end = el.end; row.els = el.els; }
+      }
       //  No-wrap: the clamped tail is hidden — skip to past the logical line's
       //  '\n' so the next row is the next line, not a wrap of this one.
       let nl = end; while (nl < tlen && text[nl] !== 0x0a) nl++;
@@ -282,6 +377,9 @@ module.exports = {
   passHides: passHides,
   indexRows: indexRows,
   rowEnd: rowEnd,
+  //  BEE-030: the elastic `B` field + the width past which no index clamps.
+  NO_CLAMP: NO_CLAMP,
+  elasticRow: elasticRow, elasticClip: elasticClip, elasticPad: elasticPad,
   //  BEE-021: the inline/split classifier, exported for the render tests.
   hasDiffSides: hasDiffSides,
   classifyLines: classifyLines, lineKind: lineKind, walkHunk: walkHunk,

@@ -429,6 +429,7 @@ function wtsOf() {
 //  tok32 (dog/tok/TOK.h): tag in bits 31..27, end byte offset in 23..0.
 function tok32(tag, end) { return ((tag & 0x1f) << 27) | (end & 0xffffff); }
 const TAG_U = 20, TAG_S = 18, TAG_F = 5, TAG_D = 3, TAG_N = 13, TAG_L = 11;
+const TAG_B = 1;                           // BEE-030: the elastic span (BRO-036)
 
 const KEYW = 22;                           // where the dotted leader gives out
 
@@ -518,7 +519,9 @@ function build(uriStr, blocks) {
     //  key region degrades to a single space rather than eating the title.
     const fill = KEYW - lead.length - 2 - key.length - vw;
     put(TAG_D, fill >= 2 ? " " + "┄".repeat(fill - 1) + " " : " ");
-    put(TAG_S, bareTitle(t.key, headOf(t).title));
+    //  BEE-030: the title is the ONE elastic `B` span — the renderers …-cut or
+    //  pad it to the live width, so the wt frames stay flush right (BRO-036).
+    put(TAG_B, bareTitle(t.key, headOf(t).title));
     if (t.wt) {
       put(TAG_S, "  ");
       put(TAG_F, framesOf(t));

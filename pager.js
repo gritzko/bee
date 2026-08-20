@@ -107,7 +107,9 @@ function indexAll(hunks, cols, soft) {
   for (const h of hunks) {
     rows.push({ hunk: h, banner: true });      // the hunk header line
     const sub = wrap.indexRows(h, cols, soft);  // BRO-014: `soft` boolean (soft|no-wrap)
-    for (const r of sub) rows.push({ hunk: h, off: r.off, end: r.end, pass: r.pass });
+    //  BEE-030: `els` (the elastic `B` insert/skip, no-wrap rows only) rides.
+    for (const r of sub)
+      rows.push({ hunk: h, off: r.off, end: r.end, pass: r.pass, els: r.els });
   }
   return rows;
 }
@@ -347,7 +349,7 @@ Pager.prototype.render = function () {
         const cur = this.color && ri === v.cur.row ? this._curSpan(r) : null;
         emitBody(r.hunk, r.off, r.end, this.color, r.pass, enc,
                  function (lo, hi) { if (hi > lo) chunks.push(text.subarray(lo, hi)); },
-                 cur);
+                 cur, r.els);
       }
     }
     enc("\r\n");
@@ -784,7 +786,18 @@ Pager.prototype._screenToByte = function (row, col) {
   let ti = 0;
   while (ti < toks.length && (toks[ti] & 0xffffff) <= r.off) ti++;
   let cp = 1, pos = r.off;
+  const els = r.els;
+  let elsDone = els === undefined;
   while (pos < r.end) {
+    //  BEE-030: the elastic insert holds cells no byte owns — a click on the
+    //  `…` lands on the cut byte, a click on the pad on nothing (BRO-036).
+    if (!elsDone && pos >= els.lo) {
+      elsDone = true;
+      if (col < cp + els.ins.length)
+        return els.hi > els.lo ? { hunk: hunk, off: els.lo } : null;
+      cp += els.ins.length;
+      if (els.hi > pos) { pos = els.hi; continue; }
+    }
     while (ti < toks.length && (toks[ti] & 0xffffff) <= pos) ti++;
     const w = ti < toks.length ? toks[ti] : 0;
     const tag = ti < toks.length ? String.fromCharCode(65 + ((w >>> 27) & 0x1f)) : "S";
