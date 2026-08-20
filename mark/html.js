@@ -20,6 +20,50 @@ function esc(s) {
                   .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+//  MARK-018: a fenced body is LEXED, not merely labelled — `tok.parse` is the
+//  JS face of dog/tok's whole dispatch table (quickjab/tok.c:76), the very core
+//  that paints a source file, so a fence wears the SAME `tok-*` classes the
+//  served source does (render/html.js:99:yo) inside the `<pre><code>` every other
+//  renderer keeps.  A span carries a COLOUR onto ink: the default slot `S` (no
+//  stylesheet rule) and a whitespace-only token stay bare text, so an unknown
+//  info — the plain-text fallback, which tags nothing but `S`/`P` — renders as
+//  it did before: PUNCTUATION ALONE IS NOT HIGHLIGHTING, so a run without one
+//  of the grammar tags below hands the body back untouched.
+const PAINTED = "DGLHRNCFT";   // comment, string, number, preproc, keyword, …
+function paintCode(literal, lang) {
+  if (!lang || typeof tok === "undefined" || typeof utf8 === "undefined") return null;
+  const bytes = utf8.Encode(literal);
+  let t = null;
+  //  A body past the lexer's 16 MiB cap throws: it is plain text, as ever.
+  try { t = tok.parse(bytes, lang); } catch (e) { return null; }
+  if (t === null || t.length === 0) return null;
+  const out = [];
+  let prev = 0, painted = false, run = "", runTag = "";
+  //  One span per RUN of a tag, not per token: a comment reaches the callback
+  //  word by word (TOKSplitText), and ten spans paint what one does.
+  const flush = function () {
+    if (run === "") return;
+    if (runTag === "S" || run.trim() === "") out.push(run);
+    else {
+      out.push('<span class="tok-' + runTag + '">' + run + "</span>");
+      if (PAINTED.indexOf(runTag) >= 0) painted = true;
+    }
+    run = "";
+  };
+  for (let i = 0; i < t.length; i++) {
+    const end = t[i] & 0xffffff;                       // tok32, wrap.js:10:ka
+    const tag = String.fromCharCode(65 + ((t[i] >>> 27) & 0x1f));
+    const text = esc(utf8.Decode(bytes.slice(prev, end)));
+    prev = end;
+    if (tag !== runTag) { flush(); runTag = tag; }
+    run += text;
+  }
+  flush();
+  if (prev < bytes.length) out.push(esc(utf8.Decode(bytes.slice(prev))));
+  //  No grammar tag — an ext no lexer claims: hand back the plain body.
+  return painted ? out.join("") : null;
+}
+
 //  houdini_escape_href's own safe set; everything else percent-encodes, bar the
 //  two it spells as entities.  `%` is safe, so an already-encoded url survives.
 const HREF_SAFE = "-_.+!*(),%#@?=;:/$~";
@@ -187,8 +231,13 @@ function render(doc, opts) {
       case "code_block": {
         cr();
         const info = node.info ? String(node.info).split(/\s+/)[0] : "";
+        //  MARK-018: the info string names the lexer the body is painted with;
+        //  unpainted, the block is the escaped literal it always was.
+        const lit = String(node.literal === undefined || node.literal === null
+                           ? "" : node.literal);
+        const body = paintCode(lit, info);
         put("<pre><code" + (info ? ' class="language-' + esc(info) + '"' : "") + ">" +
-            esc(node.literal) + "</code></pre>\n");
+            (body === null ? esc(lit) : body) + "</code></pre>\n");
         break;
       }
       case "thematic_break": cr(); put("<hr />\n"); break;
