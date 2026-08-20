@@ -36,4 +36,12 @@ function toHtml(src, opts) {
   return require("mark/html.js").toHtml(strip(src), opts);
 }
 
-module.exports = { bodyLine: bodyLine, strip: strip, toHtml: toHtml };
+//  BEE-032: the StrictMark twin — the same strip, then the `.mkd` dialect's own
+//  parser (mark/strict.js) into the same emitter, so a page and the keyed lane
+//  never split a file differently whichever Markdown ext it wears.
+function strictToHtml(src, opts) {
+  return require("mark/strict.js").toHtml(strip(src), opts);
+}
+
+module.exports = { bodyLine: bodyLine, strip: strip, toHtml: toHtml,
+                   strictToHtml: strictToHtml };

@@ -306,12 +306,13 @@ function openOnce(pg, full) {
 }
 
 //  --- the rendered page ------------------------------------------------------
-//  LITE-037: the two rendered dialects and their parsers — `.md` CommonMark
-//  (LITE-035), `.rst` reStructuredText.  The PARSER is all that differs: the
-//  emitter, the page shell and the link door below are one set for both.
-//  `.mkd` is StrictMark and keeps serving as painted source.  BEE-029: the
-//  `.md` entry is `front.toHtml`, so a YAML preamble is metadata, not a ruler.
-const RENDER = { md: front.toHtml, rst: rst.toHtml };
+//  LITE-037: the rendered dialects and their parsers — `.md` CommonMark
+//  (LITE-035), `.rst` reStructuredText, BEE-032 `.mkd` StrictMark.  The PARSER
+//  is all that differs: the emitter, the page shell and the link door below are
+//  one set for all three, and `/raw/` still paints any of them as source.
+//  BEE-029: the Markdown entries go through `front`, so a YAML preamble is
+//  metadata, not a ruler.
+const RENDER = { md: front.toHtml, mkd: front.strictToHtml, rst: rst.toHtml };
 
 //  A path -> the function that renders it, or null for a painted-source file.
 function renderOf(path) {

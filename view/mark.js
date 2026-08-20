@@ -25,14 +25,16 @@ function doc(title, body) {
 }
 
 //  A dialect's parser and emitter, or null for a file this verb cannot render.
-//  `.mkd` renders here even though http.js:301:dX serves it painted, since
-//  rendering StrictMark is what this verb is for.
+//  BEE-032: `.mkd` is StrictMark, the dialect this verb was named for, and it
+//  takes the StrictMark parser — feeding it to the CommonMark one mis-read
+//  every `Key: value` pair and every `[Page]` shortcut the wiki is made of.
 function toHtmlOf(ext) {
   if (ext === "rst") return require("mark/rst.js").toHtml;
+  if (ext === "mkd") return require("mark/front.js").strictToHtml;
   //  BEE-029: through `mark/front.js`, so a YAML preamble is dropped here as
   //  it is on the served page (http.js:313:ht); the kv lane reads one off either
   //  markdown ext (index/kv.js:126:De), and so does this verb.
-  if (ext === "mkd" || ext === "md" || ext === "markdown")
+  if (ext === "md" || ext === "markdown")
     return require("mark/front.js").toHtml;
   return null;
 }

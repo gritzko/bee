@@ -175,8 +175,9 @@ function render(doc, opts) {
       case "item": {
         if (ent) {
           cr();
-          put("<li>");
-          //  LITE-031 put the state on the node; the marker is already gone.
+          //  BEE-032: the checkbox IS the task item's marker — `.task` lets
+          //  the sheet drop the list bullet, so an item never wears two.
+          put(node.taskChecked !== undefined ? '<li class="task">' : "<li>");
           if (node.taskChecked !== undefined)
             put('<input type="checkbox"' + (node.taskChecked ? ' checked=""' : "") +
                 ' disabled="" /> ');

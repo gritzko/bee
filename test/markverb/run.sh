@@ -41,15 +41,20 @@ FAKEHOME="$WORK/home"; mkdir -p "$FAKEHOME"
 lite() { ( cd "$WORK" && HOME="$FAKEHOME" "$RT" mark "$@" ); }
 echo "markverb: runtime $RT, fixtures $WORK"
 
+# BEE-032: the fixture speaks StrictMark — reference links only (the dialect
+# has no inline `[text](url)` form), and `*` spells strong, not em.
 cat > "$WORK/page.mkd" <<'MKD'
 #   The page
 
-Hello *world*, see [the abc][a], [a note](sub/n.md), [the source](main.js)
-and [away](http://elsewhere/z.mkd#frag).
+Hello *world*, see [the abc][a], [a note][n], [the source][s]
+and [away][w].
 
  -  a bullet
 
 [a]: abc.mkd
+[n]: sub/n.md
+[s]: main.js
+[w]: http://elsewhere/z.mkd#frag
 MKD
 : > "$WORK/empty.mkd"
 printf 'Title\n=====\n\nSee `the abc <abc.rst>`_ here.\n' > "$WORK/p.rst"
@@ -61,7 +66,7 @@ lite page.mkd > "$WORK/p.out" 2>"$WORK/p.err"; RC=$?
 if [ "$RC" = 0 ] && [ -s "$WORK/p.out" ]
 then ok "\`bee mark page.mkd\` writes a page, rc 0"
 else bad "mark page.mkd (rc $RC)" "$WORK/p.out" "$WORK/p.err"; fi
-for want in '^<!DOCTYPE html>$' '<title>page</title>' '<h1 id="the-page">The page</h1>' '<em>world</em>' '</body></html>'; do
+for want in '^<!DOCTYPE html>$' '<title>page</title>' '<h1 id="the-page">The page</h1>' '<strong>world</strong>' '</body></html>'; do
     if grep -q "$want" "$WORK/p.out"
     then ok "the page carries $want"
     else bad "no $want in the page" "$WORK/p.out"; fi

@@ -225,15 +225,14 @@ has  "the to-side washes in" 'side-in" id="b0">X1'
 has  "the from-side washes out" 'side-rm" id="b2">X0'
 
 page "a file" "/repo/cat/doc.mkd" 200
-has  "the source is painted" '<span class="tok-'
+# BEE-032: a .mkd serves RENDERED StrictMark now; the painted source moved to raw/.
+has  "the page renders — the StrictMark heading" '<h1 id="doc">'
 has  "a path reference links, resolved" '<a href="/repo/cat/sub/x.txt">'
 # A ticket code names no file in this repo, so it resolves to NOTHING — and an
-# unresolvable reference is plain painted text, never a link that 404s.
+# unresolvable reference is plain prose, never a link that 404s.
 hasnt "a ticket code naming no file is NOT a link" '<a href="/repo/cat/LITE-034'
-has  "and the ticket code is still painted" '>LITE-034</span>'
-hasnt "NO CommonMark render — no heading element" "<h1"
-hasnt "NO CommonMark render — no paragraph element" "<p>"
-has  "the markdown source is served verbatim" "Doc"
+has  "and the ticket code is still prose" 'a ticket LITE-034.'
+has  "the painted source keeps its own door" '/repo/raw/doc.mkd'
 
 page "a file at a rev" "/repo/cat/sub/x.txt?$C08" 200
 has  "the rev's bytes, not the tip's" ">X0<"

@@ -414,8 +414,8 @@ get /repo/cat/sub/other.rst > /dev/null
 has   "a link out of a subdir resolves against ITS dir" '<a href="/repo/cat/doc.rst">the doc</a>'
 
 get /repo/cat/doc.mkd > /dev/null
-has   "a .mkd is still painted source (LITE-034)"  'class="tok-'
-hasnt "a .mkd is not rendered"                     '<h1 id='
+has   "a .mkd renders as StrictMark (BEE-032)"     '<h1 id="kept">'
+has   "and keeps its painted-source door"          '/repo/raw/doc.mkd'
 
 kill "$SRVPID" 2>/dev/null; SRVPID=""
 echo "rst: $CHECKS checks, $FAILED failed"

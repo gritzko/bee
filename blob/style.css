@@ -25,3 +25,10 @@ a:hover{border-bottom-style:solid}
 .mark th,.mark td{border:1px solid currentColor;padding:1px 6px}
 .mark blockquote{margin:0 0 1em;padding-left:8px;border-left:3px solid currentColor}
 .mark img{max-width:100%}
+/*  BEE-032: StrictMark extras.  A meta pair reads `Key: value` on ONE line, as
+    written; a task item's checkbox is its only marker, no doubled bullet.  */
+.mark dl.meta dt{display:inline;font-weight:bold}
+.mark dl.meta dt::after{content:":"}
+.mark dl.meta dd{display:inline;margin:0}
+.mark dl.meta dd::after{content:"\A";white-space:pre}
+.mark li.task{list-style:none}
