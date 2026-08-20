@@ -486,6 +486,10 @@ function srcMount(name, names) {
 function handle(req, sock, st) {
   const m = String(req.method || "");
   const only = m === "HEAD";
+  //  GIT-031: ONE page is one snapshot.  The cached ODB handles catch up with
+  //  git here and nowhere else, so a page cannot resolve its first references
+  //  against one pack set and its last against another.
+  idx.epoch();
   //  No write endpoints of any kind: reads answer, everything else is refused.
   if (m !== "GET" && !only) {
     respond(sock, 405, "Method Not Allowed", TEXT,

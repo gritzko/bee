@@ -789,25 +789,63 @@ function mainOf(root) {
   return o === null ? root : o;
 }
 
+//  GIT-031: the ODB handle is the whole cost of an open — it maps every
+//  pack pair in the repo — and it is READ-ONLY and reusable, so it is kept
+//  for the process's life instead of being reopened per lookup.  A page's
+//  reference fan-out used to reopen 288 times; now it opens once per repo.
+const HANDLES = new Map();      //  realpath'd repo -> the live git handle
+const FRESHAT = new Map();      //  realpath'd repo -> the epoch it caught up at
+let EPOCH = 0;
+
+//  GIT-031: one page/run is ONE snapshot of every repo it touches.  http.js
+//  and main.js bump this per request; the first use of a handle inside the
+//  new epoch stats its objects dir, and rescans only if git moved a listing.
+function epoch() { EPOCH++; }
+
+function handleOf(repo) {
+  const have = HANDLES.get(repo);
+  if (have !== undefined) {
+    if (FRESHAT.get(repo) !== EPOCH) {
+      FRESHAT.set(repo, EPOCH);
+      //  A repo that went away mid-run keeps serving what it already mapped.
+      try { have.freshen(); } catch (e) {}
+    }
+    return have;
+  }
+  let h;
+  try { h = git.open(repo); } catch (e) { throw "index: " + e; }
+  HANDLES.set(repo, h);
+  FRESHAT.set(repo, EPOCH);
+  return h;
+}
+
 //  openRepo(arg) -> { h, repo, gitdir, root, head, reader }.  `root` is the
 //  worktree the paths in the index are relative to (the gitdir's parent for a
 //  plain `.git`, else the path we opened).  The caller closes with closeRepo.
+//  GIT-031: `h` is SHARED and outlives the ctx; HEAD is re-read every time,
+//  since that is the half that moves.
 function openRepo(arg, climb) {
   let repo = null;
   if (climb) repo = discover(arg);
   else { try { repo = io.realpath(arg); } catch (e) { repo = null; } }
   if (repo === null) throw "index: there is no git repository at " + arg;
-  let h;
-  try { h = git.open(repo); } catch (e) { throw "index: " + e; }
+  const h = handleOf(repo);
   const gitdir = h.dir;
   let root = repo;
   if (gitdir.length > 5 && gitdir.slice(-5) === "/.git") root = gitdir.slice(0, -5);
   const hd = refs.head(gitdir);
-  if (hd === null) { try { git.close(h); } catch (e) {}
-    throw "index: " + repo + " has no HEAD to index"; }
+  //  GIT-031: the handle is the cache's, not this ctx's — a HEAD-less repo
+  //  refuses without unmapping what other callers are still reading.
+  if (hd === null) throw "index: " + repo + " has no HEAD to index";
   return { h: h, repo: repo, gitdir: gitdir, root: root, head: hd, r: reader(h) };
 }
-function closeRepo(ctx) { try { git.close(ctx.h); } catch (e) {} }
+
+//  GIT-031: a no-op for the SHARED handle openRepo hands out; a handle some
+//  other opener made (hook.js's openUnborn) is still its own and is closed.
+function closeRepo(ctx) {
+  if (HANDLES.get(ctx.repo) === ctx.h) return;
+  try { git.close(ctx.h); } catch (e) {}
+}
 
 //  The initialised submodules of an open repo -> { subs, skipped } (BEE-006).
 //  A sub's `.git` is a gitfile with no `commondir`, so BEE-001's linked-worktree
@@ -1067,7 +1105,7 @@ function hexOfHl(hl60) { return hl60.toString(16).padStart(15, "0"); }
 module.exports = {
   index: index, summary: summary, track: track, repos: repos,
   openIndex: openIndex, openKv: openKv, sweep: sweep,
-  discover: discover, openRepo: openRepo, closeRepo: closeRepo,
+  discover: discover, openRepo: openRepo, closeRepo: closeRepo, epoch: epoch,
   //  The linked-worktree tell and the original both doors take (BEE-009).
   linkedWorktree: linkedWorktree, origin: origin, mainOf: mainOf,
   gitdirOf: gitdirOf,

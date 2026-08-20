@@ -263,6 +263,9 @@ for (const w in act.ACTS)
 //  slot is POSITIONAL and FIRST, so `bee todo //x` is a verb with a path arg and
 //  nothing here looks ahead; the repo it names is where the whole run stands.
 function main(argv) {
+  //  GIT-031: one CLI run is one snapshot, the same way one http request is
+  //  (http.js `handle`); a run that outlives a `git gc` is the pager's.
+  require("index/index.js").epoch();
   const argl = argv.slice(2);
   const root = contextOf(argl);
   if (root === null) return run(argl, null);
