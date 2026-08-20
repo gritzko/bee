@@ -247,7 +247,9 @@ function plainQuad(q, con) {
 
 //  rowsOf(model, ctx) -> [{ quad, con, text, nav }]: commit rows first, then
 //  file rows by path.  A row clicks to where its quad points: a commit row
-//  into `commit`, a path git never saw into `cat`, the rest into `diff`.
+//  into `commit`, a path git never saw into `cat`, the rest into BEE-046's
+//  `dog` — the file whole, its wt-vs-HEAD spans washed, which `diff` cannot
+//  be, having to stay silent on a row the worktree did not move.
 function rowsOf(model, ctx) {
   const out = [];
   for (const c of model.commits)
@@ -257,7 +259,7 @@ function rowsOf(model, ctx) {
   for (const r of model.rows)
     out.push({ quad: r.quad, con: r.con, commit: false, text: r.path,
                gitlink: r.gitlink,
-               nav: (r.quad.charAt(3) === "o" ? "cat " : "diff ") +
+               nav: (r.quad.charAt(3) === "o" ? "cat " : "dog ") +
                     rd.navPath(ctx, r.path) });
   return out;
 }

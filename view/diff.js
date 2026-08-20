@@ -452,6 +452,9 @@ function diff(arg, opts) {
 }
 
 module.exports = { diff: diff, diffPath: diffPath, isBinary: isBinary,
+                   //  BEE-046: view/wash.js opens the SAME whole-file wt leg,
+                   //  so the worktree is diffed in one place, here.
+                   diffWt: diffWt,
                    commitHunks: commitHunks, emptyHunk: emptyHunk,
                    extOf: extOf, blobSha: blobSha, wtBytes: wtBytes,
                    treePairs: treePairs, treeLeaves: treeLeaves,

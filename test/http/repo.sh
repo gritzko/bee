@@ -5,8 +5,8 @@
 #
 # What it pins:
 #   * a cross-repo reference RESOLVES — `abc/TCP.c` read in the bee-side repo
-#     names `dog/abc/TCP.c` of the registered `quick` repo (through the parent,
-#     ruling 5) and renders as `<a href="/quick/cat/dog/abc/TCP.c">` (BEE-028);
+#     names `lib/abc/TCP.c` of the registered `quick` repo (through the parent,
+#     ruling 5) and renders as `<a href="/quick/cat/lib/abc/TCP.c">` (BEE-028);
 #   * the URL CARRIES the repo (ruling 2) — `/<repo>/[<verb>/]<path>` serves
 #     EVERY registered repo, and a bare repo-less URL 301s to the prefixed form;
 #   * serving needs NO lane: a registered but unindexed repo still serves;
@@ -64,7 +64,7 @@ echo "repo: runtime $RT, fixtures $WORK, port $PORT"
 # ==========================================================================
 # the fixtures — three repos, the registry's own shape
 #   abc/    a plain repo, TCP.c at its ROOT
-#   quick/  registers it as the submodule `dog/abc` (the quickjab -> dog -> abc
+#   quick/  registers it as the submodule `lib/abc` (the quickjab -> dog -> abc
 #           shape, one level: the partial `abc/TCP.c` spans the mount boundary)
 #   home/   the SERVED repo: a page referencing `abc/TCP.c` and `q.txt`
 #   plain/  registered and NEVER indexed — serving must not need a lane
@@ -79,8 +79,8 @@ mkrepo "$WORK/abc"
 
 mkrepo "$WORK/quick"
 ( cd "$WORK/quick" && printf 'Q0\n' > q.txt && git add -A && git commit -q -m 'quick seed' &&
-  git -c protocol.file.allow=always submodule add -q ../abc dog/abc &&
-  git commit -q -m 'quick takes dog/abc' ) || exit 2
+  git -c protocol.file.allow=always submodule add -q ../abc lib/abc &&
+  git commit -q -m 'quick takes lib/abc' ) || exit 2
 
 mkrepo "$WORK/home"
 mkdir -p "$WORK/home/sub" "$WORK/home/other"
@@ -104,7 +104,7 @@ done
 # not require indexing it.
 printf '%s\n' "$WORK/plain" >> "$FAKEHOME/.config/bee/repos"
 if [ -d "$WORK/plain/.git/be" ]; then bad "plain must have NO lane"; fi
-if grep -q "$WORK/quick/dog/abc" "$FAKEHOME/.config/bee/repos"
+if grep -q "$WORK/quick/lib/abc" "$FAKEHOME/.config/bee/repos"
 then ok "install registered the submodule too (BEE-006)"
 else ok "the submodule rides its parent's registry line"; fi
 
@@ -154,7 +154,7 @@ hdr()   { if grep -qiF "$2" "$WORK/hdr"; then ok "$1"; else bad "$1 — no '$2'"
 # leg 1 — THE REPRO: a cross-repo reference resolves and links
 # ==========================================================================
 page "the page of references" "/home/cat/ref.c" 200
-has  "the cross-repo ref links INTO the other repo" 'href="/quick/cat/dog/abc/TCP.c"'
+has  "the cross-repo ref links INTO the other repo" 'href="/quick/cat/lib/abc/TCP.c"'
 has  "a same-named local file still wins locally" 'href="/home/cat/q.txt"'
 hasnt "and it does NOT point at the other repo's q.txt" 'href="/quick/cat/q.txt"'
 hasnt "a reference no repo holds is not a link" 'href="/home/cat/nosuch'
@@ -163,19 +163,19 @@ has  "and it is still painted as source" '>nosuch/gone.c</span>'
 # ==========================================================================
 # leg 2 — the URL carries the repo (ruling 2), every registered repo served
 # ==========================================================================
-page "the other repo's file" "/quick/cat/dog/abc/TCP.c" 200
+page "the other repo's file" "/quick/cat/lib/abc/TCP.c" 200
 has  "it serves the SUBMODULE's own bytes" '>TCP</span>'
 page "the other repo's root" "/quick/" 200
 has  "the root list links its own file" 'href="/quick/cat/q.txt"'
 # BEE-028: the verb-less path form is a typed convenience — it converges on
 # the spelled form (a file under `cat`, a dir under `list`), never served as is.
-curl -s -D "$WORK/hdr" -o "$WORK/body" "$BASE/quick/dog/abc/TCP.c"
-hdr "a verb-less file URL 301s to its cat form" "Location: /quick/cat/dog/abc/TCP.c"
-curl -s -D "$WORK/hdr" -o "$WORK/body" "$BASE/quick/dog/abc/"
-hdr "a verb-less dir URL 301s to its list form" "Location: /quick/list/dog/abc/"
-page "the submodule's own list" "/quick/list/dog/abc/" 200
-has  "the sub lists its file THROUGH the parent (ruling 5)" 'href="/quick/cat/dog/abc/TCP.c"'
-page "the submodule's log" "/quick/log/dog/abc/TCP.c" 200
+curl -s -D "$WORK/hdr" -o "$WORK/body" "$BASE/quick/lib/abc/TCP.c"
+hdr "a verb-less file URL 301s to its cat form" "Location: /quick/cat/lib/abc/TCP.c"
+curl -s -D "$WORK/hdr" -o "$WORK/body" "$BASE/quick/lib/abc/"
+hdr "a verb-less dir URL 301s to its list form" "Location: /quick/list/lib/abc/"
+page "the submodule's own list" "/quick/list/lib/abc/" 200
+has  "the sub lists its file THROUGH the parent (ruling 5)" 'href="/quick/cat/lib/abc/TCP.c"'
+page "the submodule's log" "/quick/log/lib/abc/TCP.c" 200
 has  "the log rows are the SUB's" "abc seed"
 
 # a registered repo with NO lane still serves its files

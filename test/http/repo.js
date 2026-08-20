@@ -24,15 +24,15 @@ const ms = mnt.mounts();
 let quick = null, sub = null;
 for (const m of ms) {
   if (m.root === W + "/quick") quick = m;
-  if (m.root === W + "/quick/dog/abc") sub = m;
+  if (m.root === W + "/quick/lib/abc") sub = m;
 }
 check("the registry is the mount table", quick !== null && quick.name === "quick" &&
       quick.prefix === "", quick && quick.name + " '" + quick.prefix + "'");
 check("a submodule mounts UNDER its parent (ruling 5)",
-      sub !== null && sub.name === "quick" && sub.prefix === "dog/abc",
+      sub !== null && sub.name === "quick" && sub.prefix === "lib/abc",
       sub && sub.name + " '" + sub.prefix + "'");
 check("and it is ONE mount, not two", ms.filter(function (m) {
-        return m.root === W + "/quick/dog/abc"; }).length === 1);
+        return m.root === W + "/quick/lib/abc"; }).length === 1);
 
 //  --- the resolution ORDER (ruling 3) ----------------------------------------
 //  1. the DIR OF THE FILE BEING READ — `near.txt` read in `sub/` is sub's own,
@@ -51,13 +51,13 @@ check("the current repo answers next, several hits and all",
 const cross = rows(W + "/home/ref.c", "abc/TCP.c");
 check("a cross-repo partial resolves in the registry",
       cross !== null && cross.length === 1 && cross[0].repo === "quick" &&
-      cross[0].rel === "dog/abc/TCP.c" &&
-      cross[0].full === W + "/quick/dog/abc/TCP.c", one(cross));
+      cross[0].rel === "lib/abc/TCP.c" &&
+      cross[0].full === W + "/quick/lib/abc/TCP.c", one(cross));
 //  ...ONCE, though that file is reachable through the parent AND through the
 //  sub's own registry line (ruling 4's dedup).
 const bare = rows(W + "/home/ref.c", "TCP.c");
 check("one file reached through two mounts is ONE row",
-      bare !== null && bare.length === 1 && bare[0].rel === "dog/abc/TCP.c", one(bare));
+      bare !== null && bare.length === 1 && bare[0].rel === "lib/abc/TCP.c", one(bare));
 //  A LOCAL file still wins locally — the order is fixed, not a free-for-all.
 const local = rows(W + "/home/ref.c", "q.txt");
 check("a same-named local file still answers first",
@@ -66,12 +66,12 @@ check("a same-named local file still answers first",
 //  --- the slash-headed spellings ---------------------------------------------
 //  BEE-013: a leading `/` LIKELY means that repo's root, but nothing assumes
 //  it — the SEGMENTS are what is looked up (gritzko's ruling 2026-08-16), so a
-//  ref that heads with a repo NAME (`/quickjab/dog/abc/TCP.c`) is bogus as a
+//  ref that heads with a repo NAME (`/quickjab/lib/abc/TCP.c`) is bogus as a
 //  root path and answers anyway.  `///name` still names the repo outright.
-const anch = rows(W + "/home/ref.c", "/dog/abc/TCP.c");
+const anch = rows(W + "/home/ref.c", "/lib/abc/TCP.c");
 check("a root-absolute ref answers from a repo root",
       anch !== null && anch.length === 1 && anch[0].repo === "quick" &&
-      anch[0].rel === "dog/abc/TCP.c", one(anch));
+      anch[0].rel === "lib/abc/TCP.c", one(anch));
 const notail = rows(W + "/home/ref.c", "/near.txt");
 check("...and a deeper same-named file IS a candidate (segments, not a root)",
       notail !== null && notail.length === 2, one(notail));
@@ -110,7 +110,7 @@ check("the door opens the other tree from the reference",
 //  ...and the target it landed on is an ABSOLUTE path in that tree, which is
 //  what the pager stacks — so backing out is an ordinary pop.
 check("the landed hunk names the other tree",
-      hs !== null && String(hs[0].uri).indexOf(W + "/quick/dog/abc/TCP.c") >= 0,
+      hs !== null && String(hs[0].uri).indexOf(W + "/quick/lib/abc/TCP.c") >= 0,
       hs && hs[0].uri);
 //  The chooser NAMES THE REPO on every row (ruling 4).
 const ch = door.openTarget("near.txt", W + "/home/ref.c");

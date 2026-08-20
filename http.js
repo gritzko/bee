@@ -57,6 +57,9 @@ const ROUTE = {
   //  LINE (`/todo/BEE/Sev:HIGH`), which is why a slash separates words there.
   todo:     "todo",                 //  /todo[/<TOPIC>][/<Key:Value>...]
   cat:      "cat",                  //  /cat/<path>[?<rev>]  a .md RENDERS here
+  //  BEE-046: the same bytes under the diff wash, which the sheet's own
+  //  side-in/side-rm classes paint — no second palette on this side either.
+  dog:      "dog",                  //  /dog/<path>
   raw:      "cat",                  //  /raw/<path>[?<rev>]  the painted source
   tree:     "tree",                 //  /tree/<path|hex>[?<rev>]
   blob:     "blob",                 //  /blob/<hexlet>

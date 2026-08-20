@@ -61,7 +61,7 @@ const RREPO = [
   ["/repo/cat/sub/x.txt",     "repo",  "cat",    "sub/x.txt"],
   ["/quick/commit/78d15e48",  "quick", "commit", "78d15e48"],
   //  no verb after the repo: the rest IS the path, the file itself
-  ["/quick/dog/abc/TCP.c",    "quick", "path",   "dog/abc/TCP.c"],
+  ["/quick/lib/abc/TCP.c",    "quick", "path",   "lib/abc/TCP.c"],
   ["/repo/a%20b.txt",         "repo",  "path",   "a b.txt"],
 ];
 for (const r of RREPO) {

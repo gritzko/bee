@@ -46,6 +46,9 @@ const VERBS = {
   //  LITE-017:40 a `tree` row opens a `blob`, a `list` row a `cat`; pager stays arg-blind.
   list: function (arg, opts) { return require("view/list.js").list(arg, vopts(opts)).hunks; },
   cat:  function (arg, opts) { return require("view/cat.js").cat(arg, vopts(opts)).hunks; },
+  //  BEE-046: `cat` with the wt-vs-HEAD wash on — what a changed status row
+  //  opens, and the one view that always answers with the whole file.
+  dog:  function (arg, opts) { return require("view/dog.js").dog(arg, vopts(opts)).hunks; },
   //  BEE-022: the quad over the live worktree — the one view that reads the
   //  index and the bytes on disk, not a rev.
   status: function (arg, opts) { return require("view/status.js").status(arg, vopts(opts)).hunks; },
