@@ -65,6 +65,11 @@ MKD
 printf 'Title\n=====\n\nSee `the abc <abc.rst>`_ here.\n' > "$WORK/p.rst"
 
 # ==========================================================================
+#  BEE-052: the rendered page wraps its prose in `<span id="b<byte>">` anchors
+#  so a permalink can land in it; these checks pin the MARKUP SHAPE, so they
+#  read the page with that plumbing stripped.
+bare()  { sed -e 's/<span[^>]*>//g' -e 's|</span>||g' -e 's/ id="b[0-9]*"//g' "$1"; }
+
 # leg 1 — the page: one self-contained document, titled by the file name
 # ==========================================================================
 lite page.mkd > "$WORK/p.out" 2>"$WORK/p.err"; RC=$?
@@ -72,7 +77,7 @@ if [ "$RC" = 0 ] && [ -s "$WORK/p.out" ]
 then ok "\`bee mark page.mkd\` writes a page, rc 0"
 else bad "mark page.mkd (rc $RC)" "$WORK/p.out" "$WORK/p.err"; fi
 for want in '^<!DOCTYPE html>$' '<title>page</title>' '<h1 id="the-page">The page</h1>' '<strong>world</strong>' '</body></html>'; do
-    if grep -q "$want" "$WORK/p.out"
+    if bare "$WORK/p.out" | grep -q "$want"
     then ok "the page carries $want"
     else bad "no $want in the page" "$WORK/p.out"; fi
 done
@@ -88,7 +93,7 @@ then ok "an EMPTY page renders as an empty body, rc 0"
 else bad "empty page (rc $RC)" "$WORK/e.out" "$WORK/e.err"; fi
 # The reST dialect goes through the same emitter, off its own parser.
 lite p.rst > "$WORK/r.out" 2>"$WORK/r.err"; RC=$?
-if [ "$RC" = 0 ] && grep -q '<h1 id="title">Title</h1>' "$WORK/r.out"
+if [ "$RC" = 0 ] && bare "$WORK/r.out" | grep -q '<h1 id="title">Title</h1>' 
 then ok "an .rst page renders through the same emitter"
 else bad "mark p.rst (rc $RC)" "$WORK/r.out" "$WORK/r.err"; fi
 
@@ -97,7 +102,7 @@ else bad "mark p.rst (rc $RC)" "$WORK/r.out" "$WORK/r.err"; fi
 # other destination rides verbatim (there is no door in a dump)
 # ==========================================================================
 link() {   # link <label> <want-href>
-    if grep -q "$2" "$WORK/p.out"
+    if bare "$WORK/p.out" | grep -q "$2"
     then ok "$1"
     else bad "$1: no $2" "$WORK/p.out"; fi
 }
@@ -107,7 +112,7 @@ link "a plain file link is verbatim"         'href="main.js">the source<'
 link "an absolute url is verbatim, fragment and all" \
      'href="http://elsewhere/z.mkd#frag">away<'
 # The .rst link swap is the same one, off the same table.
-link_rst() { grep -q 'href="abc.html">the abc<' "$WORK/r.out"; }
+link_rst() { bare "$WORK/r.out" | grep -q 'href="abc.html">the abc<'; }
 if link_rst
 then ok "an .rst destination becomes .html too"
 else bad "the .rst link was not swapped" "$WORK/r.out"; fi

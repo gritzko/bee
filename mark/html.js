@@ -14,6 +14,11 @@
 //  included — so the test leg can hold the two outputs side by side.
 "use strict";
 
+//  The bytes a string takes, so a cut inside a token still names its own byte.
+function byteLen(s) {
+  return typeof utf8 !== "undefined" ? utf8.Encode(s).length : String(s).length;
+}
+
 //  cmark's escape_html: these four and never `'`.
 function esc(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
@@ -126,6 +131,45 @@ function render(doc, opts) {
   const put = function (s) { if (s) { out.push(s); tail = s.charAt(s.length - 1); } };
   const cr = function () { if (tail !== "\n") put("\n"); };
 
+  //  BEE-052:19 a rendered page is a landing place too: `#b<byte>` is the ONE
+  //  fragment vocabulary a reference speaks (render/html.js:135), and only the
+  //  painted view ever answered it.  A node that knows its first byte (the
+  //  StrictMark parser's `boff`, mark/strict.js:20) wears that id; a run of text
+  //  is cut back into the tokens it was merged from, so every one is addressable.
+  //  A dialect whose parser mints no offsets emits exactly what it always did.
+  const seen = new Set();
+  const idAt = function (off) {
+    if (!(off >= 0) || seen.has(off)) return "";
+    seen.add(off);
+    return ' id="b' + off + '"';
+  };
+  const idOf = function (node) { return idAt(node.boff); };
+
+  //  The boundaries a text run is cut at: where the autolink hook split it, and
+  //  where each token it swallowed began.  -> [{ text, off, href }] in order.
+  const cutRun = function (node, segs) {
+    const parts = node.parts || [];
+    const marks = [];
+    let at = 0;
+    for (const g of segs) { marks.push({ at: at, href: g.href }); at += g.text.length; }
+    const lit = node.literal, outp = [];
+    let i = 0, j = 0, href = "";
+    while (i < lit.length) {
+      while (j < parts.length && parts[j].at <= i) j++;
+      let nx = j < parts.length ? parts[j].at : lit.length;
+      for (const m of marks) if (m.at > i && m.at < nx) nx = m.at;
+      for (const m of marks) if (m.at <= i) href = m.href || "";
+      //  A cut inside a token still names a byte — the id is an offset, not a
+      //  token, so a position between two of them addresses just as well.
+      const base = j > 0 ? parts[j - 1] : null;
+      const off = base === null ? -1
+                : base.off + byteLen(lit.slice(base.at, i));
+      outp.push({ text: lit.slice(i, nx), off: off, href: href });
+      i = nx;
+    }
+    return outp;
+  };
+
   //  -> the final href attribute value, or null: no link at all, plain text.
   const hrefOf = function (dest, isImage) {
     if (dangerous(dest)) return null;
@@ -147,18 +191,25 @@ function render(doc, opts) {
       //  segments (wiki/Link.mkd refs); never inside an already-open <a>.
       case "text": {
         const segs = inA === 0 && opts.autolink ? opts.autolink(node.literal) : null;
-        if (!segs) { put(esc(node.literal)); break; }
-        for (const g of segs)
-          put(g.href ? '<a href="' + esc(g.href) + '">' + esc(g.text) + "</a>"
-                     : esc(g.text));
+        if (!node.parts) {
+          if (!segs) { put(esc(node.literal)); break; }
+          for (const g of segs)
+            put(g.href ? '<a href="' + esc(g.href) + '">' + esc(g.text) + "</a>"
+                       : esc(g.text));
+          break;
+        }
+        for (const g of cutRun(node, segs || [{ text: node.literal }])) {
+          const span = "<span" + idAt(g.off) + ">" + esc(g.text) + "</span>";
+          put(g.href ? '<a href="' + esc(g.href) + '">' + span + "</a>" : span);
+        }
         break;
       }
       case "softbreak": put("\n"); break;
       case "linebreak": put("<br />\n"); break;
-      case "code": put("<code>" + esc(node.literal) + "</code>"); break;
-      case "emph": put(ent ? "<em>" : "</em>"); break;
-      case "strong": put(ent ? "<strong>" : "</strong>"); break;
-      case "strikethrough": put(ent ? "<del>" : "</del>"); break;
+      case "code": put("<code" + idOf(node) + ">" + esc(node.literal) + "</code>"); break;
+      case "emph": put(ent ? "<em" + idOf(node) + ">" : "</em>"); break;
+      case "strong": put(ent ? "<strong" + idOf(node) + ">" : "</strong>"); break;
+      case "strikethrough": put(ent ? "<del" + idOf(node) + ">" : "</del>"); break;
       //  SAFE: the source bytes, visible as text — never markup of its own.
       case "html_inline": put(esc(node.literal)); break;
       //  LITE-041: a custom node carries its own tags — emitted raw, and only
@@ -189,14 +240,20 @@ function render(doc, opts) {
       case "paragraph": {
         const gp = node.parent && node.parent.parent;
         if (gp && gp.type === "list" && gp.listTight) break;
-        if (ent) { cr(); put("<p>"); } else put("</p>\n");
+        if (ent) { cr(); put("<p" + idOf(node) + ">"); } else put("</p>\n");
         break;
       }
       case "heading": {
         if (ent) {
           cr();
-          put("<h" + node.level + ' id="' + esc(slugOf(textOf(node), used)) + '">');
-        } else put("</h" + node.level + ">\n");
+          //  The slug already owns the <h>'s id, so the byte rides an inner
+          //  span — and only when the parser minted one, so `.md`/`.rst` emit
+          //  the heading they always did.
+          const bid = idOf(node);
+          node.bspan = bid !== "";
+          put("<h" + node.level + ' id="' + esc(slugOf(textOf(node), used)) + '">' +
+              (node.bspan ? "<span" + bid + ">" : ""));
+        } else put((node.bspan ? "</span>" : "") + "</h" + node.level + ">\n");
         break;
       }
       case "block_quote":

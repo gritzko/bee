@@ -82,11 +82,26 @@ run() {   # run <file> -> $WORK/out
     lite "$1" > "$WORK/out" 2>"$WORK/err"; RC=$?
     [ "$RC" = 0 ] || bad "mark $1 (rc $RC)" "$WORK/out" "$WORK/err"
 }
-has()   { if grep -qF "$2" "$WORK/out"; then ok "$1"; else bad "$1 — no '$2'" "$WORK/out"; fi; }
-hasnt() { if grep -qF "$2" "$WORK/out"; then bad "$1 — '$2' is there" "$WORK/out"; else ok "$1"; fi; }
+#  BEE-052: the rendered page now wraps its prose in `<span id="b<byte>">`
+#  anchors so a permalink can land in it, so these checks read the page with
+#  that plumbing stripped: what they pin is the MARKUP SHAPE, and the anchors
+#  themselves are pinned on their own below.  `hasraw` reads the bytes as served.
+bare()  { sed -e 's/<span[^>]*>//g' -e 's|</span>||g' -e 's/ id="b[0-9]*"//g' "$1"; }
+hasraw() { if grep -qF "$2" "$WORK/out"; then ok "$1"; else bad "$1 — no '$2'" "$WORK/out"; fi; }
+has()   { if bare "$WORK/out" | grep -qF "$2"; then ok "$1"; else bad "$1 — no '$2'" "$WORK/out"; fi; }
+hasnt() { if bare "$WORK/out" | grep -qF "$2"; then bad "$1 — '$2' is there" "$WORK/out"; else ok "$1"; fi; }
 
 run page.mkd
 has   "the H1 opener renders"              '<h1 id="page-title">Page Title</h1>'
+#  BEE-052: and the page is a LANDING PLACE — every block and every token of
+#  prose wears `id="b<byte>"`, the ONE fragment a reference speaks
+#  (render/html.js:135:AW), so a permalink into a rendered `.mkd` lands where it
+#  points instead of at the top.  The H1's own byte is its LINE's first, quad
+#  included; `.mark :target` is what makes the landing show.
+hasraw "the H1 anchors on the byte its line begins at" '<h1 id="page-title"><span id="b0">'
+hasraw "a word of prose is addressable on its own"     '<span id="b4">Page</span>'
+hasraw "a meta key answers for its own line"           '<dt id="b15">'
+hasraw "inline markup answers for its delimiter"       '<strong id="b48">'
 has   "a meta pair is a key"               "<dt>Now</dt>"
 has   "a meta pair is a value"             "<dd>OPEN</dd>"
 has   "the second meta pair too"           "<dt>Sev</dt>"
@@ -161,7 +176,7 @@ else
     curl -s -o "$WORK/out" "$BASE/repo/cat/plain.md"
     has   "GET cat/plain.md is still CommonMark" "<strong>strong</strong>"
     curl -s -o "$WORK/out" "$BASE/repo/raw/page.mkd"
-    has   "raw/page.mkd still paints the source" '<span class="tok-T"'
+    hasraw "raw/page.mkd still paints the source" '<span class="tok-T"'
     kill "$SRVPID" 2>/dev/null; SRVPID=""
 fi
 fi

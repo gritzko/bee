@@ -236,7 +236,11 @@ has  "a path reference links, resolved" '<a href="/repo/cat/sub/x.txt">'
 # A ticket code names no file in this repo, so it resolves to NOTHING — and an
 # unresolvable reference is plain prose, never a link that 404s.
 hasnt "a ticket code naming no file is NOT a link" '<a href="/repo/cat/LITE-034'
-has  "and the ticket code is still prose" 'a ticket LITE-034.'
+#  BEE-052: prose now sits in `<span id="b<byte>">` anchors, so the words are
+#  read with that plumbing stripped — what this pins is that they stayed WORDS.
+if sed -e 's/<span[^>]*>//g' -e 's|</span>||g' "$WORK/body" | grep -qF 'a ticket LITE-034.'
+then ok "and the ticket code is still prose"
+else bad "and the ticket code is still prose" "$WORK/body"; fi
 has  "the painted source keeps its own door" '/repo/raw/doc.mkd'
 
 page "a file at a rev" "/repo/cat/sub/x.txt?$C08" 200

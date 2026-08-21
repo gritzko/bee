@@ -72,8 +72,14 @@ run() {   # run <file> -> $WORK/out
     lite "$1" > "$WORK/out" 2>"$WORK/err"; RC=$?
     [ "$RC" = 0 ] || bad "mark $1 (rc $RC)" "$WORK/out" "$WORK/err"
 }
-has()   { if grep -qF "$2" "$WORK/out"; then ok "$1"; else bad "$1 — no '$2'" "$WORK/out"; fi; }
-hasnt() { if grep -qF "$2" "$WORK/out"; then bad "$1 — '$2' is there" "$WORK/out"; else ok "$1"; fi; }
+#  BEE-052: the rendered page now wraps its prose in `<span id="b<byte>">`
+#  anchors so a permalink can land in it, so these checks read the page with
+#  that plumbing stripped: what they pin is the MARKUP SHAPE, and the anchors
+#  themselves are pinned on their own below.  `hasraw` reads the bytes as served.
+bare()  { sed -e 's/<span[^>]*>//g' -e 's|</span>||g' -e 's/ id="b[0-9]*"//g' "$1"; }
+hasraw() { if grep -qF "$2" "$WORK/out"; then ok "$1"; else bad "$1 — no '$2'" "$WORK/out"; fi; }
+has()   { if bare "$WORK/out" | grep -qF "$2"; then ok "$1"; else bad "$1 — no '$2'" "$WORK/out"; fi; }
+hasnt() { if bare "$WORK/out" | grep -qF "$2"; then bad "$1 — '$2' is there" "$WORK/out"; else ok "$1"; fi; }
 
 run post.md
 hasnt "the preamble leaves no ruler"        "<hr />"

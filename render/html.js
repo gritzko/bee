@@ -113,7 +113,11 @@ function stylesheet(thm) {
   out.push(".side-rm.pale{" + sgrCss(thm.washRmPale) + "}");
   //  LITE-034: the LANDED token — a reference's `#b<offset>` — wears the theme's
   //  own band, which is how the pager marks where a landing put the cursor.
+  //  BEE-052:19 and the RENDERED page lands the same way, so the same band
+  //  answers there: the id is minted on prose (mark/html.js:140), not on a span
+  //  of painted source, so the rule cannot be `pre.body`'s alone.
   out.push("pre.body span:target{" + sgrCss(thm.banner) + "}");
+  out.push(".mark :target{" + sgrCss(thm.banner) + "}");
   return out.join("\n") + "\n";
 }
 

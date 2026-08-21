@@ -16,29 +16,28 @@ const Node = require("mark/node.js");
 const TOK_TAG = (w) => String.fromCharCode(65 + ((w >>> 27) & 0x1f));
 const TOK_END = (w) => w & 0xffffff;
 
-//  The page as LINES of tokens.  Tokens tile the source, so a line is the run
-//  up to a '\n' — a token that spans one (a blank run, a fence body) splits
-//  there and the terminator itself is dropped, being no one's content.
+//  The page as LINES of tokens.  DOG-045 made the lexer's own tokens
+//  line-coherent — none straddles a '\n', which ends the token it closes — so a
+//  line is simply the run up to a token ending in one, and the terminator is
+//  dropped, being no one's content.  This file used to cut them itself.
+//  BEE-052:20 every piece carries `off`, its first byte in the page: that byte
+//  is the whole address a permalink lands on (render/html.js:135 anchorId).
 function tokLines(src) {
   const text = String(src), bytes = utf8.Encode(text);
   let t = null;
   try { t = tok.parse(bytes, "mkd"); } catch (e) { t = null; }
   //  Past the lexer's 16 MiB cap there are no tokens: the page is its own text.
-  if (t === null) return [[{ tag: "S", text: text }]];
+  if (t === null) return [[{ tag: "S", text: text, off: 0 }]];
   const out = [];
   let line = [], prev = 0;
   for (let i = 0; i < t.length; i++) {
-    const end = TOK_END(t[i]), tag = TOK_TAG(t[i]);
-    const s = utf8.Decode(bytes.slice(prev, end));
+    const end = TOK_END(t[i]), tag = TOK_TAG(t[i]), off = prev;
+    let s = utf8.Decode(bytes.slice(prev, end));
     prev = end;
-    let at = 0;
-    for (let nl = s.indexOf("\n"); nl >= 0; nl = s.indexOf("\n", at)) {
-      if (nl > at) line.push({ tag: tag, text: s.slice(at, nl) });
-      out.push(line);
-      line = [];
-      at = nl + 1;
-    }
-    if (at < s.length) line.push({ tag: tag, text: s.slice(at) });
+    const eol = s.charAt(s.length - 1) === "\n";
+    if (eol) s = s.slice(0, s.length - 1);
+    if (s !== "") line.push({ tag: tag, text: s, off: off });
+    if (eol) { out.push(line); line = []; }
   }
   if (line.length) out.push(line);
   return out;
@@ -151,10 +150,16 @@ function addNode(parent, type) {
 
 //  Text lands in ONE run per stretch, so the caller's autolink hook
 //  (http.js:352:8L) reads a whole reference rather than its pieces.
-function addText(parent, s) {
+//  BEE-052:21 the run REMEMBERS those pieces all the same — `parts` says where
+//  each token's bytes begin, so the emitter can address every one of them
+//  without the hook ever seeing a reference cut in half.
+function addText(parent, s, off) {
   const last = parent._lastChild;
-  if (last !== null && last.type === "text") last.literal += s;
-  else addNode(parent, "text").literal = s;
+  const n = last !== null && last.type === "text" ? last : addNode(parent, "text");
+  if (typeof n.literal !== "string") n.literal = "";
+  if (n.parts === undefined) n.parts = [];
+  if (off >= 0) n.parts.push({ at: n.literal.length, off: off });
+  n.literal += s;
 }
 
 //  An undefined shortcut IS a link to the page it names, `./Page.mkd`
@@ -199,15 +204,21 @@ function inlineInto(parent, toks, ctx) {
       if (g === "`") {
         code = addNode(top.node, "code");
         code.literal = "";
+        code.boff = t.off;               // BEE-052:22 markup answers for its own bytes
         continue;
       }
       if (SPANS[g] !== undefined) {
         if (top.delim === g) st.pop();
-        else st.push({ node: addNode(top.node, SPANS[g]), delim: g, text: "" });
+        else {
+          const n = addNode(top.node, SPANS[g]);
+          n.boff = t.off;
+          st.push({ node: n, delim: g, text: "" });
+        }
         continue;
       }
       if (g === "[" || g === "![") {
         const n = addNode(top.node, g === "[" ? "link" : "image");
+        n.boff = t.off;
         st.push({ node: n, delim: g, text: "" });
         continue;
       }
@@ -222,7 +233,7 @@ function inlineInto(parent, toks, ctx) {
         else if (shortcut && pageName(label)) n.destination = implicitDest(label);
         else if (shortcut) {             //  no page and no definition: the bytes
           n.unlink();
-          addText(st[st.length - 1].node, "[" + f.text + "]");
+          addText(st[st.length - 1].node, "[" + f.text + "]", n.boff);
           st[st.length - 1].text += "[" + f.text + "]";
           continue;
         } else n.destination = "";       //  an undefined label is no link at all
@@ -235,7 +246,7 @@ function inlineInto(parent, toks, ctx) {
     let s = t.text;
     if (t.tag === "P" && s.length === 2 && s.charAt(0) === "\\") s = s.charAt(1);
     top.text += s;
-    addText(top.node, s);
+    addText(top.node, s, t.off);
   }
 }
 
@@ -312,6 +323,9 @@ function parse(src) {
 
   for (const line of lines) {
     const c = cutLine(line);
+    //  BEE-052:23 a block answers for the line that opened it, the leading quad
+    //  included: a landing names a line, and a quad is where a line begins.
+    const loff = line.length ? line[0].off : -1;
     const quads = c.quads;
     const lastq = quads.length ? quads[quads.length - 1] : null;
     const kind = lastq === null ? "" : quadKind(lastq);
@@ -356,7 +370,7 @@ function parse(src) {
     //  deeper than its key, as any leaf's content does (DOG-026, MKDT.c:463:GT).
     if (mark === null && meta !== null && meta.depth + 1 === depth) {
       flush();
-      addText(meta.dd, " " + rawText(c.body).trim());
+      addText(meta.dd, " " + rawText(c.body).trim(), loff);
       continue;
     }
     flush();
@@ -373,12 +387,14 @@ function parse(src) {
         unwind(depth);
         grow(path);
         const l = addNode(inner(), "list");
+        l.boff = loff;
         l.listType = KINDS[list];
         l.listTight = true;
         if (list === "ol") l.listStart = parseInt(mark.text, 10) || 1;
         st.push({ kind: "list", list: list, node: l, item: null });
       }
       const it = addNode(st[depth].node, "item");
+      it.boff = loff;
       //  LITE-031's shape: the state rides the node, the `-[·]` marker is gone.
       if (list === "todo") {
         const s = mark.text.charAt(2);
@@ -386,6 +402,7 @@ function parse(src) {
       }
       st[depth].item = it;
       const p = addNode(it, "paragraph");
+      p.boff = loff;
       run = { node: p, toks: c.body.slice(), depth: depth + 1 };
       continue;
     }
@@ -394,6 +411,7 @@ function parse(src) {
 
     if (mark === null) {                 // a paragraph, the implied leaf
       const p = addNode(inner(), "paragraph");
+      p.boff = loff;
       run = { node: p, toks: c.body.slice(), depth: depth };
       continue;
     }
@@ -405,30 +423,32 @@ function parse(src) {
         meta = { node: dl, dd: null, depth: depth };
       }
       const dt = addNode(meta.node, "custom_block");
-      dt.onEnter = "<dt>"; dt.onExit = "</dt>\n";
-      addText(dt, mark.text.slice(0, mark.text.length - 1));
+      dt.onEnter = '<dt id="b' + loff + '">'; dt.onExit = "</dt>\n";
+      addText(dt, mark.text.slice(0, mark.text.length - 1), -1);
       const dd = addNode(meta.node, "custom_block");
       dd.onEnter = "<dd>"; dd.onExit = "</dd>\n";
-      addText(dd, rawText(c.body).trim());
+      addText(dd, rawText(c.body).trim(), c.body.length ? c.body[0].off : -1);
       meta.dd = dd;
       continue;
     }
     const level = markHeading(mark.text);
     if (level > 0) {
       const h = addNode(inner(), "heading");
+      h.boff = loff;
       h.level = level > 6 ? 6 : level;
       inlineInto(h, c.body, ctx);
       continue;
     }
     if (markFence(mark.text)) {
       fence = addNode(inner(), "code_block");
+      fence.boff = loff;
       fence.literal = "";
       fence.info = rawText(c.body).trim();
       fenceAt = depth;
       continue;
     }
     if (markRule(mark.text)) {
-      addNode(inner(), "thematic_break");
+      addNode(inner(), "thematic_break").boff = loff;
       //  A captioned ruler: the caption opens a run of its own (DOG-028).
       if (rawText(c.body).trim() !== "") {
         const p = addNode(inner(), "paragraph");
@@ -438,6 +458,7 @@ function parse(src) {
     }
     //  A marker off every known shape stays what it reads as: plain text.
     const p = addNode(inner(), "paragraph");
+    p.boff = loff;
     run = { node: p, toks: [mark].concat(c.body), depth: depth };
   }
   flush();

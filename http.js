@@ -306,18 +306,42 @@ function imgResolve(pg, target) {
          (pg.rev ? "?" + URI.escape(pg.rev) : "");
 }
 
-//  The byte the landed TOKEN starts at, in the bytes `/cat/<rel>` will serve —
-//  the resolver's own token when it walked one (a permalink), else the token
-//  render/wrap.js's landAt puts the `file:line(:col)` on (with no column, the
-//  LINE's first token).  -1 = nothing to anchor: the link stays bare.
+//  Is every byte of `[lo,hi)` blank?  A whitespace token is a place, not a
+//  thing: :target would paint an invisible span and the reader would see no
+//  landing at all (BEE-053:14).
+function blankSpan(text, lo, hi) {
+  for (let i = lo; i < hi; i++) {
+    const c = text[i];
+    if (c !== 0x20 && c !== 0x09 && c !== 0x0a && c !== 0x0d) return false;
+  }
+  return true;
+}
+
+//  The byte the landed token starts at, in the bytes `/cat/<rel>` will serve.
+//  -1 = nothing to anchor: the link stays bare.
+//  BEE-053:13 the answer is ALWAYS a token of the SERVED hunk.  A permalink's
+//  own byte is not: it comes off the weave's tokens (index/perma.js:238:Ab), which
+//  cut `\n` and an indent apart where the painter fuses them — so `#b<byte>`
+//  named a span that was never emitted.  Snapping through `tokSpanAt` lands on
+//  a span that exists, and walking off the blank ones lands on one that SHOWS.
 function anchorByte(pg, seat) {
-  if (seat.hi > seat.lo) return seat.lo;
-  if (!seat.line) return -1;
+  if (!seat.line && !(seat.hi > seat.lo)) return -1;
   const h = openOnce(pg, seat.full);
   if (h === null) return -1;
-  const la = wrap.landAt(h.text, seat.line, seat.col);
-  if (la === null) return -1;
-  const sp = wrap.tokSpanAt(h, la.at);
+  let at = seat.hi > seat.lo ? seat.lo : -1;
+  if (at < 0) {
+    const la = wrap.landAt(h.text, seat.line, seat.col);
+    if (la === null) return -1;
+    at = la.at;
+  }
+  //  Off a blank token onto the ink after it, never past the line's own end:
+  //  a landing names a line, and the next line is a different claim.
+  let sp = wrap.tokSpanAt(h, at);
+  while (sp !== null && blankSpan(h.text, sp.lo, sp.hi)) {
+    const nx = wrap.tokSpanAt(h, sp.hi);
+    if (nx === null || nx.lo >= h.text.length) break;
+    sp = nx;
+  }
   return sp === null ? -1 : sp.lo;
 }
 
