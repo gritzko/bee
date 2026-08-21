@@ -32,3 +32,9 @@ a:hover{border-bottom-style:solid}
 .mark dl.meta dd{display:inline;margin:0}
 .mark dl.meta dd::after{content:"\A";white-space:pre}
 .mark li.task{list-style:none}
+/*  BEE-047: a WRITE face is a self-contained one-button form (render/html.js
+    formHtml), so the button is stripped back to the span it wraps — with acts
+    on the frame must paint exactly as it does with `--ro`.  */
+form.act{display:inline;margin:0;padding:0;border:0}
+form.act>button{font:inherit;color:inherit;background:none;border:0;margin:0;padding:0;white-space:pre;text-align:inherit;line-height:inherit;cursor:pointer}
+.row>form.act{flex:0 0 auto}

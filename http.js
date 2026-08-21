@@ -9,9 +9,9 @@
 //  URL scheme is one table plus one URL builder, and a ruling on it is an edit
 //  in this file and nowhere else.
 //
-//  READ ONLY.  GET and HEAD answer; every other method is refused, no request
-//  body is ever read, and the listener binds 127.0.0.1 — this is a browser, not
-//  a service.  The pol loop runs until SIGINT; nothing daemonises.
+//  READS answer GET and HEAD; BEE-047's ONE write endpoint takes POST, gated by
+//  `--ro`, a same-origin check and act.js's map.  The listener binds 127.0.0.1 —
+//  a browser, not a service.  The pol loop runs until SIGINT; nothing daemonises.
 "use strict";
 
 const idx = require("index/index.js");
@@ -24,6 +24,9 @@ const mark = require("mark/html.js");
 const front = require("mark/front.js");
 const rst = require("mark/rst.js");
 const hk = require("index/hook.js");
+//  BEE-047: the mutation table and its views-vs-verbs map — this file never
+//  keeps a verb list of its own.
+const act = require("act.js");
 
 const PORT = 8034;                  // the fixed default; --port overrides
 const HOST = "127.0.0.1";           // localhost only — no flag opens this up
@@ -35,12 +38,30 @@ const ICO = "image/vnd.microsoft.icon";
 const TEXT = "text/plain; charset=utf-8";
 const OCTET = "application/octet-stream";
 const MAXBYTES = wv.MAX_SOURCE_SIZE;    // LITE-036: the shared source cap, 4 MB
+const MAXPOST = 4 << 10;                // BEE-047: a spell is a line, not a file
 
 //  --- the QJAB-004 coupling --------------------------------------------------
 //  EVERY http leaf call lives in these two functions, so an API change is edited
 //  here and nowhere else.  `drainHead` -> a head object, or null = need more.
 function drainHead(bytes) { return http._drain(bytes); }
 function feedHead(head) { return http._feed(head); }
+
+//  One request header by name, matched case-blind as HTTP spells them; "" when
+//  the head carries none.
+function headerOf(req, name) {
+  const hs = (req && req.headers) || [];
+  for (const h of hs) if (String(h[0]).toLowerCase() === name) return String(h[1]);
+  return "";
+}
+
+//  BEE-047: how many BODY bytes this request carries — a POST's own
+//  Content-Length and nothing else, so no other method ever waits for one.  An
+//  unreadable length is 0: the act then refuses in words rather than hang.
+function bodyLen(req) {
+  if (String(req.method || "") !== "POST") return 0;
+  const n = Number(headerOf(req, "content-length") || "0");
+  return n > 0 && n === Math.floor(n) ? n : 0;
+}
 
 //  --- the URL table ----------------------------------------------------------
 //  The FIRST path segment names the verb; everything after it (plus `?<rev>`) is
@@ -425,6 +446,10 @@ function sendBytes(sock, hunks, path, headOnly) {
   return "200";
 }
 
+//  BEE-047: the act endpoint a page's write faces post to, "" with `--ro` — the
+//  ONE switch render/html.js sees, so a locked server paints no live button.
+function acts(st, mount) { return st.acts ? actPath(mount.name) : ""; }
+
 //  A verb's refusal is already in plain words — it becomes the page.
 function why(e) {
   return String(e && e.message !== undefined && e.message !== null ? e.message : e);
@@ -482,6 +507,112 @@ function srcMount(name, names) {
   return { name: name, root: root, prefix: "", own: name, top: root, dup: false };
 }
 
+//  The repos this request answers off, and their names: the registry, the repo
+//  the server was started in, and BEE-023:27:X5's one-request `$SRC_ROOT` mount.
+function tableFor(reqUri, st) {
+  const table = mounted(st);
+  const names = [];
+  for (const x of table) if (x.prefix === "" && !x.dup) names.push(x.name);
+  const extra = srcMount(firstSeg(reqUri), names);
+  if (extra !== null) { table.push(extra); names.push(extra.name); }
+  return { table: table, names: names };
+}
+
+//  The top-level mount a name stands for, or null when this server serves none.
+function mountOf(table, name) {
+  for (const x of table)
+    if (x.prefix === "" && !x.dup && x.name === name) return x;
+  return null;
+}
+
+//  --- BEE-047: the ONE write endpoint ----------------------------------------
+//  `POST /<repo>/act`, off the ROUTE table on purpose: ROUTE names VIEWS and a
+//  write is no view.  -> the repo name the URL names, "" when it is not the act
+//  URL at all.
+function actPath(name) { return "/" + name + "/act"; }
+function actRepo(reqUri) {
+  let u;
+  try { u = uri._parse(String(reqUri === undefined ? "" : reqUri)); } catch (e) { return ""; }
+  const segs = String(u.path || "/").split("/");
+  return segs.length === 3 && unesc(segs[2]) === "act" ? unesc(segs[1]) : "";
+}
+
+//  A refusal in plain words, the body carrying them — the only answer a POST
+//  gets that is not the page it came from.
+function refuse(sock, status, reason, words) {
+  respond(sock, status, reason, TEXT, utf8.Encode(words), false);
+  return String(status);
+}
+
+//  BEE-047: a cross-origin form POST reaches 127.0.0.1 with no CORS to stop it,
+//  so the gate is the browser's OWN stated origin — its host and port must be
+//  the very ones this request was addressed to.  Neither header: no act.
+function sameOrigin(req) {
+  const host = headerOf(req, "host");
+  const o = headerOf(req, "origin") || headerOf(req, "referer");
+  if (host === "" || o === "") return false;
+  let u;
+  try { u = uri._parse(o); } catch (e) { return false; }
+  if (u === null || !u.host) return false;
+  return u.host + (u.port ? ":" + u.port : "") === host;
+}
+
+//  One field of an `application/x-www-form-urlencoded` body; `+` is a space
+//  there, which percent-decoding alone does not know.
+function formField(body, name) {
+  for (const pair of String(body === undefined || body === null ? "" : body).split("&")) {
+    const eq = pair.indexOf("=");
+    if (eq >= 0 && unesc(pair.slice(0, eq)) === name)
+      return unesc(pair.slice(eq + 1).split("+").join(" "));
+  }
+  return "";
+}
+
+//  The clicked spell, run exactly as a pager click runs it (pager.js:642:6S
+//  `_actSpell`): the map says the word writes, act.js's own `shape` says THIS
+//  spell does, the rev tree is bumped, and 303 sends the browser back to the
+//  page it clicked from — which then spends the report line.
+function actPost(req, sock, st) {
+  const name = actRepo(req.uri);
+  const mount = name === "" ? null : mountOf(tableFor(req.uri, st).table, name);
+  //  Any other URL: the refusal this server always gave a write (http.js:12).
+  if (mount === null)
+    return refuse(sock, 405, "Method Not Allowed",
+                  "bee http only reads; POST is not allowed\n");
+  if (!st.acts)
+    return refuse(sock, 405, "Method Not Allowed",
+                  "bee http --ro only reads; POST is not allowed\n");
+  if (!sameOrigin(req))
+    return refuse(sock, 403, "Forbidden",
+                  "bee http: an act takes a SAME-ORIGIN post\n");
+  const spell = formField(req.body, "s");
+  if (!act.writes(spell))
+    return refuse(sock, 403, "Forbidden",
+                  "bee http: " + (spell || "an empty spell") + " is no writer\n");
+  let fn = null;
+  try { fn = act.actOf(spell); } catch (e) { fn = null; }
+  //  A shape-split word in its READING shape (`commit <rev>`) is a view, and
+  //  act.js's own predicate is what says so — no second reading here.
+  if (fn === null)
+    return refuse(sock, 403, "Forbidden",
+                  "bee http: " + spell + " writes in no shape\n");
+  let report;
+  try { report = act.run(spell, { repo: mount.root, path: "", anchor: "" }); }
+  catch (e) { report = why(e); }
+  //  The write moved the index or a ref, so no memo is worth trusting —
+  //  pager.js:627:6S bumps for the same reason before it re-opens.
+  require("index/cache.js").bumpRoot();
+  const line = String(report).split("\n").join("; ");
+  const back = headerOf(req, "referer");
+  //  BEE-047: the report line takes the top of the page the browser lands on
+  //  (handle() spends `flash`); with no page to go back to it IS the answer.
+  if (back === "") return refuse(sock, 200, "OK", line + "\n");
+  st.flash = line;
+  respond(sock, 303, "See Other", TEXT, utf8.Encode(line + "\n"), false,
+          [["Location", back]]);
+  return "303";
+}
+
 //  --- one request ------------------------------------------------------------
 function handle(req, sock, st) {
   const m = String(req.method || "");
@@ -490,19 +621,18 @@ function handle(req, sock, st) {
   //  git here and nowhere else, so a page cannot resolve its first references
   //  against one pack set and its last against another.
   idx.epoch();
-  //  No write endpoints of any kind: reads answer, everything else is refused.
+  //  BEE-047: a write rides POST and lands in the ONE endpoint above; every
+  //  other method is still refused outright, its body unread.
+  if (m === "POST") return actPost(req, sock, st);
   if (m !== "GET" && !only) {
     respond(sock, 405, "Method Not Allowed", TEXT,
             utf8.Encode("bee http only reads; " + m + " is not allowed\n"), false);
     return "405";
   }
-  const table = mounted(st);
-  const names = [];
-  for (const x of table) if (x.prefix === "" && !x.dup) names.push(x.name);
   //  BEE-023:27 a first segment the registry does not know may still be a
   //  `$SRC_ROOT` repo (a forked ticket worktree, BEE-026): it mounts for this request.
-  const extra = srcMount(firstSeg(req.uri), names);
-  if (extra !== null) { table.push(extra); names.push(extra.name); }
+  const t = tableFor(req.uri, st);
+  const table = t.table, names = t.names;
   const r = routeOf(req.uri, names);
   //  The two SITE files, repo-less and served off blob/: the one sheet and the
   //  one icon.  Both are read at startup, so a request is bytes and no syscall.
@@ -524,9 +654,7 @@ function handle(req, sock, st) {
         return moveTo(sock, "/" + x.name + "/" + escPath(x.prefix) + tail + r.query, only);
     return moveTo(sock, "/" + st.home.name + r.raw + r.query, only);
   }
-  let mount = null;
-  for (const x of table)
-    if (x.prefix === "" && !x.dup && x.name === r.repo) { mount = x; break; }
+  const mount = mountOf(table, r.repo);
   if (mount === null || r.verb === undefined) {
     sendPage(sock, 404, "Not Found", "bee http",
              html.errorPage("bee http", "there is no /" + r.head + " page here"), only);
@@ -547,7 +675,8 @@ function handle(req, sock, st) {
                  refs: new Map(), hunks: new Map(), left: REF_CAP, rev: "" };
     const link = function (t) { return mnt.within(pos, function () { return urlOf(pg, t); }); };
     sendPage(sock, 200, "OK", "choose " + r.arg,
-             html.page("choose " + r.arg, html.hunksHtml(hunks, link)), only);
+             html.page("choose " + r.arg, html.hunksHtml(hunks, link, "", acts(st, mount))),
+             only);
     return "200";
   }
   //  BEE-003: the verb runs IN THE REPO THAT HOLDS THE PATH — a submodule is an
@@ -606,8 +735,12 @@ function handle(req, sock, st) {
   else if (r.head === "raw")
     //  BEE-032 nit: the toggle rides the hunk's own banner line, no bar of its own.
     body = html.hunksHtml(hunks, link,
-                          rend ? html.toggle("rendered", argUrl(pg, "cat", arg)) : "");
-  else body = html.hunksHtml(hunks, link);
+                          rend ? html.toggle("rendered", argUrl(pg, "cat", arg)) : "",
+                          acts(st, mount));
+  else body = html.hunksHtml(hunks, link, "", acts(st, mount));
+  //  BEE-047: the act's one report line is SPENT here — on the very page its
+  //  303 sent the browser back to, and only once.
+  if (st.flash && !only) { body = html.viewBar(st.flash, "", "") + body; st.flash = ""; }
   sendPage(sock, 200, "OK", title, html.page(title, body), only);
   return "200";
 }
@@ -617,11 +750,14 @@ function handle(req, sock, st) {
 //  reference resolution), handed in rather than required back: one mechanism in
 //  the tree, no http-side variant, and no import cycle.
 function listen(args, door) {
-  let port = PORT;
+  let port = PORT, ro = false;
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--plain") continue;                 // no bytes to page: a no-op
     if (args[i] === "--port") { port = Number(args[++i]); continue; }
-    throw "http: " + args[i] + " is not an option — try: bee http [--port <n>]";
+    //  BEE-047: the ONE global read-only switch — acts are on by default, and
+    //  this locks them: POST is refused and no write face paints as a button.
+    if (args[i] === "--ro") { ro = true; continue; }
+    throw "http: " + args[i] + " is not an option — try: bee http [--port <n>] [--ro]";
   }
   if (!(port > 0 && port < 65536 && port === Math.floor(port)))
     throw "http: --port wants a whole number from 1 to 65535";
@@ -638,7 +774,7 @@ function listen(args, door) {
              : { name: mnt.basename(root), root: root, prefix: "", own: mnt.basename(root),
                  top: root, dup: false };
 
-  const st = { door: door, root: root, home: home,
+  const st = { door: door, root: root, home: home, acts: !ro, flash: "",
                css: utf8.Encode(html.stylesheet()),
                icon: io.mmap(__dirname + "/blob/favicon.ico", "r").data() };
 
@@ -667,8 +803,20 @@ function listen(args, door) {
         }
         return;
       }
+      //  BEE-047: the act POST is the ONE request with a body — drained in the
+      //  head's own spot and capped as the head is; oversize is a 413, not a hang.
+      const need = bodyLen(req);
+      if (need > MAXPOST) {
+        done = true;
+        respond(sock, 413, "Payload Too Large", TEXT,
+                utf8.Encode("bee http: that act body is too long\n"), false);
+        return;
+      }
+      if (need > 0) {
+        if (buf.length < req.length + need) return;      // need more bytes
+        req.body = utf8.Decode(buf.slice(req.length, req.length + need));
+      }
       done = true;
-      //  The body is never read — there is nothing here that takes one.
       //  A page must never take the LOOP down with it: a surprise is a 500.
       let code;
       try { code = handle(req, sock, st); }
@@ -700,4 +848,6 @@ module.exports = { http: listen, routeOf: routeOf, urlOf: urlOf, argUrl: argUrl,
                    renderOf: renderOf, argPath: argPath, argRev: argRev,
                    pageHref: pageHref, extOf: extOf,
                    mimeOf: mimeOf, ROUTE: ROUTE, MIME: MIME, PORT: PORT,
-                   HOST: HOST, REF_CAP: REF_CAP, MAXBYTES: MAXBYTES };
+                   HOST: HOST, REF_CAP: REF_CAP, MAXBYTES: MAXBYTES,
+                   actPath: actPath, actRepo: actRepo, formField: formField,
+                   MAXPOST: MAXPOST };

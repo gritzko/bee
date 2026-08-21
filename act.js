@@ -95,6 +95,33 @@ function actOf(spell) {
   return function () { return row.run(args); };
 }
 
+//  BEE-047: the VIEWS-vs-VERBS map — a word -> does it have a WRITING form at
+//  all.  http.js and render/html.js ask THIS and never a list of their own, so
+//  a new row above is clickable over http for free; a SHAPE-SPLIT word is true
+//  here and its own `shape` gates the run (act.js:94, http.js actPost).
+const WRITES = {};
+for (const w in ACTS) WRITES[w] = true;
+
+//  A spell -> the VERB word it names, the BEE-041 context slot and BEE-036's
+//  forceful `!` both shed, so `//bee add` and `add!` alike answer `add`; "" when
+//  the spell names no word.
+function wordOf(spell) {
+  let s = String(spell === undefined || spell === null ? "" : spell).trim();
+  const c = ctxOf(s);
+  if (c !== null) s = c.rest;
+  const sp = s.indexOf(" ");
+  const w = sp < 0 ? s : s.slice(0, sp);
+  return w.length > 1 && w.charAt(w.length - 1) === "!" ? w.slice(0, -1) : w;
+}
+
+//  BEE-047: does this spell's word write in ANY shape?  The SHAPE is not asked
+//  here — a painter must not run `commit`'s predicate (act.js:45) per face, and
+//  a POST is gated by actOf below anyway.
+function writes(spell) {
+  const w = wordOf(spell);
+  return w !== "" && Object.prototype.hasOwnProperty.call(WRITES, w);
+}
+
 //  Run the spell where the clicked hunk STANDS (BEE-003), which is what
 //  door.js:527 openTarget does for a view spell.  -> the report line; null
 //  means the spell was no mutation and the caller should navigate instead.
@@ -116,4 +143,5 @@ function run(spell, pos) {
 }
 
 module.exports = { ACTS: ACTS, rowOf: rowOf, actOf: actOf, run: run,
-                   ctxOf: ctxOf, wordsOf: wordsOf };
+                   ctxOf: ctxOf, wordsOf: wordsOf,
+                   WRITES: WRITES, wordOf: wordOf, writes: writes };

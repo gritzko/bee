@@ -21,6 +21,9 @@ const theme = require("render/theme.js");
 //  offset; token i starts where token i-1 ended.  THE accessors, shared with
 //  the row index and the ansi painter — never a second copy of the layout.
 const wrap = require("render/wrap.js");
+//  BEE-047: the ONE views-vs-verbs map — the painter asks act.js whether a
+//  face's `O` spell WRITES, since a write may never become an href.
+const act = require("act.js");
 const TOK_TAG = wrap.TOK_TAG, TOK_SIDE = wrap.TOK_SIDE, TOK_END = wrap.TOK_END;
 
 //  --- SGR parameter -> sRGB --------------------------------------------------
@@ -139,10 +142,20 @@ function sideClass(side, pass) {
   return "";
 }
 
+//  BEE-047: a write face as a self-contained one-button FORM — the spell in a
+//  hidden input, the styled face the submit button.  blob/style.css strips the
+//  button back to the span it wraps, so the frame paints as it does with acts
+//  off; `action` is the page's own `/<repo>/act` (http.js actPath).
+function formHtml(action, spell, els, span) {
+  return '<form class="act' + els + '" method="post" action="' + esc(action) +
+         '"><input type="hidden" name="s" value="' + esc(spell) +
+         '"><button type="submit">' + span + "</button></form>";
+}
+
 //  The spans of the byte window [from, to) in `pass` (a token is clipped to
 //  the window; the pass hides the other diff side).  `seen` keeps a token's
 //  anchor id on its FIRST emission — a split block shows its eq bytes twice.
-function spansHtml(hunk, from, to, pass, link, ord, seen, out) {
+function spansHtml(hunk, from, to, pass, link, ord, seen, out, post) {
   const text = hunk.text, toks = hunk.toks || new Uint32Array(0);
   let lo = 0, hi = toks.length;
   while (lo < hi) { const m = (lo + hi) >> 1;
@@ -159,20 +172,24 @@ function spansHtml(hunk, from, to, pass, link, ord, seen, out) {
     if (e <= s && !(tag === "B" && start >= from && end <= to)) continue;
     //  The target, exactly as pager.js reads it: a hidden `U` span right
     //  behind this one, else an `F` token's own bytes — a reference (LITE-015).
-    let target = "", look = null;
+    let target = "", look = null, o = false;
     if (i + 1 < toks.length && TOK_TAG(toks[i + 1]) === "U")
       target = dec(text, end, TOK_END(toks[i + 1]));
     //  BEE-034: an `O` follower is the BUTTON channel — this face becomes its
     //  action, the `#<bg><fg> ` look shed as the pager's `_spellAt` sheds it.
     //  BEE-035: that same prefix is the face's COLOUR PAIR.
     else if (i + 1 < toks.length && TOK_TAG(toks[i + 1]) === "O") {
-      const o = dec(text, end, TOK_END(toks[i + 1]));
-      target = wrap.oSpell(o);
-      look = wrap.oLook(o);
+      const b = dec(text, end, TOK_END(toks[i + 1]));
+      target = wrap.oSpell(b);
+      look = wrap.oLook(b);
+      o = true;
     }
     else if (tag === "F" && hunk.kind !== "dir")
       target = dec(text, start, end);
-    const href = (target && link) ? link(target) : "";
+    //  BEE-047: a WRITE spell never gets an href — a GET that mutates is the
+    //  disaster the ruling forbids; with acts off it paints plain, as ever.
+    const wr = (o && post && act.writes(target)) ? target : "";
+    const href = (target && link && wr === "") ? link(target) : "";
     const id = seen.has(start) ? "" : ' id="' + anchorId(ord, start) + '"';
     seen.add(start);
     //  BEE-030: the elastic span — or the `<a>` around it — wears `els`, the
@@ -189,7 +206,8 @@ function spansHtml(hunk, from, to, pass, link, ord, seen, out) {
                  esc(dec(text, s, e)) + "</span>";
     //  A reference that resolves to nothing is PLAIN PAINTED TEXT — never a
     //  link that 404s (ruling 2026-08-15).
-    out.push(href ? '<a' + (els ? ' class="els"' : "") + ' href="' + esc(href) +
+    out.push(wr ? formHtml(post, wr, els, span)
+           : href ? '<a' + (els ? ' class="els"' : "") + ' href="' + esc(href) +
                     '">' + span + '</a>' : span);
   }
   //  Bytes past the last token — an untokenised tail, or a whole hunk with no
@@ -220,7 +238,7 @@ function rowHasB(hunk, off, end) {
   return false;
 }
 
-function hunkHtml(hunk, link, ord, tog) {
+function hunkHtml(hunk, link, ord, tog, post) {
   ord = ord || 0;
   const out = ['<div class="hunk"><div class="banner">', esc(hunk.uri || ""),
                tog ? " " + tog : "",
@@ -230,7 +248,7 @@ function hunkHtml(hunk, link, ord, tog) {
     //  BEE-021: a diff hunk is painted ROW by row — an inline row in place, a
     //  split block as its rm rows then its in rows (the pager's very index).
     for (const r of wrap.indexRows(hunk, wrap.NO_CLAMP, false)) {
-      spansHtml(hunk, r.off, r.end, r.pass, link, ord, seen, out);
+      spansHtml(hunk, r.off, r.end, r.pass, link, ord, seen, out, post);
       out.push("\n");
     }
   } else if (hasElastic(hunk.toks)) {
@@ -239,21 +257,24 @@ function hunkHtml(hunk, link, ord, tog) {
     for (const r of wrap.indexRows(hunk, wrap.NO_CLAMP, false)) {
       const b = rowHasB(hunk, r.off, r.end);
       if (b) out.push('<span class="row">');
-      spansHtml(hunk, r.off, r.end, wrap.PASS_NORMAL, link, ord, seen, out);
+      spansHtml(hunk, r.off, r.end, wrap.PASS_NORMAL, link, ord, seen, out, post);
       out.push(b ? "</span>" : "\n");
     }
-  } else spansHtml(hunk, 0, hunk.text.length, wrap.PASS_NORMAL, link, ord, seen, out);
+  } else spansHtml(hunk, 0, hunk.text.length, wrap.PASS_NORMAL, link, ord, seen, out,
+                   post);
   out.push('</pre></div>');
   return out.join("");
 }
 
 //  BEE-032: `tog` (a prebuilt toggle anchor) rides the FIRST hunk's own banner
 //  line, so the source view spends no separate bar on it.
-function hunksHtml(hunks, link, tog) {
+//  BEE-047: `post` is the act endpoint's URL, "" with acts off — the ONE switch
+//  the painter sees, so a locked server shows no live-looking button.
+function hunksHtml(hunks, link, tog, post) {
   if (!hunks || !hunks.length) return '<pre class="note">(nothing to show)</pre>';
   const out = [];
   for (let i = 0; i < hunks.length; i++)
-    out.push(hunkHtml(hunks[i], link, i, i === 0 ? tog : ""));
+    out.push(hunkHtml(hunks[i], link, i, i === 0 ? tog : "", post));
   return out.join("");
 }
 
