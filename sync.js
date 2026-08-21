@@ -9,6 +9,7 @@
 "use strict";
 
 const st = require("stage.js");
+const subs = require("index/subs.js");
 
 //  RULING (gritzko 2026-08-20, BEE-037:8): the verbs are named GIT-STYLE, so
 //  these four words are what main.js:250:eY spells too.
@@ -44,16 +45,53 @@ function stashTip(at) {
 }
 
 //  --- the verbs -------------------------------------------------------------
-//  `bee commit '<msg>'` -> the one report line.  Nothing staged is git's own
-//  refusal, verbatim and non-zero; reindexing comes free from the BEE-031
-//  post-commit hook, so this verb owns no index work at all.
+//  BEE-056: is this repo's index apart from its HEAD?  `--quiet` answers in the
+//  exit code alone (1 == staged), and it holds on an unborn HEAD too.
+function staged(at) {
+  return st.run(["git", "-C", at, "diff", "--cached", "--quiet"]) !== 0;
+}
+
+//  BEE-056: `commit` sweeps the tree as `add`/`rm` do (stage.js:132 sweep) —
+//  depth-first over index/subs.js, grandchildren first, every staged level
+//  committed under the SAME message and its moved gitlink staged in the parent,
+//  so one act leaves no half-committed level behind.  -> how many subs committed.
+function descend(msg, at) {
+  let n = 0;
+  for (const s of subs.mounts(at)) {
+    if (!s.live) continue;                  // uninitialised: nothing of ours
+    n += descend(msg, s.wt);
+    //  A grandchild that committed left ITS gitlink staged here, so this one
+    //  test carries both the sub's own work and everything under it.
+    let own = 0;
+    if (staged(s.wt)) {
+      if (st.run(["git", "-C", s.wt, COMMIT, "-q", "-m", msg]) !== 0)
+        throw "bee: " + COMMIT + ": git refused in " + s.path;
+      own = 1;
+    }
+    n += own;
+    //  The gitlink is owed where OUR commit just moved the sub's HEAD, or where
+    //  it already stood apart from the recorded sha (stage.js:137).
+    if (!own && (s.head === null || s.head === s.sha)) continue;
+    if (st.run(["git", "-C", at, "add", "--", s.path]) !== 0)
+      throw "bee: " + COMMIT + ": git add refused the gitlink " + s.path;
+  }
+  return n;
+}
+
+//  `bee commit '<msg>'` -> the one report line, the top's abbreviated sha and,
+//  where subs took part, how many commits the one act made (BEE-056).  Nothing
+//  staged ANYWHERE is git's own refusal, verbatim and non-zero; reindexing comes
+//  free from the BEE-031 post-commit hook, so this verb owns no index work.
 function commit(msg) {
   if (typeof msg !== "string" || msg === "")
     throw "bee: usage: bee " + COMMIT + " '<message>'";
   const at = st.root();
+  //  A sub that committed leaves its gitlink staged here, so the top's own
+  //  commit lands; a wholly quiet tree reaches git's refusal untouched.
+  const n = descend(msg, at);
   if (st.run(["git", "-C", at, COMMIT, "-q", "-m", msg]) !== 0)
     throw "bee: " + COMMIT + ": git refused";
-  return COMMIT + " " + head(at);
+  return COMMIT + " " + head(at) + (n ? " " + (n + 1) + " commits" : "");
 }
 
 //  The message a `commit` arg list MEANS, or null when it is view/commit.js's
