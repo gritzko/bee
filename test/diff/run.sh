@@ -96,7 +96,7 @@ echo "diff: runtime $RT, repo $REPO"
 gitstat() { g diff --numstat --no-renames "$@" | awk -F'\t' '{print $3" "$1" "$2}' | sort; }
 litestat() {
   awk '
-    /^hunk / { p = substr($0, 6); sub(/#L[0-9]+$/, "", p);
+    /^§ / { p = $0; sub(/^§ /, "", p); sub(/#L[0-9]+$/, "", p);
                if (!(p in seen)) { seen[p]=1; order[++n]=p } cur=p; next }
     /^--- a\// || /^\+\+\+ b\// || /^@@ / { next }
     /: binary files differ$/ { bin[cur]=1; next }
@@ -120,7 +120,7 @@ then ok "diff <hex> = git diff <hex>^ <hex>: same files, same +/- counts"
 else bad "diff <hex> vs git (rc $RC)" "$WORK/d1g" "$WORK/d1l" "$WORK/d1e"; fi
 
 # D1b: the four cases are all there — a modify, an add, a delete, a binary.
-if grep -q '^hunk a.txt#L' "$WORK/d1" && grep -q '^+2$' "$WORK/d1" &&
+if grep -q '^§ a.txt#L' "$WORK/d1" && grep -q '^+2$' "$WORK/d1" &&
    grep -q '^-two$' "$WORK/d1" && grep -q '^+new file$' "$WORK/d1" &&
    grep -q '^-keep$' "$WORK/d1" && grep -q 'bin.dat: binary files differ' "$WORK/d1"
 then ok "modify / add / delete / binary all render (add and delete included)"
@@ -157,21 +157,21 @@ else bad "an untracked file is not in the diff" "$WORK/d3"; fi
 # D3: a `<path>` arg scopes to that path — a FILE gets the whole-file view
 # (every line, changed or not), a DIR gets its subtree only.
 rtin "$REPO" diff a.txt --plain > "$WORK/d4" 2>"$WORK/d4e"; RC=$?
-if [ "$RC" = 0 ] && [ "$(grep -c '^hunk ' "$WORK/d4")" = "1" ] &&
-   grep -q '^hunk a.txt#L' "$WORK/d4" && grep -q '^ one$' "$WORK/d4" &&
+if [ "$RC" = 0 ] && [ "$(grep -c '^§ ' "$WORK/d4")" = "1" ] &&
+   grep -q '^§ a.txt#L' "$WORK/d4" && grep -q '^ one$' "$WORK/d4" &&
    grep -q '^+THREE$' "$WORK/d4" && grep -q '^-three$' "$WORK/d4"
 then ok "diff <file> = that file alone, whole-file view"
 else bad "diff <file> (rc $RC)" "$WORK/d4" "$WORK/d4e"; fi
 
 rtin "$REPO" diff dir --plain > "$WORK/d5" 2>"$WORK/d5e"; RC=$?
-if [ "$RC" = 0 ] && [ "$(grep -c '^hunk ' "$WORK/d5")" = "1" ] &&
-   grep -q '^hunk dir/b.txt#L' "$WORK/d5"
+if [ "$RC" = 0 ] && [ "$(grep -c '^§ ' "$WORK/d5")" = "1" ] &&
+   grep -q '^§ dir/b.txt#L' "$WORK/d5"
 then ok "diff <dir> = that subtree alone"
 else bad "diff <dir> (rc $RC)" "$WORK/d5" "$WORK/d5e"; fi
 
 # D3b: a path is root-relative from any subdirectory, as `log`'s is.
 rtin "$REPO/dir" diff b.txt --plain > "$WORK/d6" 2>&1
-if grep -q '^hunk dir/b.txt#L' "$WORK/d6"
+if grep -q '^§ dir/b.txt#L' "$WORK/d6"
 then ok "a path resolves against the worktree root from a subdir"
 else bad "a subdir path" "$WORK/d6"; fi
 

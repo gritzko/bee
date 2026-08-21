@@ -208,7 +208,7 @@ if [ "$NOREPO" = 1 ]; then
     # A PATH arg outside a repo is untouched: the filesystem pager, plain.
     printf 'hello\n' > "$NOWHERE/loose.txt"
     rtin "$NOWHERE" --plain loose.txt > "$WORK/n3" 2>"$WORK/n3e"; RC=$?
-    if [ "$RC" = 0 ] && grep -q '^hunk loose.txt' "$WORK/n3" && grep -q '^hello$' "$WORK/n3"
+    if [ "$RC" = 0 ] && grep -q '^§ loose.txt' "$WORK/n3" && grep -q '^hello$' "$WORK/n3"
     then ok "a path arg outside a repo is still the filesystem view"
     else bad "non-repo path arg (rc $RC)" "$WORK/n3" "$WORK/n3e"; fi
 fi
@@ -216,7 +216,7 @@ fi
 # A PATH arg INSIDE a repo is STILL the unconfined filesystem pager, never the
 # browser — the zero-arg case is the only one this ticket changed.
 rtin "$REPO" --plain a.txt > "$WORK/p1" 2>"$WORK/p1e"; RC=$?
-if [ "$RC" = 0 ] && grep -q '^hunk a.txt' "$WORK/p1" && grep -q '^A0-dirty$' "$WORK/p1"
+if [ "$RC" = 0 ] && grep -q '^§ a.txt' "$WORK/p1" && grep -q '^A0-dirty$' "$WORK/p1"
 then ok "a path arg inside a repo is still the filesystem view, not the browser"
 else bad "path arg inside a repo (rc $RC)" "$WORK/p1" "$WORK/p1e"; fi
 

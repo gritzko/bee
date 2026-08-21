@@ -89,7 +89,7 @@ else bad "see src/A.c:20 (rc $RC)" "$WORK/s1" "$WORK/s1e"; fi
 # it re-reads through `see`.  `pwd -P` because mktemp under $HOME may sit behind
 # a symlink and the band is realpath'd, so the test must be too.
 RREPO=$(cd "$REPO" && pwd -P)
-if grep -qx "hunk $RREPO/src/A.c:20" "$WORK/s1"
+if grep -qx "§ $RREPO/src/A.c:20" "$WORK/s1"
 then ok "...banded with the ref, its path expanded to where it landed"
 else bad "the band is not the expanded ref" "$WORK/s1"; fi
 
@@ -103,7 +103,7 @@ else bad "the band does not round-trip (rc $RC)" "$WORK/s1b" "$WORK/s1be"; fi
 
 # --- a batch: one hunk per ref, in the order given -------------------------
 rtin "$REPO" see --plain src/A.c:5 src/A.c:30 > "$WORK/s2" 2>"$WORK/s2e"; RC=$?
-if [ "$RC" = 0 ] && [ "$(grep -c '^hunk ' "$WORK/s2")" = 2 ] &&
+if [ "$RC" = 0 ] && [ "$(grep -c '^§ ' "$WORK/s2")" = 2 ] &&
    [ "$(grep -n 'AAAMARK005' "$WORK/s2" | cut -d: -f1)" -lt \
      "$(grep -n 'AAAMARK030' "$WORK/s2" | cut -d: -f1)" ]
 then ok "a BATCH of refs is a batch of hunks, in the order given"
@@ -151,7 +151,7 @@ else bad "permalink (rc $RC) perma='$PERMA'" "$WORK/s7" "$WORK/s7e" "$WORK/m1"; 
 
 # ...and the band KEEPS THE PERMALINK ANCHOR, only the path is substituted: the
 # `off:hashlet` is never re-spelled as a line, so the band is still a permalink.
-if grep -qx "hunk $RREPO/src/A.c:${PERMA#src/A.c:}" "$WORK/s7"
+if grep -qx "§ $RREPO/src/A.c:${PERMA#src/A.c:}" "$WORK/s7"
 then ok "...banded as the full path carrying the permalink's own anchor"
 else bad "the permalink band lost its anchor" "$WORK/s7"; fi
 
@@ -180,7 +180,7 @@ rtin "$OTHER" install > "$WORK/i2" 2>"$WORK/i2e" || true
 rtin "$REPO" see --plain OTH-001:20 > "$WORK/sx" 2>"$WORK/sxe"; RC=$?
 if [ "$RC" = 0 ] && grep -q 'OTHMARK020' "$WORK/sx" &&
    [ "$(grep -c 'OTHMARK' "$WORK/sx")" = 5 ] &&
-   grep -qx "hunk $(cd "$OTHER" && pwd -P)/todo/OTH/OTH-001.mkd:20" "$WORK/sx"
+   grep -qx "§ $(cd "$OTHER" && pwd -P)/todo/OTH/OTH-001.mkd:20" "$WORK/sx"
 then ok "a ref into ANOTHER registered repo answers, its full path in the band"
 else bad "cross-repo (rc $RC)" "$WORK/sx" "$WORK/sxe"; fi
 

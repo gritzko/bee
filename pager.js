@@ -13,6 +13,7 @@ const ansi = require("render/ansi.js");
 //  the per-row cell walk lives in render/ansi.js and is used verbatim here.
 const emitBody = ansi.emitBody, paintRow = ansi.paintRow;
 const wrap = require("render/wrap.js");
+const plain = require("render/plain.js");
 //  The hunk-header band SGR (pale-yellow bg), single-sourced from the theme.
 const theme = require("render/theme.js");
 //  BEE-027: the rev tree the resident view memos hang off.  There is no `pol`
@@ -373,10 +374,11 @@ Pager.prototype.render = function () {
   io.writeAll(this.fd, b);
 };
 
-//  A hunk's header line: its URI.  On a tty the pale-yellow BAND — bannerOpen,
-//  space-FILL to the width so it spans the row, bannerClose (ESC[0m); plain = text.
+//  A hunk's header line: `§` and its URI (BEE-054, render/plain.js:34:i~ spells the
+//  same title).  On a tty the pale-yellow BAND — bannerOpen, space-FILL to the
+//  width so it spans the row, bannerClose (ESC[0m); plain = text.
 Pager.prototype._banner = function (hunk, cols) {
-  let line = hunk.uri || "";
+  let line = plain.bandTitle(hunk);
   if (line.length > cols) line = line.slice(0, cols);
   if (!this.color) return line;
   const thm = theme.DEFAULT;

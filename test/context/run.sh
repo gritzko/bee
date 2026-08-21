@@ -156,7 +156,7 @@ else bad "the bare refusal (rc $RC)" "$WORK/m2" "$WORK/m2e"; fi
 # leg 4 — a ROOTED PATH ARG: `//name/rel` wherever an arg is a path
 # ==========================================================================
 bee //regrepo/sub/s.txt --plain > "$WORK/p1" 2>"$WORK/p1e"; RC=$?
-if [ "$RC" = 0 ] && grep -q '^hunk //regrepo/sub/s.txt$' "$WORK/p1" && grep -q '^S0$' "$WORK/p1"
+if [ "$RC" = 0 ] && grep -q '^§ //regrepo/sub/s.txt$' "$WORK/p1" && grep -q '^S0$' "$WORK/p1"
 then ok "the fs leg opens //regrepo/sub/s.txt, URI spelling kept"
 else bad "the rooted fs arg (rc $RC)" "$WORK/p1" "$WORK/p1e"; fi
 
@@ -214,7 +214,7 @@ if [ "$RC" = 0 ] && grep -q '^S0$' "$WORK/n1"
 then ok "a plain in-repo verb run is untouched"
 else bad "the plain verb run (rc $RC)" "$WORK/n1" "$WORK/n1e"; fi
 beein "$REG" --plain r.txt > "$WORK/n2" 2>"$WORK/n2e"; RC=$?
-if [ "$RC" = 0 ] && grep -q '^hunk r.txt$' "$WORK/n2" && grep -q '^R0$' "$WORK/n2"
+if [ "$RC" = 0 ] && grep -q '^§ r.txt$' "$WORK/n2" && grep -q '^R0$' "$WORK/n2"
 then ok "...and so is the fs leg with a relative path"
 else bad "the plain fs run (rc $RC)" "$WORK/n2" "$WORK/n2e"; fi
 # The bare zero-arg run in a repo is still the LITE-018 story, tracked.

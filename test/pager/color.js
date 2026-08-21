@@ -89,7 +89,7 @@ check("noext-row-no-paint", row0(noext, true).indexOf(ESC) < 0, row0(noext, true
 //  The plain sink never paints, whatever the toks say (BROPlain !BRO_COLOR).
 const bytes = utf8.Decode(plain.plainHunk(js));
 check("plainHunk-no-esc", bytes.indexOf(ESC) < 0, bytes);
-check("plainHunk-banner", bytes.indexOf("hunk code.js\n") === 0, bytes);
+check("plainHunk-banner", bytes.indexOf("§ code.js\n") === 0, bytes);
 
 //  ---- the banner band -----------------------------------------------------
 let band = "";
