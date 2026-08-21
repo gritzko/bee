@@ -1,19 +1,11 @@
-//  render/html.js — LITE-034: the HTML twin of the ANSI painter.  The very same
+//  render/html.js — LITE-034: the HTML twin of the ANSI painter.  The very
 //  hunks the pager paints (dog tok32 tags over the hunk's own bytes) become
-//  `<span class="tok-X">`, and render/theme.js's palette becomes ONE generated
-//  stylesheet.  Nothing here re-reads or re-recognises a byte: the tags are the
-//  tokenizer's, read through render/wrap.js's accessors (LITE-045: this file
-//  used to mirror the tok32 layout itself), the targets are the hidden `U`
-//  spans pager.js follows, and every colour NUMBER comes out of
-//  render/theme.js.
-//
-//  VERB-BLIND, like every renderer: it knows tags, sides and hunks, never which
-//  view made them.  `lite http` is the app pinned to it.
-//
-//  The column layout is the terminal's, unchanged — a hunk body is a `<pre>`,
-//  so a list/log row's padding and a diff hunk's weave line up as they do at a
-//  terminal.  No CommonMark, no site chrome: a `.md`/`.mkd` file is served as
-//  syntax-painted source like any other.
+//  `<span class="tok-X">`, render/theme.js's palette becomes ONE generated
+//  stylesheet, and nothing here re-reads a byte: tags come through
+//  render/wrap.js's accessors (LITE-045), targets are the hidden `U` spans,
+//  every colour NUMBER is theme.js's.  VERB-BLIND; `lite http` is the app.
+//  The column layout is the terminal's (a hunk body is a `<pre>`); no
+//  CommonMark, no chrome — a `.md` file is served as syntax-painted source.
 "use strict";
 
 const theme = require("render/theme.js");
@@ -72,14 +64,10 @@ function sgrCss(params) {
   return out.join(";");
 }
 
-//  --- the ONE stylesheet -----------------------------------------------------
-//  The frame (geometry only — no colour is chosen here) plus one rule per theme
-//  slot, plus the two diff wash slots.  Served whole at /style.css.
-//  The frame is a FILE, blob/style.css, read from beside the code (which is
-//  where jsrcpack packs it, so a bundled binary carries it too) — CSS is
-//  written as CSS, not spelled as a JS array.  Read on FIRST PAINT and kept:
-//  only an HTML page wants it, so a missing file refuses `bee http`, not `bee
-//  log` — a renderer's asset is no verb's startup cost.
+//  --- the ONE stylesheet: frame + one rule per theme slot + diff washes ------
+//  Served whole at /style.css; no colour is chosen here.  The frame is a FILE,
+//  blob/style.css, read from beside the code where jsrcpack packs it — CSS is
+//  written as CSS.  Read on FIRST PAINT: a missing file refuses `bee http`, not `bee log`.
 let FRAME = null;
 function frame() {
   if (FRAME === null)
@@ -112,11 +100,10 @@ function stylesheet(thm) {
   out.push(".side-rm{" + sgrCss(thm.washRm) + "}");
   out.push(".side-in.pale{" + sgrCss(thm.washInPale) + "}");
   out.push(".side-rm.pale{" + sgrCss(thm.washRmPale) + "}");
-  //  LITE-034: the LANDED token — a reference's `#b<offset>` — wears the theme's
-  //  own band, which is how the pager marks where a landing put the cursor.
-  //  BEE-052:19 and the RENDERED page lands the same way, so the same band
-  //  answers there: the id is minted on prose (mark/html.js:140), not on a span
-  //  of painted source, so the rule cannot be `pre.body`'s alone.
+  //  LITE-034: the LANDED token — a reference's `#b<offset>` — wears the
+  //  theme's own band, how the pager marks a landing.  BEE-052:19: a RENDERED
+  //  page lands the same way; the id is minted on prose (mark/html.js:140),
+  //  so the rule cannot be `pre.body`'s alone.
   out.push("pre.body span:target{" + sgrCss(thm.banner) + "}");
   out.push(".mark :target{" + sgrCss(thm.banner) + "}");
   return out.join("\n") + "\n";
@@ -130,13 +117,10 @@ function esc(s) {
 
 function dec(bytes, lo, hi) { return utf8.Decode(bytes.slice(lo, hi)); }
 
-//  ONE hunk -> its HTML: the banner band, then a `<pre>` of tagged spans.
-//  `link` is `(pagerTarget) -> url | ""`, the router's — this module knows tags.
-//  LITE-034: every token span carries `id="b<start byte>"` — the token's START
-//  OFFSET in the served bytes, the same identity index/perma.js walks, so a
-//  resolved reference's href ends `#b<offset>` and the browser lands on the
-//  token the pager would select.  A page's SECOND and later hunks prefix the
-//  ordinal (`b1-<off>`), so ids stay unique and `#b<off>` names the first hunk.
+//  ONE hunk -> its HTML: the banner band, then a `<pre>` of tagged spans;
+//  `link` is the router's `(pagerTarget) -> url | ""`.  LITE-034: a token span
+//  carries `id="b<start byte>"` — the identity index/perma.js walks — so an
+//  href's `#b<offset>` lands on the pager's token; later hunks prefix `b1-`.
 function anchorId(ord, lo) { return "b" + (ord ? ord + "-" : "") + lo; }
 
 //  BEE-021: the wash class of a changed token — strong on its own split pass,
@@ -296,11 +280,10 @@ function hunkHtml(hunk, link, ord, tog, post) {
   return utf8.Decode(b.data());
 }
 
-//  BEE-050:31 a hunk that NAMES a target (`hunk.ref`, an excerpt's own, spelled
-//  path + line) hangs THAT WHOLE FILE's page off the header, opened at the very
-//  point quoted — we work in permalinks, so a link lands somewhere, never merely
-//  on a file.  A hunk naming no target, or one the door cannot place, keeps the
-//  plain band it had.
+//  BEE-050:31 a hunk that NAMES a target (`hunk.ref`, an excerpt's own path +
+//  line) hangs that whole file's page off the header, opened at the point
+//  quoted — we work in permalinks, so a link lands somewhere, never merely on
+//  a file.  No target, or one the door cannot place, keeps the plain band.
 function bannerHtml(hunk, link) {
   const t = esc(hunk.uri || "");
   const href = hunk.ref && link ? link(hunk.ref) : "";
@@ -392,13 +375,10 @@ function errorPage(title, message, hint) {
                      '</div><pre class="body">' + esc(message) + h + "\n</pre></div>");
 }
 
-//  ---- the RENDERER (LITE-045) -----------------------------------------------
-//  render(hunks, opts) -> bytes: ONE SELF-CONTAINED page — the very hunks
-//  `lite http` paints, with the stylesheet INLINE, because a `lite --html x >
-//  x.html` dump has no server to fetch /style.css from.  `opts.link` is the
-//  same `(target) -> url` resolver http passes; with none, a reference is
-//  plain painted text (ruling 2026-08-15) and the page stands alone.
-//  Nothing to show renders NOTHING, so the three renderers agree on silence.
+//  ---- the RENDERER (LITE-045): render(hunks, opts) -> ONE self-contained page
+//  The hunks `lite http` paints, stylesheet INLINE — a `--html` dump has no
+//  server to fetch /style.css from; `opts.link` is http's resolver, with none
+//  a reference stays plain (ruling 2026-08-15).  Nothing to show renders NOTHING.
 function render(hunks, opts) {
   if (!hunks || !hunks.length) return new Uint8Array(0);
   const title = (opts && opts.title) || hunks[0].uri || "lite";

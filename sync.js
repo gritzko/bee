@@ -79,13 +79,10 @@ function landSite(at, u) {
   return null;
 }
 
-//  `bee push` — to the tracked upstream and nowhere else.  A non-FF rejection
-//  is git's own hint on stderr, untouched, and the exit status stays non-zero.
-//  BEE-045: a fork tracks the LOCAL branch it forked off (`.` remote), and git
-//  refuses to move a ref checked out in another worktree — so landing runs from
-//  the PARENT's side: an `--autostash --ff-only` merge of OUR tip in that tree.
-//  Behind-or-diverged refuses in words (pull first); the parent's dirty files
-//  ride its autostash, the reapply-conflict degrading loud as integrate's does.
+//  `bee push` — to the tracked upstream and nowhere else; a non-FF rejection
+//  is git's own stderr, exit non-zero.  BEE-045: a fork tracks the LOCAL
+//  branch it forked off and git refuses to move a checked-out ref — so landing
+//  is the PARENT's `--autostash --ff-only` merge of our tip; diverged refuses in words.
 function push(args) {
   if (args.length) throw "bee: usage: bee " + PUSH;
   const at = st.root();

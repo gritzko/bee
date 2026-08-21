@@ -1,12 +1,11 @@
 //  mark/strict.js — BEE-032: the StrictMark parser, driven by the very tokens
 //  that PAINT a `.mkd` page today (dog/tok/MKDT, wiki/StrictMark.mkd).  tok.parse
 //  cuts every block quad ('R'), meta key ('T') and inline delimiter ('G') off
-//  the text, so this file never rescans bytes for markup — it stacks those
+//  the text, so this file never rescans bytes for markup — it stacks the
 //  tokens into the SAME commonmark nodes `mark/gfm.js` yields, and `mark/html.js`
-//  emits them, exactly as it does for `.md` and `.rst` (LITE-037: only the
-//  parser differs per dialect).  The 4-char marker shapes are read off the quad
-//  MKDT delimited, mirroring its own inquiries (MKDTmark*, DOG-026), which are
-//  C-only — this is the one thing the JS side must spell for itself.
+//  emits them (LITE-037: only the parser differs per dialect).  The 4-char
+//  marker shapes are read off the quad MKDT delimited (MKDTmark*, DOG-026,
+//  C-only) — the one thing the JS side must spell for itself.
 "use strict";
 
 const Node = require("mark/node.js");
@@ -16,12 +15,10 @@ const Node = require("mark/node.js");
 const TOK_TAG = (w) => String.fromCharCode(65 + ((w >>> 27) & 0x1f));
 const TOK_END = (w) => w & 0xffffff;
 
-//  The page as LINES of tokens.  DOG-045 made the lexer's own tokens
-//  line-coherent — none straddles a '\n', which ends the token it closes — so a
-//  line is simply the run up to a token ending in one, and the terminator is
-//  dropped, being no one's content.  This file used to cut them itself.
-//  BEE-052:20 every piece carries `off`, its first byte in the page: that byte
-//  is the whole address a permalink lands on (render/html.js:135 anchorId).
+//  The page as LINES of tokens.  DOG-045 made the lexer's tokens line-coherent
+//  — none straddles a '\n', which ends the token it closes — so a line is the
+//  run up to a token ending in one, terminator dropped.  BEE-052:20 every
+//  piece carries `off`, the byte a permalink lands on (render/html.js:135).
 function tokLines(src) {
   const text = String(src), bytes = utf8.Encode(text);
   let t = null;
@@ -108,11 +105,10 @@ function markRule(s) {
 
 function markRefDef(s) { return s.charAt(0) === "["; }
 
-//  --- reference definitions --------------------------------------------------
-//  `[key]: url "title"`.  MKDTB cuts the ONE-symbol form as a marker quad
-//  (`[1]:`); a multi-char key is off that 4-char grammar and arrives as the
-//  shortcut tokens the inline lexer made of it, so both shapes are read here
-//  (wiki/StrictMark.mkd:44:x9-47).  -> { key, rest } or null.
+//  --- reference definitions: `[key]: url "title"` -> { key, rest } | null ----
+//  MKDTB cuts the ONE-symbol form as a marker quad (`[1]:`); a multi-char key
+//  is off that 4-char grammar and arrives as the inline lexer's shortcut
+//  tokens, so both shapes are read here (wiki/StrictMark.mkd:44:x9-47).
 function refdefOf(line) {
   const c = cutLine(line);
   const q = c.quads.length ? c.quads[c.quads.length - 1] : null;
@@ -149,10 +145,9 @@ function addNode(parent, type) {
 }
 
 //  Text lands in ONE run per stretch, so the caller's autolink hook
-//  (http.js:352:8L) reads a whole reference rather than its pieces.
-//  BEE-052:21 the run REMEMBERS those pieces all the same — `parts` says where
-//  each token's bytes begin, so the emitter can address every one of them
-//  without the hook ever seeing a reference cut in half.
+//  (http.js:352:8L) reads a whole reference rather than its pieces; BEE-052:21
+//  the run REMEMBERS the pieces — `parts` says where each token's bytes begin,
+//  so the emitter addresses each without the hook seeing a reference cut in half.
 function addText(parent, s, off) {
   const last = parent._lastChild;
   const n = last !== null && last.type === "text" ? last : addNode(parent, "text");
@@ -250,11 +245,10 @@ function inlineInto(parent, toks, ctx) {
   }
 }
 
-//  --- the block layer --------------------------------------------------------
-//  One frame per prefix quad, as StrictMark's `(INDENT|QUOTE)* LIST? LEAF?`
-//  stacks them: frame i holds the content of quad-depth i+1.  A list frame's
-//  <li> stays open, so a deeper line nests INSIDE the item (beagle/mark's
-//  mark_blocks, MARK.c:396).
+//  --- the block layer: one frame per prefix quad -----------------------------
+//  StrictMark's `(INDENT|QUOTE)* LIST? LEAF?` stacks them: frame i holds the
+//  content of quad-depth i+1.  A list frame's <li> stays open, so a deeper
+//  line nests INSIDE the item (beagle/mark's mark_blocks, MARK.c:396).
 const KINDS = { ul: "bullet", ol: "ordered", todo: "bullet" };
 
 //  parse(src) -> the document node.  Two passes over the token lines, as

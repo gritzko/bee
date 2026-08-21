@@ -1,19 +1,11 @@
-//  mark/rst.js — LITE-037: a reStructuredText SUBSET parser.  docutils is Python
-//  and no JS reST parser exists to vendor, so this is hand-written — but it
-//  builds the SAME commonmark nodes `mark/gfm.js` yields, so the LITE-035 walk
-//  (`mark/html.js`) emits an `.rst` page with no second emitter, no second link
-//  door and no edit anywhere on the Markdown side.
-//
-//  THE SUBSET: section titles (under- and overlined), paragraphs, bullet and
-//  enumerated lists, literal blocks (`::`), block quotes, transitions, and
-//  inline emph/strong/literal plus hyperlink targets and their references.
-//
-//  EVERYTHING ELSE DEGRADES, and never crashes: a directive, a footnote or
-//  citation definition and a grid table come out as LITERAL TEXT (their source
-//  bytes in a `<pre>`), a role's text as an inline literal, a comment is
-//  dropped the way reST drops it, and a field list, a line block, a simple
-//  table or a substitution is plain paragraph text.  Nothing here ever emits a
-//  raw-HTML node, so a document's own markup is always text on the page.
+//  mark/rst.js — LITE-037: a reStructuredText SUBSET parser.  docutils is
+//  Python and no JS reST parser exists to vendor, so this is hand-written —
+//  but it builds the SAME commonmark nodes `mark/gfm.js` yields, so the
+//  LITE-035 walk emits an `.rst` page with no second emitter or link door.
+//  The subset: section titles, paragraphs, bullet/enum lists, literal blocks,
+//  quotes, transitions, inline emph/strong/literal, hyperlink targets/refs.
+//  EVERYTHING ELSE DEGRADES, never crashes — a directive, footnote or grid
+//  table comes out literal text; no raw-HTML node is ever emitted.
 "use strict";
 
 const Node = require("mark/node.js");
@@ -376,14 +368,10 @@ function paraAt(lines, i, parent, ctx) {
   return k;
 }
 
-//  --- the inline layer -------------------------------------------------------
-//  Run after the WHOLE document is read, so a reference resolves against a
-//  target defined anywhere — before it, after it, or in another section.
-//
-//  reST's start/end-string rules, simplified: a start-string opens at the head
-//  of the text or after whitespace or one of `-:/'"<([{`, and its content opens
-//  on non-whitespace; an end-string closes on non-whitespace and is followed by
-//  the end of the text, whitespace or one of `-.,:;!?\/'")]}>`.
+//  --- the inline layer: run after the WHOLE document is read ----------------
+//  A reference resolves against a target defined anywhere in the document.
+//  reST's start/end-string rules, simplified: a start opens after whitespace
+//  or `-:/'"<([{`; an end closes on non-whitespace before whitespace/`-.,:;!?\/'")]}>`.
 const OPEN_BEFORE = " \t\n-:/'\"<([{";
 const CLOSE_AFTER = " \t\n-.,:;!?\\/'\")]}>";
 
@@ -429,10 +417,9 @@ function textNode(parent, s) {
 }
 
 //  A hyperlink with its label.  `verbatim` takes the label as it stands — a
-//  standalone URI is its own label, and re-reading it would find that URI
-//  again.  An UNRESOLVED reference never gets here: the caller lays down the
-//  source bytes as plain text instead, so a page carries no dead link (the
-//  http ruling of 2026-08-15, which the emitter's href hook applies again).
+//  standalone URI is its own label.  An UNRESOLVED reference never gets here:
+//  the caller lays the source bytes down as plain text, so a page carries no
+//  dead link (the http ruling of 2026-08-15, applied again by the href hook).
 function linkNode(parent, dest, text, ctx, depth, verbatim) {
   const a = addNode(parent, "link");
   a.destination = dest;

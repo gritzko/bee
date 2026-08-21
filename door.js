@@ -198,12 +198,10 @@ function refSegs(partial) {
   return out;
 }
 
-//  BEE-003: a `..` COLLAPSES before anything resolves.  `http.js pageHref`
-//  joins the page's own dir into a relative destination — `sub/` + `../doc.rst`
-//  — so the text reaching the door carries the climb, while no FSEG row has a
-//  `..` segment to match and the fs leg that used to absorb it is now gated on
-//  the ambient (`seatOf` below).  A climb PAST the root keeps its `..` and so
-//  resolves to nothing, which is the right answer for a ref out of the repo.
+//  BEE-003: a `..` COLLAPSES before anything resolves — `http.js pageHref`
+//  joins the page dir into a relative destination, so the text reaching the
+//  door carries the climb while no FSEG row has a `..` to match.  A climb
+//  PAST the root keeps its `..` and resolves to nothing — a ref out of the repo.
 function refNorm(partial) {
   const raw = String(partial);
   if (raw.indexOf("..") < 0) return raw;             // the overwhelming case
@@ -227,20 +225,15 @@ function tailEq(pre, head) {
 }
 
 //  --- BEE-008: a TICKET CODE is a STEM, not a filename -----------------------
-//  dog/tok/LINK.rl:83 fuses `BEE-002` into an `F` token exactly as it fuses a
-//  filename, and the door has resolved that token AS a filename ever since —
-//  which never hit, because no file is NAMED `BEE-002`.  LINK.rl:46 already
-//  rules that "a ticket code IS a path — `ABC-123` is `ABC-123.mkd` with the
-//  ext dropped"; this is that ruling on the resolving side.
+//  dog/tok/LINK.rl:83 fuses `BEE-002` into an `F` token like a filename and
+//  the door resolved it as one — which never hit.  LINK.rl:46 rules a ticket
+//  code IS a path, `ABC-123.mkd` with the ext dropped — here, the resolving side.
 const TICKET_SPELLINGS = ["", ".mkd", ".md", ".txt", "/README.mkd", "/README.md"];
 
-//  The ticket code a ref spells, or null.  dog/tok/LINK.rl:70 `code = [A-Z]
-//  [A-Z] [A-Z0-9_]* "-" [0-9]{2,}` — a SHAPE test on an ALREADY-FUSED token,
-//  never a second recognizer: the lexer said this is a ref, this says which
-//  KIND of ref it is.  The all-digits tail is LINK.rl's `keyvoid` in the
-//  positive, so `GPL-2`, `GPL-2.0`, `ISO-8859-1` and `KEY-12abc` are no codes;
-//  a code that HEADS a path (`BEE-002/x.js`, LINK.rl's `keyed`) is a real path
-//  and stays one.
+//  The ticket code a ref spells, or null.  dog/tok/LINK.rl:70 — a SHAPE test
+//  on an already-fused token, never a second recognizer: the lexer said ref,
+//  this says which KIND.  The all-digits tail is LINK.rl's `keyvoid`, so
+//  `GPL-2.0` is no code; a code that HEADS a path (`keyed`) stays a path.
 function ticketCode(partial) {
   const s = String(partial);
   const dash = s.indexOf("-");
@@ -257,15 +250,10 @@ function ticketCode(partial) {
   return s;
 }
 
-//  BEE-008: the spellings a ticket takes, in PREFERENCE order — [/meta/todo]
-//  fixes them: a thin ticket is `TOPIC-123.mkd`, a fat one the DIR
-//  `TOPIC-123/` with its `README.mkd`.  The first that resolves wins, so a repo
-//  carrying both `.mkd` and `.md` lands on one page instead of the chooser;
-//  only a tie WITHIN one spelling (two topics holding `BEE-002.mkd`) is a
-//  genuine ambiguity and goes on reaching the chooser.
-//  The DIR is reached THROUGH its README: `index/index.js` emitDir mints no
-//  FSEG row for a directory and `index/resolve.js` names files only, so a
-//  README-less ticket dir has no key to be found by and stays plain text.
+//  BEE-008: the spellings a ticket takes, in PREFERENCE order (/meta/todo:
+//  thin `TOPIC-123.mkd`, fat `TOPIC-123/README.mkd`); the first that resolves
+//  wins, only a tie WITHIN one spelling reaches the chooser.  A dir is reached
+//  THROUGH its README — emitDir mints no FSEG row, README-less = plain text.
 function ticketPaths(partial) {
   const code = ticketCode(partial);
   if (code === null) return null;
@@ -274,15 +262,10 @@ function ticketPaths(partial) {
   return out;
 }
 
-//  BEE-013: a SLASH-HEADED ref is a POCKET PAGE — `[/wiki/Bro]`, `[/meta/todo]`
-//  ([/meta/wiki]: a page is linked bare).  The name carries no extension,
-//  exactly as a ticket code carries none, so the SAME six spellings apply: a
-//  thin page is `Page.mkd`, a fat one `Page/README.mkd`.  DOG-042 fuses the
-//  token; this is that ruling on the resolving side.
-//  The slash is DROPPED and the segments are looked up like any other ref's:
-//  a leading slash likely means that repo's root, but we do not assume it —
-//  we look for such a file (gritzko's ruling 2026-08-16), so a wiki parked
-//  under `docs/wiki/` answers `/wiki/Page` as readily as one at the root.
+//  BEE-013: a SLASH-HEADED ref is a POCKET PAGE — `[/wiki/Bro]`, linked bare
+//  (/meta/wiki), no extension, so the ticket's six spellings apply; DOG-042
+//  fuses the token, this is the resolving side.  The slash is DROPPED, not
+//  rooted: we look the file up (ruling 2026-08-16), so `docs/wiki/` answers too.
 function pagePaths(partial) {
   const s = String(partial);
   const bare = s.charAt(0) === "/" ? s.slice(1) : s;
@@ -302,11 +285,9 @@ function refSpellings(partial) {
 }
 
 //  BEE-031: a mount's lane, up to its tip.  `.git/be` is bee's OWN derived
-//  state and bee's to write (gritzko, BEE-031:8), so a reader is never the last
-//  to know; an up-to-date lane costs ONE watermark check (index/index.js:879:cn).
-//  A lane that will not take a write reopens read-only: stale rows beat no page.
-//  BEE-048: and the up-to-date lane is then SHARED for as long as the repo's
-//  rev stands — `laneDown` below is what a borrower releases it with.
+//  state and bee's to write (BEE-031:8), so a reader is never the last to
+//  know; an up-to-date lane costs ONE watermark check (index/index.js:879:cn),
+//  reopens read-only if unwritable, and is SHARED per repo rev (BEE-048).
 function laneUp(idx, ctx) {
   return idx.laneOf(ctx, function () {
     let ix = null;
@@ -322,10 +303,9 @@ function laneUp(idx, ctx) {
 }
 
 //  --- BEE-048: one repo's answers, the MISSES too ---------------------------
-//  A board page asks ~512 references of every mount and most mounts answer
-//  NOTHING — a miss costs the same open as a hit, so it is kept the same way.
-//  Keyed by the repo's own rev (index/cache.js armRepo): a touch under one repo
-//  drops its answers alone, and the fan-out then skips whole repos outright.
+//  A board page asks ~512 references of every mount and most answer NOTHING —
+//  a miss costs the same open as a hit, so it is kept the same way.  Keyed by
+//  the repo's own rev (index/cache.js armRepo), so a touch drops one repo alone.
 const SEATS = new Map();           // repo root -> { rev, m: Map(key -> rels) }
 const SC = { hits: 0, misses: 0 };
 
@@ -349,14 +329,10 @@ function stats() {
   return { hits: SC.hits, misses: SC.misses, repos: SEATS.size };
 }
 
-//  BEE-003: ONE mount's answer, repo-relative paths.  The lookup is FSEG
-//  ([LITE-011] `index/resolve.js`, ruling 8) over the mount's own tip, plus the
-//  boundary leg above; an ANCHORED ref (a leading `/` — another repo's ROOT) is
-//  an exact tree descent instead, never a suffix match.  BEE-031: the lane is
-//  brought UP, the mount's GIT side untouched ([BEE-002] is about that half);
-//  a repo with NO lane still answers the anchored and boundary legs alone.
-//  BEE-008: the ticket spellings are tried INSIDE this one open — one repo, one
-//  tip read, one index — so a code answered locally never pays the fan-out.
+//  BEE-003: ONE mount's answer, repo-relative paths — FSEG lookup (LITE-011
+//  ruling 8) over the mount's tip plus the boundary leg; an ANCHORED ref
+//  (leading `/`) is an exact tree descent.  A laneless repo still answers those
+//  (BEE-031); ticket spellings ride INSIDE this one open, no fan-out (BEE-008).
 function inMount(m, partial, anchored, local) {
   const idx = require("index/index.js");
   if (refSegs(partial).length === 0) return [];
@@ -413,13 +389,10 @@ function mountScan(idx, ctx, m, partial, anchored, local) {
   return out;
 }
 
-//  LITE-011:47 a partial path resolves at HEAD, from the repo ROOT.
-//  BEE-003: in ONE fixed order (ruling 3) — the DIR of the file being read,
-//  then the ambient repo at HEAD, then every registered repo (submodules
-//  recursed, [BEE-006]).  The first leg that answers wins; several answers
-//  within a leg ARE the answer and land in the chooser (ruling 4), deduped by
-//  realpath so one file reached through two mounts is ONE row.
-//  null = there is no repo here at all (the caller may fs-scan); [] = a miss.
+//  LITE-011:47 a partial resolves at HEAD, from the repo ROOT, in ONE fixed
+//  order (BEE-003 ruling 3): the dir of the file being read, the ambient repo,
+//  then every registered repo (submodules recursed, BEE-006).  The first leg
+//  to answer wins, ties land in the chooser; null = no repo here, [] = a miss.
 function resolvePartial(partial) {
   const idx = require("index/index.js");
   const path = refNorm(partial);                 // BEE-003: the `..` climb, once
@@ -428,11 +401,10 @@ function resolvePartial(partial) {
   //  like any other ref — only `///name` (auth) descends a repo root exactly.
   const page = !auth && path.charAt(0) === "/";
   const out = [], seen = new Set();
-  //  A row is `{ rel, full, repo }`: the CANONICAL spelling when a registered
-  //  repo holds it — its name plus the path under that repo's root, so a
-  //  submodule file reads through its parent — else the mount-relative one, and
-  //  no repo name at all.  Deduped by REALPATH: one file reached through two
-  //  mounts (or through a symlinked tree) is ONE row (ruling 4).
+  //  A row is `{ rel, full, repo }`: the canonical spelling when a registered
+  //  repo holds it — its name plus the path under that root, so a submodule
+  //  file reads through its parent — else mount-relative, no repo name.
+  //  Deduped by REALPATH, so one file behind two mounts is ONE row (ruling 4).
   const add = function (m, full) {
     let real = full;
     try { real = io.realpath(full); } catch (e) {}
@@ -492,18 +464,10 @@ function resolvePartial(partial) {
     const segs = refSegs(path);
     if (segs.length > 1) named(segs);
   }
-  //  5. BEE-013: PEEL THE HEAD.  A ref may carry leading segments that name
-  //  nothing in any tree — a repo name, a project dir, a `public_html`, a
-  //  submodule spelled from its parent — and we do not know what counts as a
-  //  ROOT in any given context (gritzko's ruling 2026-08-16), so we assume
-  //  none: drop one leading segment at a time and take the first TAIL that
-  //  answers.  `/quickjab/dog/abc/TCP.c` is bogus as a path and opens anyway.
-  //  Last of all, and only on a total miss, so nothing that resolves today
-  //  moves; the page-ness rides along, so a peeled page keeps its spellings.
-  //  The tail keeps at least TWO segments: a bare basename is too weak to
-  //  vouch for a head nobody recognised, and peeling down to one would revive
-  //  every dead climb (`../nowhere/q.txt` must stay dead) and turn a unique
-  //  miss into a chooser full of same-named files.
+  //  5. BEE-013: PEEL THE HEAD, last of all and only on a total miss.  A ref
+  //  may lead with segments no tree knows and no ROOT is assumed (ruling
+  //  2026-08-16): drop one leading segment at a time, take the first tail that
+  //  answers; the tail keeps TWO segments, or dead climbs would revive.
   if (!out.length) {
     const segs = refSegs(path);
     const head = page ? "/" : "";
@@ -554,11 +518,10 @@ function splitRef(target) {
            col: last };
 }
 
-//  BEE-003: the ambient a FILE puts a view in — its own repo and its own path,
-//  which is what makes ruling 3's first leg (the dir of the file being read)
-//  possible at all.  A path in no repo positions at its own dir.
-//  A TRAILING SLASH names the dir itself, so a caller with only a dir in hand
-//  (the pager's `_viewDir`) needs no second entry point.
+//  BEE-003: the ambient a FILE puts a view in — its own repo and path, what
+//  makes ruling 3's first leg (the dir of the file being read) possible.  A
+//  path in no repo positions at its own dir; a TRAILING SLASH names the dir
+//  itself, so a dir-holding caller (pager `_viewDir`) needs no second entry.
 function posOf(full, anchor) {
   let p = String(full);
   const isDir = p.length > 1 && p.slice(-1) === "/";

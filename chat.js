@@ -1,62 +1,25 @@
-//  chat.js — LITE-016: render Claude Code session logs as
-//  [/wiki/StrictMark] pages.  A relocation of //CHAT-001's `jab chat`, format
-//  v2 verbatim; only the be-isms (shared/util/path.js, be.ctxDir, io.log's
-//  trailing newline) are bridged to bee/quickjab.
-//
-//    bee chat [dir] [outdir]    both args optional, both default `.`
-//
-//  Claude Code appends one JSONL row per event to
-//  `<claude home>/projects/<mangled-cwd>/<session>.jsonl`, where the log dir is
-//  the project dir's ABSOLUTE path with every non-alphanumeric mangled to `-`
-//  (`/home/gritzko/src/journal` -> `-home-gritzko-src-journal`).  `dir` is a
-//  PROJECT dir — a plain filesystem path resolved against the cwd, never a URI.
-//
-//  Every `*.jsonl` in that dir becomes one page, strict 1:1.  LITE-022: the
-//  page is named by the basename's 10-char ron60 digest, not by the session
-//  UUID — `<outdir>/<ron60x10>.mkd`; see pageName() below.
-//
-//  FORMAT v2 — the page is a READABLE CONVERSATION, no chrome.  The only
-//  furniture is the opening `#   Session: <date> <time> <user>`, stamped from
-//  the first rendered row's timestamp (local time).  Then, per turn:
-//    user       a blockquote — `>   ` on every line, a bare `>` for the blanks.
-//    claude     plain and VERBATIM; Claude already emits markdown, so it is kept
-//               exactly as written, never re-wrapped.
-//    tools      ONE 4-backtick fence per assistant row (no info string, body one
-//               quad deeper), holding one line per call: the tool name plus its
-//               essential argument.  Tool RESULTS are dropped entirely.
-//  Nothing else survives: sidechain rows, `thinking` blocks, tool_result blocks,
-//  every non-conversation row type, and — the hard rule — every machine-injected
-//  XML envelope (slash-command noise, system reminders, task notifications).  No
-//  XML snippet may ever reach the page.
-//
-//  REENTRANCY, with no sidecar state: the page's LAST line is the ref def
-//  `[log]: file:/<abs jsonl path> "<consumed bytes>"`.  A ref def nothing links
-//  to stays HIDDEN in render ([/wiki/StrictMark] "Renderers show a meta pair as
-//  a key-value row, unlike ref defs, which stay hidden"), so the page reads as
-//  pure conversation while carrying its own provenance and cursor.  On a rerun:
-//    size == bytes  skip; the page is not even rewritten.
-//    size >  bytes  drop the trailing ref def, render ONLY the rows past the old
-//                   offset, append, restamp.
-//    size <  bytes  the log was rewritten -> regenerate the whole page.
-//  Only WHOLE lines are consumed (the offset lands just past the last `\n`), so
-//  a half-written row at the tail of a live log is never parsed and is picked up
-//  on the next run.  A missing / ref-def-less page also regenerates.
+//  chat.js — `bee chat [dir] [outdir]`: render Claude Code session logs as
+//  /wiki/StrictMark pages, CHAT-001's format v2 verbatim with only the be-isms
+//  bridged to bee/quickjab (LITE-016:8:cD).  One page per jsonl, named by a
+//  10-char ron60 digest of the basename (LITE-022:8:a~), reads as a plain
+//  conversation: user turns quoted, claude verbatim, tool calls one fenced
+//  line each; harness XML never reaches the page.  Reentrant with no sidecar
+//  state — the trailing `[log]:` ref def carries the consumed-bytes cursor
+//  (CHAT-001:23:oC), so a rerun appends byte-identically or regenerates.
 "use strict";
 
-//  The machine-injected XML envelopes.  These are not conversation: they are
-//  harness plumbing that Claude Code stores INSIDE the user turn.  Whole
-//  elements are cut; a turn left with nothing but whitespace contributes NO
-//  turn at all (not even an empty quote), which is also what keeps an append
-//  byte-identical to a from-scratch render.
+//  The machine-injected XML envelopes — harness plumbing Claude Code stores
+//  inside the user turn, not conversation.  Whole elements are cut; a turn
+//  left with only whitespace contributes no turn at all, which also keeps an
+//  append byte-identical to a from-scratch render (CHAT-001:43:oC).
 const NOISE = ["system-reminder", "local-command-caveat", "local-command-stdout",
                "command-name", "command-message", "command-args",
                "task-notification"];
 
-//  A tool call renders as `<name> <essential arg>`.  The essential arg is the
-//  first of these string fields the input carries — ordered so the SHORT,
-//  telling one wins (Bash -> command, Read/Edit/Write -> file_path, Agent ->
-//  description rather than its huge prompt, SendMessage -> summary).  An input
-//  with none of them falls back to compact one-line json.
+//  A tool call renders as `<name> <essential arg>` — the first of these
+//  string fields the input carries, ordered so the short, telling one wins
+//  (Bash -> command, Read -> file_path, Agent -> description over its huge
+//  prompt); an input with none of them falls back to compact one-line json.
 const ARG_KEYS = ["command", "file_path", "path", "pattern", "url", "query",
                   "summary", "description", "skill", "prompt", "message"];
 const ARG_CAP = 200;
@@ -125,11 +88,10 @@ function logDirFor(dir) {
   return claudeHome() + "/projects/" + dir.replace(/[^a-zA-Z0-9]/g, "-");
 }
 
-//  LITE-022: the page NAME — ron60 of the TOP 60 bits of sha1(basename), the
-//  index/index.js hashlet60 exactly.  A pure, machine-independent function of
-//  the basename, so a rerun always lands on the same page and no state is kept
-//  anywhere.  Ten RON64 digits msb-first: `ron.encode` drops the leading zeros
-//  (RONutf8sFeed), and RON64's zero digit IS `0`, so a left pad restores them.
+//  LITE-022: the page name — ron60 of the top 60 bits of sha1(basename), the
+//  index/index.js hashlet60 exactly; a pure function of the basename, so a
+//  rerun lands on the same page with no state kept.  `ron.encode` drops the
+//  leading zeros (RONutf8sFeed); RON64's zero digit is `0`, so left-pad.
 function pageName(base) {
   const sha = sha1(utf8.Encode(String(base)));
   let h = 0n;
@@ -318,13 +280,10 @@ function readCursor(dst) {
 
 function statOf(p) { try { return io.stat(p); } catch (e) { return null; } }
 
-//  LITE-022: claim the ron60 page for THIS jsonl before rendering into it.
-//  Two things happen here, both off the `[log]:` ref def the page already
-//  carries: a page owned by ANOTHER jsonl is refused in plain words (60-bit
-//  birthday odds make it ~never, the check makes it safe anyway), and a
-//  pre-LITE-022 `<uuid>.mkd` page is RENAMED to its ron60 name, after which the
-//  rerun appends to it exactly as before.  One extra stat per file, no
-//  directory-wide pass: `old` is absent on every run after the first.
+//  LITE-022: claim the ron60 page for THIS jsonl off its `[log]:` ref def —
+//  a page owned by another jsonl is refused in plain words (60-bit birthday
+//  odds), and a pre-LITE-022 `<uuid>.mkd` page is renamed to its ron60 name,
+//  then appended to as before.  `old` is absent on every run after the first.
 function claim(src, old, dst) {
   const own = readCursor(dst);                   // the page's own provenance
   if (own && own.src !== src)

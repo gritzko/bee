@@ -1,5 +1,5 @@
-//  view/wtstat.js — BEE-027: what a board row ([BEE-025]) says about a ticket's
-//  worktree.  The model is view/status.js's own ([BEE-022]) — this file adds a
+//  view/wtstat.js — BEE-027: what a board row (BEE-025) says about a ticket's
+//  worktree.  The model is view/status.js's own (BEE-022) — this file adds a
 //  memo and two frames, never a second status.  A HIT needs BOTH witnesses: the
 //  rev of the tree standing still (index/cache.js) and the TIPS fingerprint, a
 //  ref move living under the unwatched `.git` where no event can reach it.  Any
@@ -17,7 +17,7 @@ const subs = require("index/subs.js");
 const theme = require("render/theme.js");
 
 const MEMO = new Map();            // worktree root -> { rev, tips, v }
-const SUBS = new Map();            // [BEE-040] sub worktree -> { rev, d }
+const SUBS = new Map();            // BEE-040 sub worktree -> { rev, d }
 const SC = { hits: 0, misses: 0 };
 
 //  The witness the rev tree cannot give: the worktree's own tip and the tip it
@@ -34,7 +34,7 @@ function tipsOf(root) {
 }
 
 //  stat(root) -> { model, tip, up, un, st, staged, dirty } | null — the memoized
-//  read plus the [BEE-039] split folded off its own rows.  An unreadable
+//  read plus the BEE-039 split folded off its own rows.  An unreadable
 //  worktree answers null and its frames blank out, never an error row.
 function stat(root) {
   const tp = tipsOf(root);
@@ -49,7 +49,7 @@ function stat(root) {
   try {
     const m = st.status("", { from: root }).model;
     const f = fold(m.rows);
-    foldSubs(f, root);                     // [BEE-040]: the WHOLE tree's counts
+    foldSubs(f, root);                     // BEE-040: the WHOLE tree's counts
     f.dirty = (f.un.chg + f.un.add + f.un.del) > 0;
     v = Object.assign({ model: m, tip: tp.sha, up: tp.up }, f);
   } catch (e) { v = null; }
@@ -57,7 +57,7 @@ function stat(root) {
   return v;
 }
 
-//  --- the un/staged split ([BEE-039]) ---------------------------------------
+//  --- the un/staged split (BEE-039) ---------------------------------------
 //  The quad's five COLUMN counts say WHERE a change sits; a staging button
 //  needs the other axis (be todo.js:493:TO UN_COL/ST_COL): UNSTAGED is what
 //  `add`/`rm` acts on — column 4, the wt against the index — and STAGED what a
@@ -74,7 +74,7 @@ function blankFold() {
 }
 
 //  fold(rows) -> the split, off the rows stat() already holds — never a second
-//  git walk ([BEE-039] design).  A row can tally on BOTH axes (staged, then
+//  git walk (BEE-039 design).  A row can tally on BOTH axes (staged, then
 //  edited again); a conflict is the one exclusive case, since there is no clean
 //  stage entry behind it, so it counts as unstaged work whatever its columns say.
 function fold(rows) {
@@ -115,7 +115,7 @@ function foldSubs(f, root) {
 }
 
 //  --- the two frames --------------------------------------------------------
-//  Geometry is be's CI-004 (todo.js:721:TO), so no column moves when [BEE-041]'s
+//  Geometry is be's CI-004 (todo.js:721:TO), so no column moves when BEE-041's
 //  buttons land: the FILE frame's last slot is held for the run button, the
 //  COMMIT frame's last is the post ✓, and the old tip cell retired with them.
 //  Faces and sigils are theme data (render/theme.js:117:4o), never literals here.
@@ -126,7 +126,7 @@ const FACE = theme.BTN_FACE, SIG = theme.BTN_SIGIL;
 
 //  One 2-cell count, be's THREE-STATE rule (todo.js:786:TO countSlot): rows left
 //  to stage show the UNSTAGED number, a wholly staged class shows the STAGED
-//  one, an empty class blanks.  Which of the two is LIT is paint ([BEE-041]).
+//  one, an empty class blanks.  Which of the two is LIT is paint (BEE-041).
 function slot(sigil, un, st) {
   if (un > 0) return theme.countFace(sigil, un);
   if (st > 0) return theme.countFace(sigil, st);
@@ -170,7 +170,7 @@ function fileCells(s, wt) {
     cell(" ", "gap"),
     countCell(SIG.add, un.add, sg.add, "add", ctx, "add +"),
     cell(" ", "gap"),
-    cell(BLANK, "blank"),                    // held for [BEE-044]'s run button
+    cell(BLANK, "blank"),                    // held for BEE-044's run button
     cell("]", "br")];
 }
 
@@ -197,7 +197,7 @@ function quoted(m) {
 }
 
 //  `[ ≡ +2 -1  ✓]` — the history surface, cut into cells as the FILE frame is
-//  ([BEE-041]): the ahbeh pair is POSITIONAL (push slot, then pull slot), since
+//  (BEE-041): the ahbeh pair is POSITIONAL (push slot, then pull slot), since
 //  the quad spells either as `created` and only the column tells them apart
 //  (view/quad.js:78:3B).  A DIVERGED pair is ONE `merge` over both slots and
 //  their gap; the ✓ shows iff staged — never a grey one (be 2026-08-03) — and
@@ -233,14 +233,14 @@ function commitFrame(s) {
 
 //  frames(root) -> { file, commit }, the two fixed-width strings a row carries.
 //  Plain text throughout — the button FACES, never paint — so a `--plain`
-//  board stays greppable; the clickable twins are `fileCells` ([BEE-041]) and
-//  `commitCells` ([BEE-042]), which cut the very same bytes.
+//  board stays greppable; the clickable twins are `fileCells` (BEE-041) and
+//  `commitCells` (BEE-042), which cut the very same bytes.
 function frames(root) {
   const s = stat(root);
   return { file: fileFrame(s), commit: commitFrame(s) };
 }
 
-//  One line per worktree, the `bee wts` row and [BEE-025]'s row material: the
+//  One line per worktree, the `bee wts` row and BEE-025's row material: the
 //  `//name-tail` word `bee fork` was given, then the two frames.
 function line(wt) {
   const f = frames(wt.root);

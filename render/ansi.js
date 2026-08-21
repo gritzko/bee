@@ -1,15 +1,11 @@
 //  render/ansi.js — LITE-045: THE ANSI PAINTER, `render(hunks, opts) -> bytes`.
 //  A tok32 tag plus a diff side becomes an ansi64 state, a run of equal states
 //  shares one SGR, and a row closes with a reset — byte-identical to the C
-//  speller (abc/ANSI.c ANSIu8sFeedDelta / ANSIu8sFeedReset).
-//
-//  VERB-BLIND: it knows tags, sides and rows, never which view made the hunk.
-//  `lite --color` writes what this renders; pager.js paints one visible
-//  row at a time through the SAME cellAnsi/deltaSGR pair, so a paged screen and
-//  a piped dump agree cell for cell.
-//
-//  Carved out of the old view/bro.js (LITE-001), which mixed the painter with
-//  the row index, the plain sink and the hunk builders.
+//  speller (abc/ANSI.c ANSIu8sFeedDelta / ANSIu8sFeedReset).  VERB-BLIND: it
+//  knows tags, sides and rows, never which view made the hunk.  `lite --color`
+//  writes what this renders; pager.js paints one visible row at a time through
+//  the SAME cellAnsi/deltaSGR pair, so screen and pipe agree cell for cell.
+//  Carved out of the old view/bro.js (LITE-001), painter and views unmixed.
 "use strict";
 
 const wrap = require("render/wrap.js");
@@ -52,12 +48,9 @@ function aEq(a, b) {
 const A_BOLD = 0x01;
 
 //  dog/THEME.h THEME16TBL — the default terminal-adaptive palette, the
-//  byte-exact C table: tok-syntax tags only (the diff/quad/button slots are
-//  not part of the lite view).  'W' is the whitespace slot view/fs.js emits.
-//  An absent tag (the 'S' default, 'U'/'O' hidden cells) falls through to A0.
-//  LITE-017: `list` paints its wt-marker column out of the STATUS-verb slots of
-//  the same C table (dog/THEME.c THEME16TBL) — E mod yellow, X del brown, Q dir
-//  grey; `eq` rides the D grey already here.  No other view emits them.
+//  byte-exact C table: tok-syntax tags only, 'W' the whitespace slot, an
+//  absent tag falls through to A0.  LITE-017: `list` paints its wt-marker
+//  column out of the same table's STATUS-verb slots; no other view emits them.
 const THEME = {
   D: aFgB(90), G: aFg256(149), L: aFgB(96), H: aFgB(35), R: aFgB(94), P: aFgB(90),
   N: aFlag(A_BOLD), C: aFlag(A_BOLD), F: aFg256(56), T: aFg256(56),
@@ -75,12 +68,10 @@ const THEME = {
 function themeAt(tag) { return THEME[tag] || A0; }
 const THEME_BANNER = { fm: 2, fg: 0, bm: 2, bg: 230, fl: 0 };
 
-//  LITE-010: the diff WASH.  A tok32's side lives in bits [25..24] — 1 = the
-//  to-side (inserted), 2 = the from-side (removed) — and a changed token takes
-//  a 256-colour BACKGROUND over its syntax colour: be/view/theme.js:126 `inWash`
-//  157 (salad green) / `rmWash` 217 (salmon) on its OWN pass, the PALE 194/224
-//  when seen from the other pass or inline (BEE-021, be bro.js:184 WASH I/O/J/K).
-//  No patched-in family: bee stamps no provenance bit 26 (DIFF-016).
+//  LITE-010: the diff WASH.  A tok32's side lives in bits [25..24] (1 = to,
+//  2 = from) and a changed token takes a 256-colour BACKGROUND over its syntax
+//  colour: `inWash` 157 / `rmWash` 217 on its own pass, the PALE 194/224 from
+//  the other (BEE-021).  No patched-in family: no provenance bit 26 (DIFF-016).
 const SIDE_EQ = wrap.SIDE_EQ, SIDE_IN = wrap.SIDE_IN, SIDE_RM = wrap.SIDE_RM;
 const PASS_NORMAL = wrap.PASS_NORMAL, PASS_RM = wrap.PASS_RM, PASS_IN = wrap.PASS_IN;
 function aBg256(n) { return { fm: 0, fg: 0, bm: 2, bg: n, fl: 0 }; }
@@ -165,12 +156,10 @@ function oAnsi(hunk, ti) {
   return want;
 }
 
-//  BRO-011: emit one row to a BYTE sink — `enc` appends SGR/ASCII, `raw(lo,hi)` the
-//  VERBATIM text bytes.  BRO-010: colour = the SHARED THEME, runs batched, U/O hidden.
-//  LITE-023: `wash` (or null) is the CURSOR wash for THIS row — {lo,hi} the
-//  active token's byte span (lo<0: none); the line wash rides every cell.
-//  BEE-030: `els` (or none) is the row's elastic insert/skip (BRO-036) — emit
-//  `ins` at byte `lo`, resume at `hi`, so a `B` span …-cuts or pads in place.
+//  BRO-011: emit one row to a BYTE sink — `enc` appends SGR/ASCII, `raw(lo,hi)`
+//  the VERBATIM text bytes; colour = the shared THEME, runs batched (BRO-010).
+//  LITE-023: `wash` is the cursor wash for THIS row, {lo,hi} the active span.
+//  BEE-030: `els` is the row's elastic insert/skip (BRO-036), cut or pad in place.
 function emitBody(hunk, off, end, color, pass, enc, raw, wash, els) {
   const text = hunk.text, toks = hunk.toks;
   //  bisect to the tok covering `off` (toks sorted by byte end) — the linear
@@ -248,14 +237,10 @@ function bannerColor(uriStr, cols, enc) {
 }
 
 
-//  ---- the RENDERER (LITE-045) ---------------------------------------------
-//  render(hunks, opts) -> bytes: the pager's paint WITHOUT the viewport.  One
-//  banner band per hunk, then one painted row per LOGICAL line — no soft-wrap
-//  and no column clamp, because a pipe has no width to lose bytes to: `lite
-//  --color <file> | less -R` sees every byte the file has, coloured.
-//  `opts.cols` is the width the banner band fills to (the terminal's when there
-//  is one, else 80); it never clamps a body row — and past wrap.NO_CLAMP the
-//  index fires no elastic either (BEE-030), so a pipe pads nothing.
+//  ---- the RENDERER (LITE-045): render(hunks, opts) -> bytes ---------------
+//  The pager's paint WITHOUT the viewport — one banner band per hunk, one row
+//  per LOGICAL line, no soft-wrap or clamp: a pipe has no width to lose bytes
+//  to.  `opts.cols` fills the banner band only; past wrap.NO_CLAMP no elastic (BEE-030).
 const NO_CLAMP = wrap.NO_CLAMP;
 
 function termCols() {

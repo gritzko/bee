@@ -429,10 +429,9 @@ Pager.prototype._fit = function (s, cols) {
 };
 
 //  ---- open / follow / refresh ----------------------------------------------
-//  The one fs door: hand `path` to opts.open and push what it yields; null/empty
-//  (unreadable, empty dir) becomes a bar message.  BEE-003: `from` is the dir of
-//  the file being read, so the door resolves a ref where it was written and a
-//  cross-repo hop is an ordinary push (the stack entry keeps the repo).
+//  The one fs door: hand `path` to opts.open, push what it yields; null/empty
+//  becomes a bar message.  BEE-003: `from` is the dir of the file being read,
+//  so a ref resolves where it was written and a cross-repo hop is a push.
 Pager.prototype._openPush = function (path, from) {
   if (!this.open) { this.message = "(no opener)"; return; }
   let hunks;
@@ -516,12 +515,10 @@ Pager.prototype._seatCur = function (rows, span) {
   return true;
 };
 
-//  Follow one `F` token.  A dir listing joins the name to the hunk's own path
-//  (its rows are relative to the dir it lists); elsewhere the token's bytes go
-//  to the door verbatim (LITE-015) with the dir of the file being read as the
-//  ambient (BEE-003) — a ref written next to its target resolves there first.
-//  BEE-020:55: a hunk that NAMES its own ambient (a log carries the repo it
-//  walked) is followed THERE — the view path's dir is no address for a `log …`.
+//  Follow one `F` token.  A dir listing joins the name to the hunk's own path;
+//  elsewhere the token's bytes go to the door verbatim (LITE-015) with the dir
+//  of the file being read as the ambient (BEE-003).  BEE-020:55: a hunk that
+//  NAMES its own ambient (a log carries its repo) is followed THERE.
 Pager.prototype._follow = function (hunk, name) {
   if (!hunk) { this.message = "(nothing to follow)"; return; }
   if (hunk.kind === "dir") { this._openPush(resolvePath(hunk.uri || "", name)); return; }

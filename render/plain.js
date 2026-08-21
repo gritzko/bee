@@ -1,32 +1,19 @@
 //  render/plain.js — LITE-045: THE PLAIN SINK, `render(hunks, opts) -> bytes`.
 //  The non-interactive rendering, byte-exact with `bro --plain` (BROPlain, the
 //  C `!BRO_COLOR` branch): no tok paint, no soft-wrap, just the bytes.
-//
-//  VERB-BLIND: every piped or `--plain` run in lite — a path, a log, a commit,
-//  a diff, a read view — reaches stdout through this ONE call.  What differs
-//  between two views is the hunks they make, never the way those hunks are
-//  written.
-//
-//  Carved out of the old view/bro.js (LITE-001), which mixed this with the row
-//  index, the ansi painter and the hunk builders.
+//  VERB-BLIND: every piped or `--plain` run in lite reaches stdout through
+//  this ONE call — views differ in the hunks they make, never in how the
+//  hunks are written.  Carved out of the old view/bro.js (LITE-001).
 "use strict";
 
-//  LITE-045, the TWO words a hunk says about its own plain bytes:
-//
-//    `plain`  THE ONE ESCAPE HATCH — the body to write when the hunk's `text`
-//             is not readable bytes.  A diff hunk's text is the WEAVE (both
-//             sides interleaved) and its plain is the C unified render; a
-//             list/tree/log/commit row set carries hidden `U` click targets
-//             that take no column, and its plain is the visible row bytes.
-//    `bare`   whether this hunk IS the answer or an EXCERPT of one.  A `cat`,
-//             a `blob`, a listing, a log, a commit's metadata is the answer and
-//             writes its bytes alone — `lite cat x | diff` wants the file, not
-//             a frame around it.  A file at a path and one diff window are
-//             excerpts and wear the band.
-//
-//  BEE-054 the band's sigil: `§` heads a hunk in every ascii view.  It is
-//  Markdown syntax at no position and an operator, comment or sigil in no
-//  language, so a header can never be read as the body under it (gritzko).
+//  LITE-045, the TWO words a hunk says about its own plain bytes: `plain`, the
+//  one ESCAPE HATCH when `text` is not readable bytes (a diff's text is the
+//  weave, its plain the C unified render); `bare`, whether the hunk IS the
+//  answer — `lite cat x | diff` wants the file alone — or an excerpt wearing the band.
+
+//  BEE-054 the band's sigil: `§` heads a hunk in every ascii view — Markdown
+//  syntax at no position, operator or sigil in no language, so a header can
+//  never be read as the body under it (gritzko).
 const BAND = "§ ";
 
 //  A hunk's title line.  A SEGMENT of a split file says which line it resumes

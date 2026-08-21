@@ -3,7 +3,7 @@
 //  so a row is a mutable CELL where a lite2 row is a fact — which is what lets
 //  `Now: OPEN` flip to `DONE` in place (TODO-003 is the model).  The first
 //  records are FILE HEADERS: the StrictMark meta pairs under a `#   Title`
-//  ([/meta/todo]) and the keys of a Markdown YAML preamble.  The lane decides
+//  (/meta/todo) and the keys of a Markdown YAML preamble.  The lane decides
 //  WHICH files a board opens and never what to show, so titles and bodies still
 //  come off the file; `find` is the one door and it brings itself up to date.
 "use strict";
@@ -127,12 +127,12 @@ const YAML_RE = /^([A-Za-z_][A-Za-z0-9_.-]*):[ \t]+(\S.*)$/;
 const bodyStart = require("mark/front.js").bodyLine;
 
 //  The file's OWN meta pairs: the block standing directly under the title
-//  ([/meta/todo]).  One leading non-pair line — the header itself — is skipped,
+//  (/meta/todo).  One leading non-pair line — the header itself — is skipped,
 //  blanks pass, and the first other construct ends the block, so the four-space
 //  pairs buried in a bulletpoint below are not the file's meta.  First wins.
 //  BEE-043: a pair also says WHERE it stands — its line and the indent the
 //  grammar found it at — so done.js edits the very line this lexer read and no
-//  writer needs a second regex ([BEE-043]).
+//  writer needs a second regex (BEE-043).
 function metaPairs(lines) {
   const out = [];
   let header = false;
@@ -432,7 +432,7 @@ const EMPTY = { rows: new Map() };
 //  comes out of the index, AND-intersected on `path_hl`.  A path comes back
 //  through the sweep's OWN list, never decoded from a hash.
 //  `opts.rows` hands the matched files' CELLS back beside them, keyed by path:
-//  the [BEE-025] board reads `Now:` off them and answers its OR'd and absent-key
+//  the BEE-025 board reads `Now:` off them and answers its OR'd and absent-key
 //  clauses in memory, so one find per repo per run serves the whole question.
 function find(repo, filters, opts) {
   opts = opts || {};

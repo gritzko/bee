@@ -3,7 +3,7 @@
 //  lands every one of them at `$SRC_ROOT/<name>-<tail>`, so ONE readdir matched
 //  against the registry names finds them all: `git worktree list` is never
 //  consulted, no registry line is read for membership and none is ever written
-//  (BEE-027:29).  The board ([BEE-025]) is the consumer — a worktree whose tail
+//  (BEE-027:29).  The board (BEE-025) is the consumer — a worktree whose tail
 //  is a ticket code sits on that ticket's row.
 "use strict";
 

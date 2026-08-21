@@ -106,7 +106,7 @@ function statClean(st, e, idxRon) {
 //  The bytes on disk at one tracked path -> its blob sha, or null when gone.
 //  A gitlink answers with the submodule's own head, so an advanced one reads
 //  `v`; an uninitialised one reads as unchanged rather than as removed, which
-//  is `rec` — the sha the commit recorded — standing in ([BEE-040]).
+//  is `rec` — the sha the commit recorded — standing in (BEE-040).
 function wtSha(ctx, path, sub, e, st, idxRon, rec) {
   if (sub) {
     const hd = refs.head(idx.gitdirOf(ctx.root + "/" + path) || "");
@@ -126,7 +126,7 @@ function wtOf(ctx, base, stage, cache) {
   let idxRon = 0n;
   try { idxRon = io.lstat(ctx.gitdir + "/index").mtime; } catch (e) { idxRon = 0n; }
   const tracked = new Map();                       // path -> is it a gitlink?
-  const rec = new Map();                           // [BEE-040] gitlink -> recorded sha
+  const rec = new Map();                           // BEE-040 gitlink -> recorded sha
   for (const e of base) {
     tracked.set(e.path, e.sub === true);
     if (e.sub === true) rec.set(e.path, e.sha);

@@ -90,14 +90,14 @@ function count(bytes) {
 
 //  --- the classes ----------------------------------------------------------
 //  A class is its LISTER and its STAGER, both as argv PARAMETRISED on the repo,
-//  since [BEE-040]'s descent spends the very same pair in every mounted sub.
+//  since BEE-040's descent spends the very same pair in every mounted sub.
 function into(at) {
   return ["git", "-C", at, "add", "--pathspec-from-file=-", "--pathspec-file-nul"];
 }
 const CLASS = {
   //  `git add -u` swallows the deletions too, and those are `rm`'s to stage —
   //  hence the M filter (BEE-036:14).  `--ignore-submodules` keeps a DIRTY
-  //  gitlink out of the class: bumping one is `sweep`'s own call ([BEE-040]).
+  //  gitlink out of the class: bumping one is `sweep`'s own call (BEE-040).
   chg: { list: function (at) {
            return ["git", "-C", at, "diff", "--name-only", "--diff-filter=M",
                    "--ignore-submodules=all", "-z"]; },
@@ -113,7 +113,7 @@ const CLASS = {
 //  --- the verbs ------------------------------------------------------------
 //  ONE repo's class: list it, then feed the very same bytes to the stager.
 //  -> how many it staged.  An empty class stages nothing and says nothing, so
-//  a quiet sub cannot cascade a report line of its own ([BEE-040]).
+//  a quiet sub cannot cascade a report line of its own (BEE-040).
 function classIn(say, at, cl) {
   const lister = cl.list(at);
   const bytes = list(lister);
@@ -161,7 +161,7 @@ function run(argv) {
 //  The NAMED paths, verbatim: no list to pipe, so the child just inherits our
 //  stdio (fork.js:31).  git takes them all or refuses in its own words, so the
 //  count is the count of paths given.  A named file is ONE repo's file, so this
-//  form never descends into a mount ([BEE-040] goal 3).
+//  form never descends into a mount (BEE-040 goal 3).
 function some(verb, argv, n) {
   if (run(argv) !== 0) throw "bee: " + verb + ": git " + argv[3] + " refused";
   return verb + " " + n + " staged";

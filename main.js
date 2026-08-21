@@ -1,17 +1,11 @@
-//  main.js — Beagle-bee (LITE-003): DISPATCH and ONE mode pick.
-//
-//  A word that names a verb goes to door.js's view for it; every other arg is a
-//  file or dir path.  Then the mode: at a terminal with no flag the hunks go to
-//  pager.js, otherwise a renderer writes their bytes to stdout.  That is
-//  the whole file — no view builds a hunk here and no renderer spells a byte.
-//
-//  LITE-018: with ZERO args INSIDE a git repo there is no fs story to tell —
-//  `bee` indexes the repo and opens the `list` browser on its root.  Outside
-//  one it is the old no-arg behaviour, untouched.
-//
-//  Exit is by THROW, never process.exit: the runtime maps an uncaught throw to
-//  the non-zero exit (BE-002 discipline — no args → BROUSAGE, args but none
-//  opened → BRONONE).
+//  main.js — Beagle-bee (LITE-003): DISPATCH and ONE mode pick.  A word that
+//  names a verb goes to door.js's view for it; every other arg is a file or
+//  dir path.  Then the mode: at a terminal with no flag the hunks go to
+//  pager.js, otherwise a renderer writes their bytes to stdout — no view
+//  builds a hunk here and no renderer spells a byte.  LITE-018: zero args
+//  inside a git repo indexes it and opens `list` on its root; outside one the
+//  old no-arg behaviour is untouched.  Exit is by THROW, never process.exit
+//  (BE-002: no args -> BROUSAGE, args but none opened -> BRONONE).
 "use strict";
 
 //  LITE-045: main.js is DISPATCH + the one mode pick.  The door (targets ->
@@ -33,9 +27,8 @@ function writeStderr(str) { writeFd(2, utf8.Encode(str)); }
 
 //  LITE-045: the FS LEG as a view like any other — `(paths) -> hunks`, one per
 //  arg, a miss reported on stderr and skipped so a batch still yields what it
-//  could open.  Its `arg` is the path LIST (paths carry spaces, so they never
-//  fuse into one string the way a verb's words do); every other view takes the
-//  words joined.
+//  could open.  Its `arg` is the path LIST — paths carry spaces, so they never
+//  fuse into one string the way a verb's words do.
 function pathView(paths) {
   let hunks = [];
   for (const p of paths) {
@@ -50,11 +43,10 @@ function pathView(paths) {
   return hunks;
 }
 
-//  LITE-006: `bee index [<repo>]` brings `<repo>/.git/be/` up to date and
-//  prints one summary line.  The verbs stand BEFORE the flag scan because
-//  every other arg is a path, verbatim.
-//  BEE-007: it runs BOTH passes — the commit walk and the LITE-033 link round
-//  over the tip blobs — each off its own mark, both on the one summary line.
+//  LITE-006: `bee index [<repo>]` brings `<repo>/.git/be/` up to date, one
+//  summary line.  The verbs stand BEFORE the flag scan because every other
+//  arg is a path, verbatim.  BEE-007: it runs BOTH passes — the commit walk
+//  and the LITE-033 link round over the tip blobs — each off its own mark.
 function runIndex(args) {
   const idx = require("index/index.js");
   //  BEE-023: with a `//name` context the run STANDS there, so that is the
@@ -63,13 +55,10 @@ function runIndex(args) {
   writeFd(1, utf8.Encode(idx.summary(rec) + "\n"));
 }
 
-//  LITE-033: `bee lindex [<target>]` — the BACKLINK SUSPECTS of the index index.
-//  BEE-007: this is the QUERY form; `bee index` is the bring-up for both halves.
-//  Bare, it brings the LINK rows up to the tip (only the blobs the tip moved are
-//  tokenised) and prints one summary line.  With a target — a path, a partial
-//  one, or a ticket code — it prints the paths that MAY link to it, one per
-//  line.  Suspects, not proof: a stale row is legal and the caller kills it by
-//  opening the file, which is what keeps the index append-only.
+//  LITE-033: `bee lindex [<target>]` — the backlink SUSPECTS of the index;
+//  `bee index` is the bring-up of both halves (BEE-007).  Bare, it lifts the
+//  LINK rows to the tip; with a target it prints the paths that MAY link to it.
+//  A stale row is legal — the caller opens the file — so the index stays append-only.
 function runLindex(args) {
   const li = require("index/lindex.js");
   //  A mode flag is a no-op here — plain lines either way, no hunk to page.
@@ -83,11 +72,9 @@ function runLindex(args) {
 }
 
 //  LITE-014: `bee merge <base> <ours> <theirs> [-o <out>] [-p <path>]` — the
-//  git merge-driver contract (result over <ours>, exit code = clean/conflict),
-//  and `bee install [<repo>]` which points a repo's git at it.  Both are silent
-//  on success bar install's one report line; a conflict THROWS (exit 1).
-//  BEE-037: BARE `bee merge` is the history verb instead, and BEE-038 picks it
-//  by shape in run() — git never calls the driver with zero files.
+//  git merge-driver contract (result over <ours>, a conflict THROWS exit 1) —
+//  and `bee install [<repo>]`, pointing a repo's git at it.  BEE-037: bare
+//  `bee merge` is the history verb, picked by shape in run() (BEE-038).
 function runMerge(args) { require("merge.js").merge(args); }
 
 function runInstall(args) {
@@ -107,7 +94,7 @@ function runAct(word) {
 
 //  BEE-027: `bee wts` — the ticket worktrees under `$SRC_ROOT` (index/wts.js),
 //  one line each with the two board frames.  It is the pieces' own door until
-//  [BEE-025] lands the board that spends them; it takes no argument.
+//  BEE-025 lands the board that spends them; it takes no argument.
 function runWts() {
   const ws = require("view/wtstat.js");
   let out = "";
@@ -115,11 +102,10 @@ function runWts() {
   writeFd(1, utf8.Encode(out));
 }
 
-//  LITE-026: `bee hook [<repo>]` — the PRE-COMMIT pass the planted
-//  `.git/hooks/pre-commit` runs: fresh `file:line(:col)` refs in the staged text
-//  become [LITE-025] permalinks, re-staged.  BEE-031: `--post` is the other
-//  planted half, `index`'s passes minus the registry line (index/hook.js:471:_m).
-//  Both report on the message stream only, so a commit's own output stays clean.
+//  LITE-026: `bee hook [<repo>]` — the pre-commit pass the planted
+//  `.git/hooks/pre-commit` runs: fresh `file:line(:col)` refs in the staged
+//  text become LITE-025 permalinks, re-staged.  BEE-031: `--post` is the other
+//  planted half (index/hook.js:471:_m).  Both report on the message stream only.
 function runHook(args) {
   const hk = require("index/hook.js");
   const post = args.length && args[0] === "--post";
@@ -130,11 +116,10 @@ function runHook(args) {
   if (note) writeStderr(note + "\n");
 }
 
-//  BEE-016: `bee mint [--dry-run] <file>...` — the VERB half of the minter: the
-//  transient `file:line(:col)` refs of the NAMED files become permalinks, in the
-//  working copy alone.  The hook only ever sees a commit in flight, so refs that
-//  landed transient are reachable no other way ([BEE-015]).  Its arg is the path
-//  LIST, unfused — `bee mint view/*.js` is what the shell globbed, verbatim.
+//  BEE-016: `bee mint [--dry-run] <file>...` — the verb half of the minter:
+//  transient `file:line(:col)` refs of the NAMED files become permalinks, in
+//  the working copy alone; the hook only sees a commit in flight (BEE-015).
+//  Its arg is the path list, unfused — the shell's glob, verbatim.
 function runMint(args) {
   const rest = args.filter(function (a) { return modeOf(a) === null; });
   const r = require("index/mint.js").mint(rest);
@@ -155,10 +140,9 @@ function runMark(args) {
 }
 
 //  LITE-034: `bee http [--port <n>]` — the repo browser over HTTP, the same
-//  views the pager shows.  A LONG-RUNNING verb: this returns once the listener
-//  is up and the pol loop takes over, until SIGINT.
-//  The whole DOOR is handed over — the verb table AND the reference resolution
-//  — so http links through this file's code and owns no resolver of its own.
+//  views the pager shows.  A long-running verb: this returns once the listener
+//  is up and the pol loop runs until SIGINT.  The whole door is handed over —
+//  verb table AND reference resolution — so http owns no resolver of its own.
 function runHttp(args) {
   //  BEE-012: `openTarget` rides along — the chooser page is the door's own
   //  several-hits hunk, the one the pager shows.
@@ -208,11 +192,10 @@ function ron60ISO(word) {
          "." + pad(ms > 999 ? 999 : ms, 3);
 }
 
-//  LITE-018: is the cwd inside a git repository?  The probe is `openRepo`'s own
-//  — the climb every bee view does — and it is a probe ONLY: it closes what it
-//  opened and lets `list` open the repo for real, so no error of the view's is
-//  swallowed here.  No repo (or no HEAD yet) -> false, and bare `bee` stays
-//  today's filesystem story to the byte.
+//  LITE-018: is the cwd inside a git repository?  `openRepo`'s own climb, as a
+//  probe ONLY: it closes what it opened and lets `list` open the repo for
+//  real, so no error of the view's is swallowed here.  No repo (or no HEAD
+//  yet) -> false, and bare `bee` stays today's filesystem story to the byte.
 function inRepo() {
   const idx = require("index/index.js");
   let ctx = null;
@@ -316,11 +299,9 @@ function run(argl, from) {
   let arg = rest.join(" ");
   if (view === null) {
     //  LITE-018: ZERO args inside a git repo == `bee index && bee list`, one
-    //  process.  `list` owns the bring-up, so the index is built (visibly, on
-    //  stderr) strictly before the pager takes the tty, and `track` makes this
-    //  run the `index` half proper — the repo joins the repo list.
-    //  BEE-023:38 with a context that is the same story in THAT repo — and a
-    //  `$SRC_ROOT` hit is a read-only mount, so a context never registers one.
+    //  process.  `list` owns the bring-up, so the index builds before the
+    //  pager takes the tty, and `track` registers the repo.  BEE-023:38:X5: same
+    //  story from a context, whose read-only `$SRC_ROOT` hits never register.
     if (rest.length === 0 && (from !== null || inRepo())) {
       view = door.VERBS.list;
       if (from === null) opts.track = true;
@@ -363,10 +344,9 @@ function renderOf(flags) {
 }
 
 //  ---- THE non-interactive leg (LITE-045) ----------------------------------
-//  A view `(arg, opts) -> hunks` and a renderer `(hunks, opts) -> bytes`: every
-//  piped or flagged run in bee is this ONE call.  The five bespoke plain legs
-//  it replaced (a path, a log, a commit, a diff, a read view) differed only in
-//  the hunks they made, never in how those hunks reached stdout.
+//  A view `(arg, opts) -> hunks` and a renderer `(hunks, opts) -> bytes`:
+//  every piped or flagged run in bee is this one call — the five bespoke
+//  plain legs it replaced differed only in the hunks they made.
 function runVerb(view, arg, render, opts) {
   const hunks = view(arg, opts);
   const bytes = render(hunks, opts);

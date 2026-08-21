@@ -4,7 +4,7 @@
 //  line edit and never a body-wide replace — and the ticket's worktree, when it
 //  owns one, RETIRES to `$SRC_ROOT/done/` with git's back-pointers repaired
 //  (ruling gritzko 2026-08-20, BEE-043:10).  Nothing is ever deleted and nothing
-//  is ever committed: review and landing stay with the user ([/meta/work]).
+//  is ever committed: review and landing stay with the user (/meta/work).
 //  act.js registers both words, so a board row's ` ✓` and ` ✗` run them.
 "use strict";
 
@@ -83,12 +83,10 @@ function oddHead(key, lines, hl) {
   return titleOf(lines[hl]).indexOf(key) !== 0;
 }
 
-//  [/todo/TODO/TODO-013]: be spliced a SECOND, column-0 pair here and re-wrote a
-//  legacy `[DONE]` title mark — this verb touches the pair's own line and nothing else.
-//  The text with `Now:` set to `mark`: the pair's OWN line is rewritten at the
-//  indent it was found at, and a page carrying none takes one right under the
-//  header (BEE-043:39).  The lane reads the FIRST pair of a key, so that is the
-//  line that moves; the block is kv.js's own, so no second grammar is spelled.
+//  TODO-013: be spliced a SECOND column-0 pair here and re-wrote a legacy
+//  `[DONE]` title mark — this verb touches the pair's own line and nothing else.
+//  The FIRST `Now:` pair's line is rewritten at the indent it was found at; a
+//  page carrying none takes one under the header (BEE-043:39); kv.js owns the grammar.
 function setNow(text, mark, hl) {
   const lines = text.split("\n");
   const block = kv.metaPairs(lines);

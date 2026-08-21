@@ -52,10 +52,8 @@ const ACTS = {
 
 //  A verb -> its row, or null when no writer owns the word; an own-property
 //  test, so a file called `constructor` is a path like any other.
-//  RULING (gritzko 2026-08-20): a trailing `!` on ANY verb word is the FORCEFUL
-//  flag.  Dispatch only STRIPS it — the VERB interprets it via its row's own
-//  `bang` runner, and one with no forceful reading refuses in one line rather
-//  than guessing what force means for it.
+//  Ruling 2026-08-20: a trailing `!` on any verb word is the FORCEFUL flag —
+//  dispatch only STRIPS it, the verb's own `bang` runner interprets it or refuses.
 function rowOf(verb) {
   const f = verb.length > 1 && verb.charAt(verb.length - 1) === "!";
   const name = f ? verb.slice(0, -1) : verb;

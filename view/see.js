@@ -107,7 +107,7 @@ function excerpt(seat, ref, up, down, solo) {
   //  BEE-050:31 the band's own target, RE-SPELLED as path + the line it landed
   //  on: html hangs the whole file's page off the header, opened at this very
   //  point.  The uri itself will not do — an absolute path carrying a hashlet
-  //  resolves nowhere ([BEE-018]) — and the RESOLVED line is what a permalink
+  //  resolves nowhere (BEE-018) — and the RESOLVED line is what a permalink
   //  meant anyway, the place its blob history pointed at.
   h.ref = seat.line >= 1
         ? seat.full + ":" + seat.line + (seat.col >= 1 ? ":" + seat.col : "")

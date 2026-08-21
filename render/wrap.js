@@ -43,11 +43,10 @@ function oSpell(s) {
   return sp < 0 ? "" : s.slice(sp + 1);
 }
 
-//  BEE-035: the LOOK half of that same prefix — TWO ordered slots, each opened
-//  by `#` and each optional: `#<bg><fg> ` is a button (tone over its derived
-//  wash), `##<fg> ` is INFO (the tone alone, no wash).  -> { bg, fg } as `#rrggbb`
-//  or "", or null when the bytes are a bare spell.  ONE grammar, read by the
-//  ansi painter and the html twin alike (be view/bro.js:229 whyBgAt).
+//  BEE-035: the LOOK half of that same prefix — TWO ordered slots, each `#`-
+//  opened, each optional: `#<bg><fg> ` is a button (tone over derived wash),
+//  `##<fg> ` is INFO (tone alone).  -> { bg, fg } as `#rrggbb` or "", null on
+//  a bare spell; ONE grammar for ansi and html alike (be view/bro.js:229).
 const LOOK_RE = /^#([0-9a-fA-F]{6})?(?:#([0-9a-fA-F]{6}))?/;
 function oLook(s) {
   if (s.charCodeAt(0) !== 0x23) return null;
@@ -92,11 +91,9 @@ function rowEnd(hunk, off, cols, pass) {
 }
 
 //  ---- BEE-021: inline vs whole-line (the be bro_walk_hunk twin) -----------
-//  A diff hunk's text is the WEAVE, both sides interleaved.  Per '\n'-delimited
-//  segment, tally the visible bytes by side; a lightly edited line is painted
-//  in place (NORMAL), a heavier one splits into an rm row and an in row.
-//  Ported from be view/bro.js:393-491 (BRO-009, BRO-041); DIFF-017's glue/
-//  whitespace refinement never landed there and is not here either.
+//  A diff hunk's text is the WEAVE.  Per '\n' segment, tally visible bytes by
+//  side: a lightly edited line paints in place (NORMAL), a heavier one splits
+//  into rm + in rows.  Port of be view/bro.js:393-491 (BRO-009); no DIFF-017 here.
 
 //  A hunk is a diff hunk iff any visible tok carries a side != EQ.
 function hasDiffSides(toks) {

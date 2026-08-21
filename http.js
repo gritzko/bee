@@ -1,17 +1,11 @@
-//  http.js — LITE-034: `bee http [--port <n>]`, the repo browser over
-//  HTTP.  Three parts and no fourth: quickjab's `net.createServer` on the one
-//  implicit `pol` loop for the transport, QJAB-004's `http._drain`/`http._feed`
-//  for the message heads, and a ROUTER TABLE mapping URL forms onto the SAME
-//  verbs door the pager clicks through (main.js VERBS).
-//
-//  ARG-BLIND, like the pager: the router splits a URL into (verb, arg) and hands
-//  the arg over verbatim — `?<rev>` included — and the verb resolves it.  So the
-//  URL scheme is one table plus one URL builder, and a ruling on it is an edit
-//  in this file and nowhere else.
-//
-//  READS answer GET and HEAD; BEE-047's ONE write endpoint takes POST, gated by
-//  `--ro`, a same-origin check and act.js's map.  The listener binds 127.0.0.1 —
-//  a browser, not a service.  The pol loop runs until SIGINT; nothing daemonises.
+//  http.js — LITE-034: `bee http [--port <n>]`, the repo browser over HTTP.
+//  Three parts, no fourth: quickjab's `net.createServer` on the one implicit
+//  `pol` loop, QJAB-004's `http._drain`/`http._feed` message heads, and a
+//  router table mapping URL forms onto the SAME verbs door the pager clicks
+//  through (main.js VERBS).  Arg-blind: the router splits a URL into (verb,
+//  arg) and the verb resolves it, so a URL-scheme ruling edits this file only.
+//  Reads answer GET/HEAD; BEE-047's one write endpoint takes POST, gated by
+//  `--ro`, same-origin and act.js's map.  Binds 127.0.0.1, runs until SIGINT.
 "use strict";
 
 const idx = require("index/index.js");
@@ -124,15 +118,10 @@ function mimeOf(path) {
 //  Percent-decoding goes through the abc/URI leaf, never a hand-rolled scan.
 function unesc(s) { try { return URI.unescape(s); } catch (e) { return s; } }
 
-//  A request URI -> { repo, head, verb, arg, raw, query }.  The split is
-//  `uri._parse`'s — path and query are its slots; only the path SEGMENTS are
-//  joined back by hand.
-//  BEE-003 (ruling 2): the FIRST segment names the REPO when the registry knows
-//  it (`names`, the mount table), and the verb follows it — `/<repo>/<verb>/
-//  <path>`.  BEE-028: a segment that spells a verb IS that verb, always; with
-//  none after the repo the rest is a path (`verb: "path"`) and the caller 301s
-//  to its `cat`/`list` form, as it does with no repo at all — an old or typed
-//  link converges on the one spelling instead of quietly serving one tree.
+//  A request URI -> { repo, head, verb, arg, raw, query }, split by
+//  `uri._parse`.  BEE-003 ruling 2: the first segment names the repo when the
+//  mount table knows it; BEE-028: a segment that spells a verb IS that verb —
+//  verbless or repoless forms 301 onto the one `cat`/`list` spelling.
 function routeOf(reqUri, names) {
   let u;
   //  A request URI abc/URI refuses names no page — a 404, never a thrown loop.
@@ -173,11 +162,9 @@ function repoNames() {
 }
 
 //  --- the link builder -------------------------------------------------------
-//  A pager click target -> its URL, the INVERSE of routeOf.  `<verb> <arg>`
-//  goes to that verb's page; anything else is a REFERENCE, RESOLVED HERE, while
-//  the page is painted (ruling 2026-08-15): the emitted href already names the
-//  landed file and the landed token, and a reference that resolves to nothing
-//  gets no href at all — the painter then leaves it as plain painted text.
+//  A pager click target -> its URL, the inverse of routeOf: `<verb> <arg>`
+//  goes to that verb's page; anything else is a reference resolved while the
+//  page paints (ruling 2026-08-15) — resolving to nothing means no href.
 function urlOf(pg, target) {
   const sp = target.indexOf(" ");
   const verb = sp > 0 ? target.slice(0, sp) : "";
@@ -202,11 +189,10 @@ function repoRel(root, full) {
   return null;
 }
 
-//  BEE-003: a path -> `{ name, rel }` in the URL's own frame.  An ABSOLUTE one
-//  is addressed by the OUTERMOST registered repo holding it (`mount.canon`), so
-//  a submodule file is spelled through its parent (ruling 5); a relative one is
-//  already in the page's own repo and only takes that repo's mount prefix.
-//  null = no registered repo holds it, so there is no page to name.
+//  BEE-003: a path -> `{ name, rel }` in the URL's own frame.  An absolute one
+//  is addressed by the outermost registered repo holding it (`mount.canon`,
+//  ruling 5), a relative one by the page's own repo mount prefix; null = no
+//  registered repo holds it, so there is no page to name.
 function pathIn(pg, path) {
   const p = String(path);
   if (p.charAt(0) !== "/") {
@@ -257,15 +243,10 @@ function memoUrl(pg, key, target, resolve) {
   return url;
 }
 
-//  The DOOR resolves a target to a FILE — this is the only place one is named.
-//  -> { seat, rel, st } or null: SEVERAL hits name no single page, a miss names
-//  none at all, and the caller spells "" (plain text) for both.
-//  BEE-003: the door resolves in the page's own AMBIENT and hands back an
-//  ABSOLUTE path, which the mount table addresses — in ANY registered repo, not
-//  only the one this page came from.  Outside every registered repo there is no
-//  page, so such a ref simply gets no href.
-//  BEE-012: the door is asked ONCE per reference (the budget counts follows),
-//  so the seat is taken here and placed by `seatAt` below.
+//  BEE-003: the door resolves a target ONCE per reference (BEE-012) to a file
+//  — `{ seat, rel, st }` or null; several hits name no single page, a miss
+//  none, the caller spells "" for both.  The door answers in the page's own
+//  ambient with an absolute path, so any registered repo's mount addresses it.
 function seatOf(pg, target) {
   try { return pg.door.seatOf(target); } catch (e) { return null; }
 }
@@ -317,13 +298,10 @@ function blankSpan(text, lo, hi) {
   return true;
 }
 
-//  The byte the landed token starts at, in the bytes `/cat/<rel>` will serve.
-//  -1 = nothing to anchor: the link stays bare.
-//  BEE-053:13 the answer is ALWAYS a token of the SERVED hunk.  A permalink's
-//  own byte is not: it comes off the weave's tokens (index/perma.js:238:Ab), which
-//  cut `\n` and an indent apart where the painter fuses them — so `#b<byte>`
-//  named a span that was never emitted.  Snapping through `tokSpanAt` lands on
-//  a span that exists, and walking off the blank ones lands on one that SHOWS.
+//  The byte the landed token starts at, in the bytes `/cat/<rel>` will serve;
+//  -1 anchors nothing.  BEE-053:13: the answer is always a token of the SERVED
+//  hunk — the weave's own token byte (index/perma.js:238:Ab) can name a span
+//  the painter never emits, so snap via `tokSpanAt` and skip blank spans.
 function anchorByte(pg, seat) {
   if (!seat.line && !(seat.hi > seat.lo)) return -1;
   const h = openOnce(pg, seat.full);
@@ -357,12 +335,9 @@ function openOnce(pg, full) {
 }
 
 //  --- the rendered page ------------------------------------------------------
-//  LITE-037: the rendered dialects and their parsers — `.md` CommonMark
-//  (LITE-035), `.rst` reStructuredText, BEE-032 `.mkd` StrictMark.  The PARSER
-//  is all that differs: the emitter, the page shell and the link door below are
-//  one set for all three, and `/raw/` still paints any of them as source.
-//  BEE-029: the Markdown entries go through `front`, so a YAML preamble is
-//  metadata, not a ruler.
+//  LITE-037: only the PARSER differs per dialect — `.md` CommonMark (LITE-035),
+//  `.rst` reST, `.mkd` StrictMark (BEE-032); emitter, page shell and link door
+//  are one set, `/raw/` paints any as source.  BEE-029: `front` lifts YAML.
 const RENDER = { md: front.toHtml, mkd: front.strictToHtml, rst: rst.toHtml };
 
 //  A path -> the function that renders it, or null for a painted-source file.
@@ -381,14 +356,10 @@ function argRev(arg) {
   try { return rd.argSplit(arg).rev; } catch (e) { return ""; }
 }
 
-//  A link destination -> its href, RESOLVED WHILE THE PAGE IS RENDERED, exactly
-//  as a painted reference is (LITE-034).  An absolute url and a bare `#anchor`
-//  ride as typed; a relative one goes through the door, so a `.md` target lands
-//  on its rendered page, another path on its painted view, and a target that
-//  resolves to nothing comes back "" — the emitter then paints plain text.
-//  LITE-036: an IMAGE destination (the emitter's own flag, never the bytes)
-//  goes to `/bytes/` instead — the same door, the same resolved file, only the
-//  spelling differs; a plain LINK to an image file keeps its painted `/cat/`.
+//  A link destination -> its href, resolved while the page renders, exactly as
+//  a painted reference is (LITE-034): absolute urls and `#anchor` ride typed,
+//  a relative one goes through the door, "" paints plain text.  LITE-036: an
+//  IMAGE destination goes to `/bytes/` — same door, only the spelling differs.
 function pageHref(pg, dir, dest, isImage) {
   let u = null;
   try { u = uri._parse(String(dest)); } catch (e) { u = null; }
@@ -458,11 +429,9 @@ function sendPage(sock, status, reason, title, body, headOnly) {
 }
 
 //  --- LITE-036: `/bytes/<path>[?<rev>]` --------------------------------------
-//  The DOOR already named the file and read it (the `cat` verb, its own path
-//  gate and its own `?<rev>`) — this only ships what came back: the bytes
-//  VERBATIM, typed off the NAME, `nosniff` so no browser guesses otherwise.
-//  Over the cap it refuses in plain words rather than stream — an http page is
-//  a whole buffer here as everywhere.
+//  The door already named and read the file (the `cat` verb, its own gates);
+//  this ships the bytes verbatim, typed off the name, `nosniff` so no browser
+//  guesses otherwise.  Over the cap it refuses in plain words, never streams.
 function sendBytes(sock, hunks, path, headOnly) {
   const bytes = hunks.length ? hunks[0].text : new Uint8Array(0);
   if (bytes.length > MAXBYTES) {
@@ -495,7 +464,7 @@ function moveTo(sock, where, headOnly) {
   return "301";
 }
 
-//  BEE-003: the repos this server answers for — the [BEE-001] registry, plus
+//  BEE-003: the repos this server answers for — the BEE-001 registry, plus
 //  the one it was STARTED in, which is served whether or not it was installed
 //  (and, sharing a name, wins there: the server must not 301 to itself).
 function mounted(st) {
@@ -710,7 +679,7 @@ function handle(req, sock, st) {
     return "200";
   }
   //  BEE-003: the verb runs IN THE REPO THAT HOLDS THE PATH — a submodule is an
-  //  ordinary repo ([BEE-006]) addressed through its parent (ruling 5), so the
+  //  ordinary repo (BEE-006) addressed through its parent (ruling 5), so the
   //  arg is re-rooted at whichever worktree actually carries it.
   let arg = r.arg, from = mount.root, prefix = "", verb = r.verb;
   const p0 = argPath(arg), rev = argRev(arg);
@@ -793,7 +762,7 @@ function listen(args, door) {
     throw "http: --port wants a whole number from 1 to 65535";
 
   //  BEE-003: the repo is no longer PROCESS STATE — every URL names its own
-  //  (`/<repo>/…`, off the [BEE-001] registry), so nothing chdirs and no repo is
+  //  (`/<repo>/…`, off the BEE-001 registry), so nothing chdirs and no repo is
   //  opened here.  The cwd's repo is only the HOME one a bare URL 301s to; the
   //  climb still runs so `bee http` outside a repo refuses as it always did.
   const ctx = idx.openRepo(io.cwd(), true);

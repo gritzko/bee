@@ -2,9 +2,9 @@
 //  ported.  `bee todo` is the open-ticket board, `bee todo GET` one topic's
 //  list, `bee todo Sev:HIGH` a filter listing; every row clicks to `cat <file>`,
 //  since a ticket page is a FILE and BEE-017 already opens it from either tree.
-//  The [BEE-024] lane decides WHICH tickets are open, the FILE decides what
+//  The BEE-024 lane decides WHICH tickets are open, the FILE decides what
 //  shows — title, `Sev:` and `Sub:` come off one head read, never off a packed
-//  row.  The root is the context repo's `todo/` ([BEE-023]), or every registered
+//  row.  The root is the context repo's `todo/` (BEE-023), or every registered
 //  repo's when no context and no local one names one (BEE-025:23).
 "use strict";
 
@@ -80,7 +80,7 @@ function readText(file) {
 }
 
 //  A key's page under the board dir: thin `TOPIC/KEY.<ext>` first, then the fat
-//  `TOPIC/KEY/README.<ext>` ([/meta/todo]); null when the key has no page.
+//  `TOPIC/KEY/README.<ext>` (/meta/todo); null when the key has no page.
 function pageFile(dir, key) {
   const base = dir + "/" + keyTopic(key) + "/" + key;
   for (const x of EXTS) { const p = base + "." + x; if (statReg(p)) return p; }
@@ -305,7 +305,7 @@ function nowOf(t) {
 
 //  --- freshness (be todo.js:314 dateRows / :337 byFresh) --------------------
 //  A row is DIRTY when its bytes differ from the tip blob — then its fs mtime
-//  dates it — else the commit time of its REV-CMMT row does ([LITE-044]).  One
+//  dates it — else the commit time of its REV-CMMT row does (LITE-044).  One
 //  repo per call, since the all-repos board dates each fan-out leg on its own.
 function dateRows(bd, rows) {
   if (!rows.length) return rows;

@@ -1,14 +1,11 @@
 "use strict";
-//  LITE-031: the GFM parser — commonmark.js 0.31.2 (LITE-030) plus GitHub's
-//  four extensions.  `new (require("mark/gfm.js"))().parse(src)` returns a
-//  commonmark AST with three added node types (`strikethrough`, `table` >
-//  `table_row` > `table_cell`) and two added node fields:
-//
-//      item.taskChecked    true/false on a task list item, absent otherwise
-//      table.tableAlign    per column: "left"/"center"/"right" or null
-//      table_row.tableHeader   true on the header row
-//
-//  The tagfilter extension is out of scope: StrictMark bans HTML inserts.
+//  mark/gfm.js — LITE-031: the GFM parser, commonmark.js 0.31.2 (LITE-030)
+//  plus GitHub's four extensions.  `new (require("mark/gfm.js"))().parse(src)`
+//  returns a commonmark AST with three added node types (`strikethrough`,
+//  `table` > `table_row` > `table_cell`) and added node fields:
+//  `item.taskChecked`, `table.tableAlign` (per column: left/center/right or
+//  null), `table_row.tableHeader`.  Tagfilter is out of scope: StrictMark
+//  bans HTML inserts.
 
 var Parser = require("mark/blocks.js");
 var strike = require("mark/gfm-strike.js");

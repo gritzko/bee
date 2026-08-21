@@ -49,10 +49,9 @@ function run(argv) {
 }
 
 //  --- the fallback ----------------------------------------------------------
-//  weave3 said null (binary, or over the 4 MB source cap): hand the three files
-//  to git's own text merge rather than pick a side.  `git merge-file` merges in
-//  place over its first argument, so the ours bytes go to `out` first when out
-//  is not the ours file; it exits with the conflict count (255 on a real error).
+//  weave3 said null (binary, or over the 4 MB cap): hand the three files to
+//  `git merge-file` rather than pick a side — it merges in place over its
+//  first argument (ours goes to `out` first) and exits with the conflict count.
 function gitMergeFile(base, ours, theirs, out, oursBytes, path) {
   if (out !== ours) writeBytes(out, oursBytes);
   const argv = ["git", "merge-file"];
@@ -72,10 +71,9 @@ function gitMergeFile(base, ours, theirs, out, oursBytes, path) {
 }
 
 //  --- the merge verb --------------------------------------------------------
-//  `merge <base> <ours> <theirs> [-o <out>] [-p <path>]`.  Three positionals in
-//  git's own %O %A %B order; `-o` defaults to <ours> (the driver contract) and
-//  `-p` names the REAL path, which is where the tokenizer's extension comes
-//  from — with no `-p` the generic "" lexer runs.
+//  `merge <base> <ours> <theirs> [-o <out>] [-p <path>]`, git's own %O %A %B
+//  order; `-o` defaults to <ours> (the driver contract), `-p` names the REAL
+//  path the tokenizer's extension comes from — without it the "" lexer runs.
 function parse(args) {
   const pos = [];
   let out = null, path = null;
