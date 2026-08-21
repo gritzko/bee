@@ -85,6 +85,9 @@ The standalone (bundled) `bee` binary call patterns:
  -  `bee see [-C<n>] <ref>...` -- the chunk each reference names, two lines of context each way; the only CLI door onto a permalink
      1. every shape `door.js` resolves: permalink, path, partial, ticket code, pocket page, another registered repo
      2. one hunk per ref, in the order given; a miss names the repos searched, an ambiguity shows the chooser, neither ends the batch
+ -  `bee cite <path>[?<rev>]` -- the file with every anchored reference on it already quoted, one line above the landing and two below
+     1. `f.c:12` and the permalink `f.c:12:aB` alike, resolved through the same door `see` asks; a bare filename or a ticket code is left alone
+     2. a miss, an ambiguity or a target quoted higher up adds nothing, so the page still reads as the file
  -  `bee todo [TOPIC] [Key:Value]...` -- the ticket board: `<●> KEY ┄ title` per open ticket, the row a click onto `bee see KEY`
      1. bare, the board of the context repo's `todo/` -- topic headers with counts, `Sub:` families on dotted rails; when that repo (or, with no context, the local one) has no `todo/`, every registered repo's, newest first, each row prefixed by its repo
      2. `TOPIC` is one topic's list, `Key:Value` a filter -- keys AND, one key repeated ORs, `Key:*` is presence and `Key:` absence; `Sev:` paints the bullet CRIT red, HIGH orange, LOW dim

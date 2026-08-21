@@ -46,6 +46,9 @@ const VERBS = {
   //  LITE-017:40 a `tree` row opens a `blob`, a `list` row a `cat`; pager stays arg-blind.
   list: function (arg, opts) { return require("view/list.js").list(arg, vopts(opts)).hunks; },
   cat:  function (arg, opts) { return require("view/cat.js").cat(arg, vopts(opts)).hunks; },
+  //  BEE-050: `cat` with every anchored reference on the page already quoted
+  //  under the line that named it — the reading view, where `see` reads one ref.
+  cite: function (arg, opts) { return require("view/cite.js").cite(arg, vopts(opts)).hunks; },
   //  BEE-046: `cat` with the wt-vs-HEAD wash on — what a changed status row
   //  opens, and the one view that always answers with the whole file.
   dog:  function (arg, opts) { return require("view/dog.js").dog(arg, vopts(opts)).hunks; },

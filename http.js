@@ -78,6 +78,9 @@ const ROUTE = {
   //  LINE (`/todo/BEE/Sev:HIGH`), which is why a slash separates words there.
   todo:     "todo",                 //  /todo[/<TOPIC>][/<Key:Value>...]
   cat:      "cat",                  //  /cat/<path>[?<rev>]  a .md RENDERS here
+  //  BEE-050: the same file with its anchored references quoted in place; each
+  //  quote's band is the target, so a click walks on from where it was cited.
+  cite:     "cite",                 //  /cite/<path>[?<rev>]
   //  BEE-046: the same bytes under the diff wash, which the sheet's own
   //  side-in/side-rm classes paint — no second palette on this side either.
   dog:      "dog",                  //  /dog/<path>

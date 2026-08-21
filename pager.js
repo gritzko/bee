@@ -391,7 +391,8 @@ Pager.prototype._statusLine = function (rows, scroll, viewRows, cols, cur) {
   if (this.mode === "command")
     return open + this._fit(": " + this.cmd, cols) + close;
   const r = rows[scroll];
-  let left = r ? wrap.statusURI(r.hunk, r.banner ? 1 : this._srcLine(r.hunk, r.off)) : "";
+  const top = r && r.banner ? (r.hunk.line0 || 1) : 0;   // BEE-050:49 a segment's own first line
+  let left = r ? wrap.statusURI(r.hunk, top || this._srcLine(r.hunk, r.off)) : "";
   //  LITE-023: an ACTIVE TOKEN names what Enter would open, in place of the #L.
   const tgt = cur ? this._curTarget(rows[cur.row], cur) : "";
   if (tgt) left = tgt;
@@ -411,7 +412,9 @@ Pager.prototype._statusLine = function (rows, scroll, viewRows, cols, cur) {
 //  The 1-based source line a byte offset falls on (count the '\n' before it) —
 //  feeds statusURI's `<path>#L<n>`.
 Pager.prototype._srcLine = function (hunk, off) {
-  let n = 1;
+  //  BEE-050:49 a hunk that is a SEGMENT of a file says which line it starts on,
+  //  so the bar stays absolute where `cite` cut the page; absent means 1.
+  let n = hunk.line0 || 1;
   const t = hunk.text;
   for (let i = 0; i < off && i < t.length; i++) if (t[i] === 0x0a) n++;
   return n;

@@ -9,6 +9,9 @@
 const idx = require("./index.js");
 const lg = require("view/log.js");
 const refs = require("./refs.js");
+//  BEE-050:48 the tok32 accessors, so the segment cutter reads a span end the
+//  one way every renderer reads it (render/wrap.js:13:ge).
+const wrap = require("render/wrap.js");
 
 //  --- the arg ---------------------------------------------------------------
 //  `<path>?<rev>` -> { path, rev }.  An absent slot is "" (uri._parse hands
@@ -85,16 +88,41 @@ function entryAt(r, tree, rel) {
 }
 
 //  --- the hunk --------------------------------------------------------------
-//  Bytes -> the hunk record the pager takes: the bytes verbatim, tokenized by
-//  `ext` (an unknown ext yields no toks, view/fs.js buildFileHunk's own gate).
+//  A file's tok32 spans, or none: an unknown ext and a lexer that refuses both
+//  yield an empty stream, view/fs.js buildFileHunk's own gate.
+function fileToks(bytes, ext) {
+  try { return ext ? tok.parse(bytes, ext) : new Uint32Array(0); }
+  catch (e) { return new Uint32Array(0); }
+}
+
+//  Bytes -> the hunk record the pager takes, the bytes verbatim.  A `cat`/`blob`
+//  hunk IS the file: on a pipe it writes those bytes and nothing else, so
+//  `bee cat x | diff -` sees the source (LITE-045:28:t2).
 function textHunk(uriStr, bytes, ext, kind) {
-  let toks;
-  try { toks = ext ? tok.parse(bytes, ext) : new Uint32Array(0); }
-  catch (e) { toks = new Uint32Array(0); }
-  //  A `cat`/`blob` hunk is the file: on a pipe it writes those bytes and
-  //  nothing else, so `bee cat x | diff -` sees the source (LITE-045:28:t2).
-  return { uri: uriStr, verb: "hunk", text: bytes, toks: toks, kind: kind,
-           bare: true };
+  return { uri: uriStr, verb: "hunk", text: bytes, toks: fileToks(bytes, ext),
+           kind: kind, bare: true };
+}
+
+//  BEE-050:48 one segment of an ALREADY-LEXED file as its own hunk.  A view that
+//  splits a file re-lexes nothing: a cut inside a block comment — where every
+//  permalink lives — would paint the remainder of that comment as code.
+function sliceHunk(uriStr, bytes, toks, lo, hi, kind) {
+  return { uri: uriStr, verb: "hunk", text: bytes.slice(lo, hi),
+           toks: tokSlice(toks, lo, hi), kind: kind, bare: true };
+}
+
+//  The tokens overlapping `[lo,hi)`, ends clamped to `hi` and shifted down by
+//  `lo`; token i's start is token i-1's end, so the cut needs no start slot.
+function tokSlice(toks, lo, hi) {
+  const out = [];
+  let start = 0;
+  for (let i = 0; i < toks.length && start < hi; i++) {
+    const end = wrap.TOK_END(toks[i]);
+    if (end > lo)
+      out.push(((toks[i] & ~0xffffff) | ((end > hi ? hi : end) - lo)) >>> 0);
+    start = end;
+  }
+  return Uint32Array.from(out);
 }
 
 //  --- the age column (be view/render.js relAge, over epoch seconds) ---------
@@ -116,4 +144,5 @@ function verbCol(v) { return v.length >= 3 ? v : v + "   ".slice(v.length); }
 
 module.exports = { argSplit: argSplit, repoRel: repoRel, navPath: navPath,
                    revCommit: revCommit, entryAt: entryAt, textHunk: textHunk,
+                   fileToks: fileToks, sliceHunk: sliceHunk, tokSlice: tokSlice,
                    relAge: relAge, verbCol: verbCol };

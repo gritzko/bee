@@ -36,15 +36,17 @@ function num(s, dflt) {
   return v >= 0 && v <= 4096 ? v : dflt;
 }
 
-//  Lines `line-ctx .. line+ctx`, clamped at both ends of the file, as { lo,
-//  hi, from } over `bytes`, or null when the file has no such line.  `byteAt`
-//  of index/perma.js is the one line-to-offset reader, so no second scanner.
-function window(bytes, line, ctx) {
-  const from = line - ctx < 1 ? 1 : line - ctx;
+//  Lines `line-up .. line+down`, clamped at both ends of the file, as { lo, hi,
+//  from } over `bytes`, or null when the file has no such line.  `byteAt` of
+//  index/perma.js is the one line-to-offset reader, so no second scanner.
+//  BEE-050:46 `down` defaults to `up`: `see`'s -C is symmetric, `cite`'s is not.
+function window(bytes, line, up, down) {
+  if (down === undefined) down = up;
+  const from = line - up < 1 ? 1 : line - up;
   const lo = pm.byteAt(bytes, from, 1);
   if (lo < 0) return null;
   let hi = lo;
-  for (let k = from; k <= line + ctx && hi < bytes.length; k++) {
+  for (let k = from; k <= line + down && hi < bytes.length; k++) {
     while (hi < bytes.length && bytes[hi] !== 0x0a) hi++;
     if (hi < bytes.length) hi++;                   //  the newline joins the line
   }
@@ -64,24 +66,20 @@ function noteHunk(ref, words) {
            toks: new Uint32Array(0), kind: "see", bare: false };
 }
 
-//  One reference -> one hunk, an excerpt or a plain-words miss.
-function chunk(ref, ctx) {
+//  A RESOLVED seat -> its banded excerpt hunk, or the plain words saying why
+//  the file cannot show that line.  Split out of `chunk` (BEE-050:47) so `cite`,
+//  which resolves its own seats for the dedup, builds the identical hunk here
+//  and simply drops the words instead of framing them.
+function excerpt(seat, ref, up, down) {
   const door = require("door.js");                 //  lazy: door.js requires us
-  let seat;
-  try { seat = door.seatOf(ref); } catch (e) { return noteHunk(ref, "" + e); }
-  //  A miss names what was searched rather than shrugging (BEE-003).
-  if (seat === null) return noteHunk(ref, door.refusal(ref));
-  //  Several files answer: the door's own chooser, not a guess (BEE-012).
-  if (seat.rels) return fs.buildChooserHunk(seat.arg, seat.rels, seat.tail);
-
   const bytes = require("view/cat.js").wtBytes(seat.full);
-  if (bytes === "dir") return noteHunk(ref, seat.full + " is a directory");
-  if (bytes === null) return noteHunk(ref, "there is no " + seat.full + " in the worktree");
+  if (bytes === "dir") return seat.full + " is a directory";
+  if (bytes === null) return "there is no " + seat.full + " in the worktree";
   //  A reference with no anchor names the file's first line, as the fs leg
   //  shows too; `see` frames it the same as any other landing.
   const line = seat.line >= 1 ? seat.line : 1;
-  const w = window(bytes, line, ctx);
-  if (w === null) return noteHunk(ref, seat.full + " has no line " + line);
+  const w = window(bytes, line, up, down);
+  if (w === null) return seat.full + " has no line " + line;
 
   //  The band is the reference with its path expanded, the anchor verbatim:
   //  one token, still a reference, so it clicks and re-reads (BEE-017:44:G_).
@@ -97,6 +95,19 @@ function chunk(ref, ctx) {
   if (seat.hi > seat.lo) { h.land.lo = seat.lo - w.lo; h.land.hi = seat.hi - w.lo; }
   if (seat.note) h.land.note = seat.note;
   return h;
+}
+
+//  One reference -> one hunk, an excerpt or a plain-words miss.
+function chunk(ref, ctx) {
+  const door = require("door.js");                 //  lazy: door.js requires us
+  let seat;
+  try { seat = door.seatOf(ref); } catch (e) { return noteHunk(ref, "" + e); }
+  //  A miss names what was searched rather than shrugging (BEE-003).
+  if (seat === null) return noteHunk(ref, door.refusal(ref));
+  //  Several files answer: the door's own chooser, not a guess (BEE-012).
+  if (seat.rels) return fs.buildChooserHunk(seat.arg, seat.rels, seat.tail);
+  const h = excerpt(seat, ref, ctx, ctx);
+  return typeof h === "string" ? noteHunk(ref, h) : h;
 }
 
 //  see(arg, opts) -> { hunks }, the one view shape (LITE-045:42:t2), so that
@@ -118,4 +129,4 @@ function see(arg, opts) {
   return { hunks: pos === null ? all() : mnt.within(pos, all) };
 }
 
-module.exports = { see: see, window: window, parse: parse };
+module.exports = { see: see, window: window, excerpt: excerpt, parse: parse };
