@@ -60,6 +60,11 @@ mkdir -p "$REPO"
   i=1
   : > src/A.c
   while [ "$i" -le 40 ]; do printf 'int AAAMARK%03d;\n' "$i" >> src/A.c; i=$((i + 1)); done
+  #  BEE-050:30 line 3 of src/L.c runs past 128 symbols, so it is quoted with no
+  #  neighbours; lines 2 and 4 are short and must NOT come along.
+  LONG=$(awk 'BEGIN{ s=""; while (length(s) < 200) s = s "LONGMARK003x"; print s }')
+  printf 'int LLLMARK001;\nint LLLMARK002;\n%s\nint LLLMARK004;\nint LLLMARK005;\n' \
+      "$LONG" > src/L.c
   cat > doc.mkd <<'DOC'
 #   DOCHEAD the citing page
 
@@ -68,6 +73,8 @@ DOCTWO the very same src/A.c:20 again, which must not repeat.
 DOCTHREE a line no file has, nowhere/ZZZ.c:9000, adds nothing.
 DOCFOUR a bare src/A.c names a file, not a place in one.
 DOCFIVE the head of it, src/A.c:1, clamps at the first line.
+DOCSIX a very long line, src/L.c:3, is quoted with no neighbours.
+DOCSEVEN two neighbours, src/A.c:30 and src/A.c:31, read as ONE quote.
 DOCEND
 DOC
   #  BEE-050:48 the citation sits INSIDE a block comment, so the cut lands in
@@ -87,7 +94,7 @@ rtin "$REPO" install > "$WORK/i1" 2>"$WORK/i1e" || true
 
 # --- the page comes through WHOLE and in order ----------------------------
 rtin "$REPO" cite --plain doc.mkd > "$WORK/c1" 2>"$WORK/c1e"; RC=$?
-if [ "$RC" = 0 ] && [ "$(grep -c '^DOC\|^#   DOCHEAD' "$WORK/c1")" = 7 ] &&
+if [ "$RC" = 0 ] && [ "$(grep -c '^DOC\|^#   DOCHEAD' "$WORK/c1")" = 9 ] &&
    [ "$(grep -n 'DOCONE' "$WORK/c1" | cut -d: -f1)" -lt \
      "$(grep -n 'DOCEND' "$WORK/c1" | cut -d: -f1)" ]
 then ok "the page comes through whole, its own lines in their own order"
@@ -114,9 +121,10 @@ then ok "a target named twice is quoted at its FIRST mention only"
 else bad "the repeat was quoted again" "$WORK/c1"; fi
 
 # --- a miss and a bare name add NOTHING -----------------------------------
-# Two bands, no more: the AAAMARK020 window and the AAAMARK001 one.  A dead
-# line and a bare filename must leave their lines exactly as they were.
-if [ "$(grep -c '^hunk ' "$WORK/c1")" = 2 ] && ! grep -q 'ZZZ.c' "$WORK/c1e"
+# Four QUOTES, no more: AAAMARK020, AAAMARK001, the long line and the merged
+# pair — a quote's band names an absolute path, a segment's names the view.
+# A dead line and a bare filename must leave their lines as they were.
+if [ "$(grep -c '^§ /' "$WORK/c1")" = 4 ] && ! grep -q 'ZZZ.c' "$WORK/c1e"
 then ok "a dead reference and a bare filename add nothing at all"
 else bad "a miss or a bare name was quoted" "$WORK/c1" "$WORK/c1e"; fi
 
@@ -125,6 +133,22 @@ if grep -q 'AAAMARK001' "$WORK/c1" && grep -q 'AAAMARK003' "$WORK/c1" &&
    ! grep -q 'AAAMARK004' "$WORK/c1"
 then ok "the window clamps at the first line, never runs off the front"
 else bad "clamping at line 1" "$WORK/c1"; fi
+
+# --- a line past 128 symbols is quoted ALONE ------------------------------
+if grep -q 'LONGMARK003x' "$WORK/c1" &&
+   ! grep -q 'LLLMARK002' "$WORK/c1" && ! grep -q 'LLLMARK004' "$WORK/c1"
+then ok "a cited line past 128 symbols is quoted with no context at all"
+else bad "the long line brought its neighbours" "$WORK/c1"; fi
+
+# --- two overlapping windows on one line are ONE quote --------------------
+# BEE-050:36 `src/A.c:30` wants 29..32 and `src/A.c:31` wants 30..33; quoted
+# side by side they would repeat three lines, so they open as 29..33 once.
+if [ "$(grep -c '^§ /.*src/A.c:3[01]' "$WORK/c1")" = 1 ] &&
+   [ "$(grep -c 'AAAMARK031' "$WORK/c1")" = 1 ] &&
+   grep -q 'AAAMARK029' "$WORK/c1" && grep -q 'AAAMARK033' "$WORK/c1" &&
+   ! grep -q 'AAAMARK028' "$WORK/c1" && ! grep -q 'AAAMARK034' "$WORK/c1"
+then ok "two overlapping windows under one line open as a single quote"
+else bad "the overlapping pair was quoted twice" "$WORK/c1"; fi
 
 # --- a page with NO reference on it is exactly `cat` -----------------------
 rtin "$REPO" cite --plain src/A.c > "$WORK/c2" 2>"$WORK/c2e"; RC=$?

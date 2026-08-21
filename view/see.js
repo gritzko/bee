@@ -36,21 +36,36 @@ function num(s, dflt) {
   return v >= 0 && v <= 4096 ? v : dflt;
 }
 
+//  The codepoints on one line, a UTF-8 continuation byte counting for none.
+function symbols(bytes, line) {
+  const lo = pm.byteAt(bytes, line, 1);
+  if (lo < 0) return 0;
+  let n = 0;
+  for (let i = lo; i < bytes.length && bytes[i] !== 0x0a; i++)
+    if ((bytes[i] & 0xc0) !== 0x80) n++;
+  return n;
+}
+
 //  Lines `line-up .. line+down`, clamped at both ends of the file, as { lo, hi,
-//  from } over `bytes`, or null when the file has no such line.  `byteAt` of
-//  index/perma.js is the one line-to-offset reader, so no second scanner.
-//  BEE-050:46 `down` defaults to `up`: `see`'s -C is symmetric, `cite`'s is not.
-function window(bytes, line, up, down) {
+//  from, to } over `bytes`, or null when the file has no such line.  `byteAt` of
+//  index/perma.js is the one line-to-offset reader, so no second scanner.  `to`
+//  is the last line actually reached, which clamping and `solo` both move.
+//  BEE-050:49 `down` defaults to `up`: `see`'s -C is symmetric, `cite`'s is not.
+function window(bytes, line, up, down, solo) {
   if (down === undefined) down = up;
+  //  BEE-050:30 a line past `solo` symbols is a screenful in itself: neighbours
+  //  around it read as noise, so it stands alone.  Unset, no line ever does.
+  if (solo && symbols(bytes, line) > solo) { up = 0; down = 0; }
   const from = line - up < 1 ? 1 : line - up;
   const lo = pm.byteAt(bytes, from, 1);
   if (lo < 0) return null;
-  let hi = lo;
+  let hi = lo, to = from;
   for (let k = from; k <= line + down && hi < bytes.length; k++) {
     while (hi < bytes.length && bytes[hi] !== 0x0a) hi++;
     if (hi < bytes.length) hi++;                   //  the newline joins the line
+    to = k;
   }
-  return { lo: lo, hi: hi, from: from };
+  return { lo: lo, hi: hi, from: from, to: to };
 }
 
 //  seatOf spells an ambient landing relative and a foreign one absolute; the
@@ -67,10 +82,10 @@ function noteHunk(ref, words) {
 }
 
 //  A RESOLVED seat -> its banded excerpt hunk, or the plain words saying why
-//  the file cannot show that line.  Split out of `chunk` (BEE-050:47) so `cite`,
+//  the file cannot show that line.  Split out of `chunk` (BEE-050:50) so `cite`,
 //  which resolves its own seats for the dedup, builds the identical hunk here
 //  and simply drops the words instead of framing them.
-function excerpt(seat, ref, up, down) {
+function excerpt(seat, ref, up, down, solo) {
   const door = require("door.js");                 //  lazy: door.js requires us
   const bytes = require("view/cat.js").wtBytes(seat.full);
   if (bytes === "dir") return seat.full + " is a directory";
@@ -78,7 +93,7 @@ function excerpt(seat, ref, up, down) {
   //  A reference with no anchor names the file's first line, as the fs leg
   //  shows too; `see` frames it the same as any other landing.
   const line = seat.line >= 1 ? seat.line : 1;
-  const w = window(bytes, line, up, down);
+  const w = window(bytes, line, up, down, solo);
   if (w === null) return seat.full + " has no line " + line;
 
   //  The band is the reference with its path expanded, the anchor verbatim:
@@ -89,6 +104,17 @@ function excerpt(seat, ref, up, down) {
   //  paint oddly, but folding whole files to colour five lines is worse.
   const h = rd.textHunk(uri, body, fs.pathExt(seat.full), "see");
   h.bare = false;                                  //  an excerpt wears the band
+  //  BEE-050:31 the band's own target, RE-SPELLED as path + the line it landed
+  //  on: html hangs the whole file's page off the header, opened at this very
+  //  point.  The uri itself will not do — an absolute path carrying a hashlet
+  //  resolves nowhere ([BEE-018]) — and the RESOLVED line is what a permalink
+  //  meant anyway, the place its blob history pointed at.
+  h.ref = seat.line >= 1
+        ? seat.full + ":" + seat.line + (seat.col >= 1 ? ":" + seat.col : "")
+        : seat.full;
+  //  BEE-050:36 the lines this quote already shows: `cite`, the one view that
+  //  weaves several, widens a window rather than quote the same lines twice.
+  h.win = { from: w.from, to: w.to };
   //  The landing rides the hunk (LITE-029:39:nB): the pager selects the line,
   //  and the token itself when the resolver named one.
   h.land = { line: line - w.from + 1, col: seat.col || 1 };
@@ -129,4 +155,5 @@ function see(arg, opts) {
   return { hunks: pos === null ? all() : mnt.within(pos, all) };
 }
 
-module.exports = { see: see, window: window, excerpt: excerpt, parse: parse };
+module.exports = { see: see, window: window, symbols: symbols, excerpt: excerpt,
+                   parse: parse };

@@ -126,7 +126,7 @@ for pair in "root:$C0" "merge:$C3" "folded:$SIG"; do
     { printf 'commit %s\n' "$SHA"; g cat-file commit "$SHA"; } > "$WORK/w.$WHAT"
     rtin "$REPO" commit "$SHA" > "$WORK/all.$WHAT" 2>"$WORK/e.$WHAT"; RC=$?
     # the metadata prefix: everything up to the first hunk banner
-    sed -n '1,/^hunk /p' "$WORK/all.$WHAT" | sed '$ { /^hunk /d; }' > "$WORK/g.$WHAT"
+    sed '1 { /^§ /d; }' "$WORK/all.$WHAT" | sed -n '1,/^§ /p' | sed '$ { /^§ /d; }' > "$WORK/g.$WHAT"
     if [ "$RC" = 0 ] && cmp -s "$WORK/w.$WHAT" "$WORK/g.$WHAT"
     then ok "commit <sha> = 'commit <sha40>' + git cat-file commit ($WHAT)"
     else bad "commit <sha> = git cat-file commit ($WHAT, rc $RC)" \

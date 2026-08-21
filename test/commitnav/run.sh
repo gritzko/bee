@@ -92,7 +92,7 @@ for pair in "merge:$C3" "root:$C0"; do
     WHAT=${pair%%:*}; SHA=${pair#*:}
     { printf 'commit %s\n' "$SHA"; g cat-file commit "$SHA"; } > "$WORK/w.$WHAT"
     rtin "$REPO" commit "$SHA" > "$WORK/all.$WHAT" 2>"$WORK/e.$WHAT"; RC=$?
-    sed -n '1,/^hunk /p' "$WORK/all.$WHAT" | sed '$ { /^hunk /d; }' > "$WORK/g.$WHAT"
+    sed '1 { /^§ /d; }' "$WORK/all.$WHAT" | sed -n '1,/^§ /p' | sed '$ { /^§ /d; }' > "$WORK/g.$WHAT"
     if [ "$RC" = 0 ] && cmp -s "$WORK/w.$WHAT" "$WORK/g.$WHAT"
     then ok "piped commit bytes unchanged: 'commit <sha40>' + cat-file ($WHAT)"
     else bad "piped commit bytes unchanged ($WHAT, rc $RC)" \

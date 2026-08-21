@@ -18,6 +18,9 @@ const see = require("./see.js");
 //  BEE-050:25 gritzko's window: the reference's own line needs what leads into
 //  it and what follows, and the tail is worth more than the head.
 const UP = 1, DOWN = 2;
+//  BEE-050:30 ...unless the cited line is a screenful in itself, and then it is
+//  quoted with no neighbours at all.
+const SOLO = 128;
 
 //  The byte just past the line `off` sits on, so a segment always ends with the
 //  whole line that carried the reference, its newline included.
@@ -31,6 +34,25 @@ function countNL(bytes, lo, hi) {
   let n = 0;
   for (let i = lo; i < hi; i++) if (bytes[i] === 0x0a) n++;
   return n;
+}
+
+//  BEE-050:36 two refs quoted under the SAME line whose windows touch or overlap
+//  read as one quote over the union: side by side they would repeat the lines
+//  they share.  `win` is what each excerpt already shows (view/see.js:117:hS).
+function joins(bytes, a, b) {
+  return a.seat.full === b.seat.full && lineEnd(bytes, a.hi) === lineEnd(bytes, b.hi) &&
+         a.hunk.win.from <= b.hunk.win.to + 1 && b.hunk.win.from <= a.hunk.win.to + 1;
+}
+
+//  `a` re-cut over both windows, still anchored on ITS landing — the first
+//  mention is where the reader is, and `see.excerpt` stays the one hunk builder.
+function widen(a, b) {
+  const from = Math.min(a.hunk.win.from, b.hunk.win.from);
+  const to = Math.max(a.hunk.win.to, b.hunk.win.to);
+  const h = see.excerpt(a.seat, a.ref, a.seat.line - from, to - a.seat.line);
+  if (typeof h === "string") return;               //  the file turned unreadable
+  a.hunk = h;
+  a.hi = b.hi;                                     //  weave wants `hi` climbing
 }
 
 //  Every reference in the file worth quoting, in byte order: { hi, hunk }, `hi`
@@ -51,9 +73,12 @@ function citations(bytes, ext) {
     const at = seat.full + ":" + seat.line;
     if (seen.has(at)) continue;
     seen.add(at);
-    const h = see.excerpt(seat, t.text, UP, DOWN);
+    const h = see.excerpt(seat, t.text, UP, DOWN, SOLO);
     if (typeof h === "string") continue;           //  the file cannot show it
-    out.push({ hi: t.hi, hunk: h });
+    const c = { hi: t.hi, hunk: h, seat: seat, ref: t.text };
+    const last = out.length ? out[out.length - 1] : null;
+    if (last !== null && joins(bytes, last, c)) widen(last, c);
+    else out.push(c);
   }
   return out;
 }

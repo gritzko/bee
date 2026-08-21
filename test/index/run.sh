@@ -314,7 +314,7 @@ else bad "an ambiguous bare filename lists both paths (rc $RC)" "$WORK/q2" "$WOR
 # R4: a path DEEPER than the 6-slot chain, named bare, in `diff`.
 printf 'deep changed\n' > "$REPO2/a/b/c/d/e/f/g/deep.c"
 rtin "$REPO2" diff --plain deep.c > "$WORK/q3" 2>"$WORK/q3e"; RC=$?
-if [ "$RC" = 0 ] && grep -q '^hunk a/b/c/d/e/f/g/deep.c' "$WORK/q3"
+if [ "$RC" = 0 ] && grep -q '^§ a/b/c/d/e/f/g/deep.c' "$WORK/q3"
 then ok "diff <bare, depth 7> names a/b/c/d/e/f/g/deep.c"
 else bad "diff <bare, depth 7> names the deep path (rc $RC)" "$WORK/q3" "$WORK/q3e"; fi
 git -C "$REPO2" checkout -q -- a/b/c/d/e/f/g/deep.c

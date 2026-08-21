@@ -99,30 +99,30 @@ if ( cd "$NOWHERE" && git rev-parse --show-toplevel ) >/dev/null 2>&1
 then NOREPO=0; echo "pager: $NOWHERE is inside a git repo — P8 skips" >&2
 else NOREPO=1; fi
 
-# P1: a plain file — `hunk <path>\n` then the bytes verbatim.
-{ printf 'hunk %s\n' "$FIX/doc.txt"; cat "$FIX/doc.txt"; } > "$WORK/want"
+# P1: a plain file — `§ <path>\n` then the bytes verbatim.
+{ printf '§ %s\n' "$FIX/doc.txt"; cat "$FIX/doc.txt"; } > "$WORK/want"
 rt_plain --plain "$FIX/doc.txt" > "$WORK/got" 2>"$WORK/err"; RC=$?
 if [ "$RC" = 0 ] && cmp -s "$WORK/want" "$WORK/got"
 then ok "plain file = banner + bytes"
 else bad "plain file = banner + bytes (rc $RC)" "$WORK/want" "$WORK/got" "$WORK/err"; fi
 
 # P2: a file with NO trailing newline — plainHunk appends exactly one.
-{ printf 'hunk %s\n' "$FIX/nonl.txt"; cat "$FIX/nonl.txt"; printf '\n'; } > "$WORK/want"
+{ printf '§ %s\n' "$FIX/nonl.txt"; cat "$FIX/nonl.txt"; printf '\n'; } > "$WORK/want"
 rt_plain --plain "$FIX/nonl.txt" > "$WORK/got" 2>"$WORK/err"; RC=$?
 if [ "$RC" = 0 ] && cmp -s "$WORK/want" "$WORK/got"
 then ok "plain no-trailing-NL file gets one NL"
 else bad "plain no-trailing-NL file gets one NL (rc $RC)" "$WORK/want" "$WORK/got" "$WORK/err"; fi
 
 # P3: an EMPTY file — the banner alone, exit 0 (plainHunk returns the head only).
-printf 'hunk %s\n' "$FIX/empty.txt" > "$WORK/want"
+printf '§ %s\n' "$FIX/empty.txt" > "$WORK/want"
 rt_plain --plain "$FIX/empty.txt" > "$WORK/got" 2>"$WORK/err"; RC=$?
 if [ "$RC" = 0 ] && cmp -s "$WORK/want" "$WORK/got"
 then ok "plain empty file = banner only, exit 0"
 else bad "plain empty file = banner only, exit 0 (rc $RC)" "$WORK/want" "$WORK/got" "$WORK/err"; fi
 
 # P4: two args — both hunks, IN ARG ORDER, one stream.
-{ printf 'hunk %s\n' "$FIX/doc.txt"; cat "$FIX/doc.txt";
-  printf 'hunk %s\n' "$FIX/note.txt"; cat "$FIX/note.txt"; } > "$WORK/want"
+{ printf '§ %s\n' "$FIX/doc.txt"; cat "$FIX/doc.txt";
+  printf '§ %s\n' "$FIX/note.txt"; cat "$FIX/note.txt"; } > "$WORK/want"
 rt_plain --plain "$FIX/doc.txt" "$FIX/note.txt" > "$WORK/got" 2>"$WORK/err"; RC=$?
 if [ "$RC" = 0 ] && cmp -s "$WORK/want" "$WORK/got"
 then ok "plain two args concatenate in arg order"
@@ -134,14 +134,14 @@ printf 'code.c\ncode.js\ndoc.txt\nempty.txt\nnonl.txt\nnote.txt\nplainfile\nsub/
 rt_plain --plain "$FIX" > "$WORK/raw" 2>"$WORK/err"; RC=$?
 head -1 "$WORK/raw" > "$WORK/head"
 tail -n +2 "$WORK/raw" | LC_ALL=C sort > "$WORK/got"
-if [ "$RC" = 0 ] && [ "$(cat "$WORK/head")" = "hunk $FIX" ] && cmp -s "$WORK/want" "$WORK/got"
+if [ "$RC" = 0 ] && [ "$(cat "$WORK/head")" = "§ $FIX" ] && cmp -s "$WORK/want" "$WORK/got"
 then ok "plain dir arg lists the entries"
 else bad "plain dir arg lists the entries (rc $RC)" "$WORK/want" "$WORK/raw" "$WORK/err"; fi
 
 # P6: a TRAILING SLASH is kept in the banner (the uri is the arg verbatim; only
 # the fs ops see bro.fsPath).
 rt_plain --plain "$FIX/" > "$WORK/raw" 2>"$WORK/err"; RC=$?
-if [ "$RC" = 0 ] && [ "$(head -1 "$WORK/raw")" = "hunk $FIX/" ]
+if [ "$RC" = 0 ] && [ "$(head -1 "$WORK/raw")" = "§ $FIX/" ]
 then ok "plain dir arg keeps its trailing slash in the banner"
 else bad "plain dir arg keeps its trailing slash in the banner (rc $RC)" "$WORK/raw" "$WORK/err"; fi
 
@@ -160,7 +160,7 @@ else bad "plain no args = usage on stderr + non-zero (rc $RC)" "$WORK/got" "$WOR
 fi
 
 # P9: a MIXED batch — the miss is reported, what opened is dumped, exit 0.
-{ printf 'hunk %s\n' "$FIX/doc.txt"; cat "$FIX/doc.txt"; } > "$WORK/want"
+{ printf '§ %s\n' "$FIX/doc.txt"; cat "$FIX/doc.txt"; } > "$WORK/want"
 rt_plain --plain "$FIX/nosuch.txt" "$FIX/doc.txt" > "$WORK/got" 2>"$WORK/err"; RC=$?
 if [ "$RC" = 0 ] && cmp -s "$WORK/want" "$WORK/got" &&
    grep -q "^cannot open $FIX/nosuch.txt\$" "$WORK/err"

@@ -61,7 +61,7 @@ check("a-side-EQ-token-takes-no-wash",
 //  under the usual banner — the weave bytes would be unreadable.
 const pl = utf8.Decode(plain.plainHunk(h));
 check("plainHunk-writes-the-unified-render",
-      pl.indexOf("hunk " + h.uri + "\n") === 0 && pl.indexOf("\n--- a/") > 0 &&
+      pl.indexOf("§ " + h.uri + "\n") === 0 && pl.indexOf("\n--- a/") > 0 &&
       pl.indexOf("\n+++ b/") > 0 && pl.indexOf("\n@@ ") > 0, pl.slice(0, 120));
 check("plainHunk-still-ends-in-a-newline", pl[pl.length - 1] === "\n", pl.slice(-20));
 

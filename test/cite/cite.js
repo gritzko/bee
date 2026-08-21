@@ -6,6 +6,8 @@
 "use strict";
 const ci = require("view/cite.js");
 const rd = require("index/read.js");
+const sv = require("view/see.js");
+const html = require("render/html.js");
 
 let n = 0, bad = 0;
 function w1(s) { const b = utf8.Encode(s); const x = io.buf(b.length + 8); x.feed(b); io.writeAll(1, x); }
@@ -31,12 +33,29 @@ check("...and their tags survive the cut", TAG(cut[0]) === "F" && TAG(cut[2]) ==
       TAG(cut[0]) + TAG(cut[2]));
 check("an empty range slices to nothing", rd.tokSlice(toks, 8, 8).length === 0);
 
+//  ---- a line too long to read beside its neighbours -------------------------
+//  Three lines: a short one, a 160-symbol one, a short one.
+const long3 = utf8.Encode("aa\n" + "x".repeat(160) + "\nbb\n");
+check("symbols counts the codepoints on a line", sv.symbols(long3, 2) === 160 &&
+      sv.symbols(long3, 1) === 2, sv.symbols(long3, 2));
+check("...and a multibyte line counts symbols, not bytes",
+      sv.symbols(utf8.Encode("————\n"), 1) === 4,
+      sv.symbols(utf8.Encode("————\n"), 1));
+const wide = sv.window(long3, 2, 1, 2, 128);
+check("a line past the solo cap is the whole window, alone",
+      wide.from === 2 && utf8.Decode(long3.slice(wide.lo, wide.hi)).split("\n").length === 2,
+      JSON.stringify(wide));
+check("...while the same line under no cap keeps its neighbours",
+      sv.window(long3, 2, 1, 2).from === 1);
+check("...and a SHORT line under the cap keeps them too",
+      sv.window(long3, 2, 1, 2, 1024).from === 1);
+
 //  ---- the page over the fixture ---------------------------------------------
 const page = ci.cite("doc.mkd");
 const segs = page.hunks.filter((h) => h.kind === "cite");
 const quotes = page.hunks.filter((h) => h.kind !== "cite");
 check("the page is source segments with the quotes between them",
-      segs.length === quotes.length + 1 && quotes.length === 2,
+      segs.length === quotes.length + 1 && quotes.length === 4,
       segs.length + " segments, " + quotes.length + " quotes");
 check("a quote wears the band, a source segment does not",
       segs.every((h) => h.bare === true) && quotes.every((h) => h.bare === false));
@@ -60,6 +79,30 @@ check("every segment says which file line it starts on (pager.js:413's `#L`)",
 //  ---- the quote lands where the resolver said -------------------------------
 check("a quote carries the landing the pager selects by",
       quotes[0].land && quotes[0].land.line === 2, JSON.stringify(quotes[0].land));
+
+//  ---- two windows under one line, quoted once -------------------------------
+//  BEE-050:36 `src/A.c:30` wants 29..32 and `src/A.c:31` wants 30..33; overlapping,
+//  they open as ONE quote over 29..33, so the second ref adds no band of its own.
+const pair = quotes.filter((h) => /src\/A\.c:3[01]\b/.test(h.ref));
+check("overlapping windows under one line are one quote over the union",
+      pair.length === 1 && pair[0].win.from === 29 && pair[0].win.to === 33,
+      pair.map((h) => h.ref + " " + JSON.stringify(h.win)).join(" "));
+
+//  ---- the band is a way INTO the file it names ------------------------------
+//  BEE-050:31 in html a quote's header hangs the whole file's page off it; a
+//  source segment names a spell, not a file, and stays plain text.
+const stub = function (t) { return t === quotes[0].ref ? "/R/cat/T" : ""; };
+const band = html.hunksHtml([quotes[0], segs[0]], stub, "", "");
+check("a quote's html header is an anchor onto the whole file it quotes",
+      band.indexOf('<div class="banner"><a href="/R/cat/T">') >= 0, band.slice(0, 120));
+//  We work in permalinks: the header names a POINT, so the page it opens can
+//  scroll to the line, not merely to the file.
+check("...and it names the LINE it landed on, not just the file",
+      /:[0-9]+$/.test(quotes[0].ref) && quotes[0].ref.indexOf(":") > 1,
+      quotes[0].ref);
+check("...and a source segment's header stays the plain band it was",
+      band.split('<div class="banner">')[2].indexOf("<a ") !== 0,
+      band.split('<div class="banner">')[2].slice(0, 60));
 
 //  ---- a cut inside a comment does not re-lex --------------------------------
 //  `note.js` cites from INSIDE a block comment, so the second segment opens in

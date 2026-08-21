@@ -111,10 +111,10 @@ paint() {
         tail -n +2 "$WORK/c.bare" > "$WORK/c.body"
         cp "$WORK/p.out" "$WORK/p.body"
     else
-        # An EXCERPT bands in both modes — plain spells the band `hunk <uri>`
+        # An EXCERPT bands in both modes — plain spells the band `§ <uri>`
         # (HUNKu8sFeedBanner's `[verb ]<uri>`), the colour band the uri alone.
         cp "$WORK/c.bare" "$WORK/c.body"
-        sed -e 's/^hunk //' "$WORK/p.out" > "$WORK/p.body"
+        sed -e 's/^§ //' "$WORK/p.out" > "$WORK/p.body"
     fi
     if diff -u "$WORK/p.body" "$WORK/c.body" > "$WORK/d.out" 2>&1
     then ok "$_l: stripping the paint gives the plain bytes back"

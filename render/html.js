@@ -295,8 +295,19 @@ function hunkHtml(hunk, link, ord, tog, post) {
   return utf8.Decode(b.data());
 }
 
+//  BEE-050:31 a hunk that NAMES a target (`hunk.ref`, an excerpt's own, spelled
+//  path + line) hangs THAT WHOLE FILE's page off the header, opened at the very
+//  point quoted — we work in permalinks, so a link lands somewhere, never merely
+//  on a file.  A hunk naming no target, or one the door cannot place, keeps the
+//  plain band it had.
+function bannerHtml(hunk, link) {
+  const t = esc(hunk.uri || "");
+  const href = hunk.ref && link ? link(hunk.ref) : "";
+  return href ? '<a href="' + esc(href) + '">' + t + "</a>" : t;
+}
+
 function hunkFeed(b, hunk, link, ord, tog, post) {
-  bput(b, '<div class="hunk"><div class="banner">' + esc(hunk.uri || "") +
+  bput(b, '<div class="hunk"><div class="banner">' + bannerHtml(hunk, link) +
           (tog ? " " + tog : "") + '</div><pre class="body">');
   const seen = new Set();
   if (wrap.hasDiffSides(hunk.toks)) {

@@ -40,7 +40,7 @@ const hand = { uri: "hand made", verb: "hunk", text: text,
                kind: "file" };
 
 check("plain renders a hunk no verb made",
-      S(plain.render([hand])) === "hunk hand made\nab/cd\n", S(plain.render([hand])));
+      S(plain.render([hand])) === "§ hand made\nab/cd\n", S(plain.render([hand])));
 const painted = S(ansi.render([hand], { cols: 20 }));
 check("ansi renders that same hunk", painted.indexOf(ESC) === 0, painted);
 check("...and the paint strips back to the band + the body",
@@ -61,7 +61,7 @@ check("html says nothing about no hunks", html.render([]).length === 0);
 const excerpt = { uri: "u", verb: "hunk", text: text, toks: hand.toks, kind: "file" };
 const answer  = { uri: "u", verb: "hunk", text: text, toks: hand.toks, kind: "cat",
                   bare: true };
-check("an excerpt wears the band", S(plain.render([excerpt])) === "hunk u\nab/cd\n",
+check("an excerpt wears the band", S(plain.render([excerpt])) === "§ u\nab/cd\n",
       S(plain.render([excerpt])));
 check("the answer wears none", S(plain.render([answer])) === "ab/cd\n",
       S(plain.render([answer])));
@@ -69,7 +69,7 @@ check("the answer wears none", S(plain.render([answer])) === "ab/cd\n",
 const woven = { uri: "u", verb: "hunk", text: utf8.Encode("WEAVE"), toks: hand.toks,
                 kind: "diff", plain: utf8.Encode("unified\n") };
 check("the plain escape hatch replaces the body, band and all",
-      S(plain.render([woven])) === "hunk u\nunified\n", S(plain.render([woven])));
+      S(plain.render([woven])) === "§ u\nunified\n", S(plain.render([woven])));
 //  the COLOUR sink never reads `plain` — it paints the real bytes.
 check("...and the colour sink still paints the hunk's own text",
       nosgr(S(ansi.render([woven], { cols: 8 }))).indexOf("WEAVE") > 0,
