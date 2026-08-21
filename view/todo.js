@@ -312,11 +312,15 @@ function dateRows(bd, rows) {
   let ctx = null;
   try { ctx = idx.openRepo(bd.root, true); } catch (e) { return rows; }
   try {
-    const tip = idx.readCommit(ctx.r, ctx.head.sha);
-    const tree = tip && tip.tree ? tip.tree : null;
-    const ix = idx.openIndex(ctx.gitdir, idx.fresh(ctx.gitdir));
+    const tree = idx.tipTree(ctx);
+    //  BEE-048: the same SHARED lane the door resolves through — one bring-up
+    //  per repo per rev, not one per board.
+    const ix = idx.laneOf(ctx, function () {
+      const h = idx.openIndex(ctx.gitdir, idx.fresh(ctx.gitdir));
+      idx.bringUp(ctx, h, { track: false });
+      return h;
+    });
     try {
-      idx.bringUp(ctx, ix, { track: false });
       const seen = new Map();
       for (const r of rows) {
         const rel = r.file.slice(bd.root.length + 1);
@@ -330,7 +334,7 @@ function dateRows(bd, rows) {
         r.dirty = false;
         r.ts = lastTs(ctx, ix, rel, seen);
       }
-    } finally { try { ix.close(); } catch (e) {} }
+    } finally { idx.laneDown(ix); }
   } catch (e) { /* an unreadable repo dates nothing; byFresh is byCode then */ }
   finally { idx.closeRepo(ctx); }
   return rows;

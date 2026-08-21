@@ -12,7 +12,7 @@ const idx = require("./index.js");
 
 //  Per tree, so one runaway checkout degrades alone; a walk that would pass it
 //  leaves that tree WITHOUT a watcher, which reads as "recompute", never as clean.
-const MAXDIRS = 4096;
+const MAXDIRS = 32768;
 const BUFBYTES = 1 << 16;               // the drain sink; a burst past it is LOST
 
 const S = {
@@ -22,6 +22,8 @@ const S = {
   wdOf: null, dirOf: null,              // dir <-> watch descriptor (attribution)
   armed: null,                          // absolute dir -> the rev its walk ran at
   big: null,                            // trees too big to arm (no watcher there)
+  owner: null,                          // BEE-048: an armed gitdir bit -> its wt root
+  blind: null,                          // BEE-048: roots whose git side would not arm
   token: 0,                             // the no-watcher token, always fresh
   buf: null, polled: false, root: "",
   st: { bumps: 0, watches: 0 }
@@ -40,6 +42,7 @@ function start(root) {
   S.wfd = fd;
   S.spot = new Map(); S.wdOf = new Map(); S.dirOf = new Map();
   S.armed = new Map(); S.big = new Set();
+  S.owner = new Map(); S.blind = new Set();
   S.root = root || "";
   try { S.buf = io.buf(BUFBYTES); } catch (e) { stop(); return false; }
   return true;
@@ -51,6 +54,7 @@ function stop() {
   if (S.wfd >= 0) { try { fsw.close(S.wfd); } catch (e) {} }
   S.wfd = -1; S.polled = false;
   S.spot = null; S.wdOf = null; S.dirOf = null; S.armed = null; S.big = null;
+  S.owner = null; S.blind = null;
   S.buf = null;
 }
 
@@ -59,6 +63,15 @@ function stop() {
 function bump(dir) {
   const n = ++S.rev;
   S.st.bumps++;
+  stamp(dir, n);
+  //  BEE-048: a gitdir bit lies outside its worktree (always for a linked one),
+  //  so the ancestor walk alone would never reach the root it speaks for.
+  const own = S.owner.get(dir);
+  if (own !== undefined) stamp(own, n);
+}
+
+//  One rev laid on `dir` and on every ANCESTOR spot up the path.
+function stamp(dir, n) {
   for (let p = dir; ;) {
     if (S.spot.has(p)) S.spot.set(p, n);
     const i = p.lastIndexOf("/");
@@ -156,6 +169,49 @@ function armTree(wt) {
   return !over;
 }
 
+//  --- BEE-048: the GIT side of a repo ---------------------------------------
+//  `refs/` is a handful of quiet dirs and the `be` lane is one, so a gitdir
+//  joins the tree for a fraction of what a worktree costs; `objects/` stays
+//  out, its churn being why armTree skips `.git` at all (GIT-031's freshen gap).
+const GITDIRS = 64;                     // a refs/ fan past this is not watchable
+
+//  Arm what a resolved reference DEPENDS on — HEAD (the gitdir itself), `refs/`
+//  recursively and the lane dir — every one ATTRIBUTED to the worktree root, so
+//  one `rev(root)` compare witnesses a ref move and a lane seal as readily as an
+//  edit (BEE-048:24).  Too wide to arm BLINDS the root: tokens, never a lie.
+function armRepo(root, gitdir) {
+  if (!live() || typeof root !== "string" || typeof gitdir !== "string") return;
+  if (root === "" || gitdir === "" || S.blind.has(root)) return;
+  armDir(root);
+  if (!S.spot.has(root)) return;                      // unwatchable: no rev at all
+  if (S.armed.get(gitdir) === S.spot.get(root)) return;
+  let n = 0;
+  //  MAXDIRS is the WORKTREE's budget (armTree); the git side keeps its own,
+  //  so one repo with a thousand branches cannot cost another its watcher.
+  const own = function (abs) {
+    if (++n > GITDIRS) return false;
+    armDir(abs);
+    if (S.wdOf.has(abs)) S.owner.set(abs, root);
+    return true;
+  };
+  const walk = function (abs) {
+    if (!own(abs)) return false;
+    let es;
+    try { es = io.readdir(abs, { hidden: true }); } catch (e) { return true; }
+    for (const e of es)
+      if (e.slice(-1) === "/" && !walk(abs + "/" + e.slice(0, -1))) return false;
+    return true;
+  };
+  //  A dir that is not there yet (`be` before the first index, `refs/heads` on
+  //  a bare init) arms on the NEXT pass: its birth is an event in its armed
+  //  parent, which moves the root's spot and so re-runs this walk.
+  if (!own(gitdir) || !own(idx.indexDir(gitdir)) || !walk(gitdir + "/refs")) {
+    S.blind.add(root);
+    return;
+  }
+  S.armed.set(gitdir, S.spot.get(root));
+}
+
 //  Arm `wt` before the caller computes (ruling 4): a write between the read and
 //  `fsw.dir` would otherwise go unwitnessed.  The walk re-runs only when the
 //  spot moved since the last one — exactly when a new subdir may have appeared,
@@ -176,6 +232,8 @@ function rev(path) {
   if (!live() || typeof path !== "string" || !path) return --S.token;
   drain();
   arm(path);
+  //  BEE-048: its git side never armed, so a ref move here would go unseen.
+  if (S.blind.has(path)) return --S.token;
   const r = S.spot.get(path);
   return r === undefined ? --S.token : r;
 }
@@ -193,9 +251,12 @@ function polWatch() {
 function stats() {
   return { live: live(), rev: S.rev, bumps: S.st.bumps, watches: S.st.watches,
            spots: S.spot ? S.spot.size : 0, big: S.big ? S.big.size : 0,
+           gits: S.owner ? S.owner.size : 0, blind: S.blind ? S.blind.size : 0,
            root: S.root };
 }
 
 module.exports = { start: start, stop: stop, live: live, rev: rev,
                    drain: drain, bumpRoot: bumpRoot, polWatch: polWatch,
+                   armRepo: armRepo,          // BEE-048: the gitdir bits
+
                    stats: stats, MAXDIRS: MAXDIRS };

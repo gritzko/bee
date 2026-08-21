@@ -302,16 +302,48 @@ function refSpellings(partial) {
 //  state and bee's to write (gritzko, BEE-031:8), so a reader is never the last
 //  to know; an up-to-date lane costs ONE watermark check (index/index.js:879:cn).
 //  A lane that will not take a write reopens read-only: stale rows beat no page.
+//  BEE-048: and the up-to-date lane is then SHARED for as long as the repo's
+//  rev stands — `laneDown` below is what a borrower releases it with.
 function laneUp(idx, ctx) {
-  let ix = null;
-  try {
-    ix = idx.openIndex(ctx.gitdir);
-    idx.bringUp(ctx, ix, { track: false });
-    return ix;
-  } catch (e) {
-    if (ix !== null) { try { ix.close(); } catch (e2) {} }
-    return idx.openIndex(ctx.gitdir, false, true);
-  }
+  return idx.laneOf(ctx, function () {
+    let ix = null;
+    try {
+      ix = idx.openIndex(ctx.gitdir);
+      idx.bringUp(ctx, ix, { track: false });
+      return ix;
+    } catch (e) {
+      if (ix !== null) { try { ix.close(); } catch (e2) {} }
+      return idx.openIndex(ctx.gitdir, false, true);
+    }
+  });
+}
+
+//  --- BEE-048: one repo's answers, the MISSES too ---------------------------
+//  A board page asks ~512 references of every mount and most mounts answer
+//  NOTHING — a miss costs the same open as a hit, so it is kept the same way.
+//  Keyed by the repo's own rev (index/cache.js armRepo): a touch under one repo
+//  drops its answers alone, and the fan-out then skips whole repos outright.
+const SEATS = new Map();           // repo root -> { rev, m: Map(key -> rels) }
+const SC = { hits: 0, misses: 0 };
+
+//  The live map for this repo, or null when nothing may be remembered.  A
+//  moved rev throws the whole map away: no per-entry witness (BEE-027's ruling).
+function seatMemo(ctx) {
+  if (ctx.rev === null) return null;
+  const have = SEATS.get(ctx.root);
+  if (have !== undefined && have.rev === ctx.rev) return have.m;
+  const m = new Map();
+  SEATS.set(ctx.root, { rev: ctx.rev, m: m });
+  return m;
+}
+
+//  The two flags change what a scan may answer, so they key it with the ref.
+function seatKey(partial, anchored, local) {
+  return (anchored ? "@" : local ? "L" : ".") + partial;
+}
+
+function stats() {
+  return { hits: SC.hits, misses: SC.misses, repos: SEATS.size };
 }
 
 //  BEE-003: ONE mount's answer, repo-relative paths.  The lookup is FSEG
@@ -324,19 +356,37 @@ function laneUp(idx, ctx) {
 //  tip read, one index — so a code answered locally never pays the fan-out.
 function inMount(m, partial, anchored, local) {
   const idx = require("index/index.js");
+  if (refSegs(partial).length === 0) return [];
+  //  BEE-048: the memo sits UNDER the open — `openRepo` is a map lookup on a
+  //  warm repo and it is what hands out the rev this is keyed by.
+  let ctx = null;
+  try { ctx = idx.openRepo(m.root, false); } catch (e) { return []; }
+  const memo = seatMemo(ctx);
+  const key = seatKey(partial, anchored, local);
+  if (memo !== null) {
+    const hit = memo.get(key);
+    if (hit !== undefined) { SC.hits++; return hit.slice(); }
+  }
+  SC.misses++;
+  const out = mountScan(idx, ctx, m, partial, anchored, local);
+  if (memo !== null) memo.set(key, out.slice());
+  return out;
+}
+
+//  The scan itself, run only on a memo miss: the tip's tree, the lane and the
+//  FSEG lookup per spelling.
+function mountScan(idx, ctx, m, partial, anchored, local) {
   const rd = require("index/read.js");
   const pre = m.prefix ? m.prefix.split("/") : [];
   const out = [];
-  if (refSegs(partial).length === 0) return out;
   const tries = anchored ? [String(partial)] : refSpellings(partial);
-  let ctx = null, ix = null;
+  let ix = null;
   try {
-    ctx = idx.openRepo(m.root, false);
-    const tip = idx.readCommit(ctx.r, ctx.head.sha);
-    if (tip === null || !tip.tree) return out;
+    const tree = idx.tipTree(ctx);
+    if (tree === null) return out;
     const at = function (rel) {
       if (rel === "") { out.push(""); return; }
-      if (rd.entryAt(ctx.r, tip.tree, rel) !== null) out.push(rel);
+      if (rd.entryAt(ctx.r, tree, rel) !== null) out.push(rel);
     };
     //  BEE-031: the AMBIENT repo's lane always came up; a FOREIGN one now does
     //  too, but only when it exists — `fresh` is the kernel-clone guard.
@@ -349,13 +399,13 @@ function inMount(m, partial, anchored, local) {
         if (tailEq(pre, segs.slice(0, k))) at(segs.slice(k).join("/"));
       if (anchored) { if (pre.length === 0) at(segs.join("/")); }
       else if (ix !== null)
-        for (const p of rsv.resolve(ix, ctx.r, tip.tree, t)) out.push(p);
+        for (const p of rsv.resolve(ix, ctx.r, tree, t)) out.push(p);
       if (out.length) break;              // BEE-008: first spelling that answers
     }
   } catch (e) { return out; }
   finally {
-    if (ix !== null) { try { ix.close(); } catch (e) {} }
-    if (ctx !== null) idx.closeRepo(ctx);
+    idx.laneDown(ix);                     // BEE-048: a no-op for a shared lane
+    idx.closeRepo(ctx);
   }
   return out;
 }
@@ -567,6 +617,8 @@ module.exports = {
   posOf: posOf, refusal: refusal, resolvePartial: resolvePartial,
   //  BEE-008: a ticket code is a stem — the one scan every leg resolves by.
   ticketCode: ticketCode, ticketPaths: ticketPaths, refSpellings: refSpellings,
+  stats: stats,                          // BEE-048: the per-repo seat memo's
+
   pagePaths: pagePaths,                  // BEE-013: a pocket page's spellings
   refNorm: refNorm,
 };

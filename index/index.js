@@ -819,11 +819,31 @@ function handleOf(repo) {
   return h;
 }
 
-//  openRepo(arg) -> { h, repo, gitdir, root, head, reader }.  `root` is the
+//  --- BEE-048: the TIP and the LANE, per repo, while fsw stays quiet ---------
+//  GIT-031 kept the ODB handle; everything above it was still reopened per
+//  reference, which a resident server pays 512 times a board page.  The witness
+//  is the rev tree (index/cache.js armRepo arms HEAD, `refs/` and the lane): an
+//  event under ONE repo drops that repo's entries alone, and no TTL is guessed.
+//  wtstat.js:40:sb's law holds — no live watcher, no entry, so the CLI is as it was.
+const TIPS = new Map();         //  worktree root -> { rev, ctx, tree }
+const LANES = new Map();        //  worktree root -> { rev, ix }
+const LC = { tipHits: 0, tipMisses: 0, laneHits: 0, laneMisses: 0 };
+
+//  The repo's rev, or null when nothing may be remembered.  `cache` is required
+//  lazily: it requires THIS file at its top (index/cache.js:10:_S).
+function repoRev(root, gitdir) {
+  const cache = require("./cache.js");
+  if (!cache.live()) return null;
+  cache.armRepo(root, gitdir);
+  const rv = cache.rev(root);
+  return typeof rv === "number" && rv >= 0 ? rv : null;   // a token is no witness
+}
+
+//  openRepo(arg) -> { h, repo, gitdir, root, head, r, rev }.  `root` is the
 //  worktree the paths in the index are relative to (the gitdir's parent for a
 //  plain `.git`, else the path we opened).  The caller closes with closeRepo.
-//  GIT-031: `h` is SHARED and outlives the ctx; HEAD is re-read every time,
-//  since that is the half that moves.
+//  GIT-031: `h` is SHARED and outlives the ctx.  BEE-048: so does the whole
+//  ctx while the repo's rev stands — no field of one is ever assigned to.
 function openRepo(arg, climb) {
   let repo = null;
   if (climb) repo = discover(arg);
@@ -833,11 +853,72 @@ function openRepo(arg, climb) {
   const gitdir = h.dir;
   let root = repo;
   if (gitdir.length > 5 && gitdir.slice(-5) === "/.git") root = gitdir.slice(0, -5);
+  const rv = repoRev(root, gitdir);
+  const have = rv === null ? undefined : TIPS.get(root);
+  if (have !== undefined && have.rev === rv) { LC.tipHits++; return have.ctx; }
+  LC.tipMisses++;
   const hd = refs.head(gitdir);
   //  GIT-031: the handle is the cache's, not this ctx's — a HEAD-less repo
   //  refuses without unmapping what other callers are still reading.
   if (hd === null) throw "index: " + repo + " has no HEAD to index";
-  return { h: h, repo: repo, gitdir: gitdir, root: root, head: hd, r: reader(h) };
+  const ctx = { h: h, repo: repo, gitdir: gitdir, root: root, head: hd,
+                r: reader(h), rev: rv };
+  if (rv !== null) TIPS.set(root, { rev: rv, ctx: ctx, tree: undefined });
+  return ctx;
+}
+
+//  The tip commit's TREE — where every reference resolve starts (door.js:334).
+//  It rides the tip entry the head came in, so a warm repo reads no commit.
+function tipTree(ctx) {
+  const have = ctx.rev === null ? undefined : TIPS.get(ctx.root);
+  const warm = have !== undefined && have.rev === ctx.rev;
+  if (warm && have.tree !== undefined) { LC.tipHits++; return have.tree; }
+  LC.tipMisses++;
+  const c = readCommit(ctx.r, ctx.head.sha);
+  const t = (c !== null && c.tree) ? c.tree : null;
+  if (warm) have.tree = t;
+  return t;
+}
+
+//  ONE open lane per repo, brought up ONCE and shared by every reader (door.js
+//  laneUp, view/todo.js dateRows).  A borrower releases with `laneDown`, a
+//  NO-OP for the shared handle as closeRepo:845 is for the shared ODB one; the
+//  dropped handle is closed here, where no borrower can still be holding it.
+function laneOf(ctx, open) {
+  const have = LANES.get(ctx.root);
+  if (have !== undefined && ctx.rev !== null && have.rev === ctx.rev) {
+    LC.laneHits++;
+    return have.ix;
+  }
+  LC.laneMisses++;
+  if (have !== undefined) {
+    LANES.delete(ctx.root);
+    try { have.ix.close(); } catch (e) {}
+  }
+  const ix = open();
+  if (ctx.rev === null) return ix;              // no watcher: the caller owns it
+  LANES.set(ctx.root, { rev: ctx.rev, ix: ix });
+  return ix;
+}
+
+//  Is this handle the cache's?  The map holds one entry per repo, so the scan
+//  is over a handful; a borrower must never close what it does not own.
+function laneShared(ix) {
+  for (const e of LANES.values()) if (e.ix === ix) return true;
+  return false;
+}
+
+function laneDown(ix) {
+  if (ix === null || laneShared(ix)) return;
+  try { ix.close(); } catch (e) {}
+}
+
+//  BEE-048: the bar the test asserts — a warm request opens no lane and reads
+//  no tip, so both `misses` stand still across a second identical query.
+function stats() {
+  return { tipHits: LC.tipHits, tipMisses: LC.tipMisses,
+           laneHits: LC.laneHits, laneMisses: LC.laneMisses,
+           tips: TIPS.size, lanes: LANES.size };
 }
 
 //  GIT-031: a no-op for the SHARED handle openRepo hands out; a handle some
@@ -1106,6 +1187,9 @@ module.exports = {
   index: index, summary: summary, track: track, repos: repos,
   openIndex: openIndex, openKv: openKv, sweep: sweep,
   discover: discover, openRepo: openRepo, closeRepo: closeRepo, epoch: epoch,
+  //  BEE-048: the per-repo tip and the shared lane, both witnessed by fsw.
+  repoRev: repoRev, tipTree: tipTree, laneOf: laneOf, laneDown: laneDown,
+  laneShared: laneShared, stats: stats,
   //  The linked-worktree tell and the original both doors take (BEE-009).
   linkedWorktree: linkedWorktree, origin: origin, mainOf: mainOf,
   gitdirOf: gitdirOf,

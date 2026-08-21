@@ -142,20 +142,43 @@ function sideClass(side, pass) {
   return "";
 }
 
-//  BEE-047: a write face as a self-contained one-button FORM — the spell in a
-//  hidden input, the styled face the submit button.  blob/style.css strips the
-//  button back to the span it wraps, so the frame paints as it does with acts
-//  off; `action` is the page's own `/<repo>/act` (http.js actPath).
-function formHtml(action, spell, els, span) {
-  return '<form class="act' + els + '" method="post" action="' + esc(action) +
-         '"><input type="hidden" name="s" value="' + esc(spell) +
-         '"><button type="submit">' + span + "</button></form>";
+//  --- the buffered emitter ---------------------------------------------------
+//  The painter FEEDS ONE io.buf (view/todo.js:569:W0's own row pattern) instead of
+//  concatenating span strings: on a ~950-row board the churn of per-span
+//  `esc().replace` ropes and `+`-concats WAS the warm repaint (~2.3s of GC).
+function bput(b, s) {
+  const worst = s.length * 4 + 4;
+  if (b.room < worst) b.grow(Math.max(b.cap * 2, b.cap + worst));
+  b.feedStr(s);
+}
+function bfeed(b, bytes) {
+  if (b.room < bytes.length) b.grow(Math.max(b.cap * 2, b.cap + bytes.length));
+  b.feed(bytes);
+}
+
+const ENT = [];
+ENT[38] = utf8.Encode("&amp;"); ENT[60] = utf8.Encode("&lt;");
+ENT[62] = utf8.Encode("&gt;"); ENT[34] = utf8.Encode("&quot;");
+
+//  Escape STRAIGHT OFF the hunk's utf8 bytes — no decode, no `.replace`: clean
+//  runs feed as subarrays, only `& < > "` spell entities.
+function escFeed(b, bytes, lo, hi) {
+  let run = lo;
+  for (let i = lo; i < hi; i++) {
+    const e = ENT[bytes[i]];
+    if (e === undefined) continue;
+    if (i > run) bfeed(b, bytes.subarray(run, i));
+    bfeed(b, e);
+    run = i + 1;
+  }
+  if (hi > run) bfeed(b, bytes.subarray(run, hi));
 }
 
 //  The spans of the byte window [from, to) in `pass` (a token is clipped to
-//  the window; the pass hides the other diff side).  `seen` keeps a token's
-//  anchor id on its FIRST emission — a split block shows its eq bytes twice.
-function spansHtml(hunk, from, to, pass, link, ord, seen, out, post) {
+//  the window; the pass hides the other diff side), fed into `b`.  `seen`
+//  keeps a token's anchor id on its FIRST emission — a split block shows its
+//  eq bytes twice.
+function spansHtml(hunk, from, to, pass, link, ord, seen, b, post) {
   const text = hunk.text, toks = hunk.toks || new Uint32Array(0);
   let lo = 0, hi = toks.length;
   while (lo < hi) { const m = (lo + hi) >> 1;
@@ -179,9 +202,9 @@ function spansHtml(hunk, from, to, pass, link, ord, seen, out, post) {
     //  action, the `#<bg><fg> ` look shed as the pager's `_spellAt` sheds it.
     //  BEE-035: that same prefix is the face's COLOUR PAIR.
     else if (i + 1 < toks.length && TOK_TAG(toks[i + 1]) === "O") {
-      const b = dec(text, end, TOK_END(toks[i + 1]));
-      target = wrap.oSpell(b);
-      look = wrap.oLook(b);
+      const ob = dec(text, end, TOK_END(toks[i + 1]));
+      target = wrap.oSpell(ob);
+      look = wrap.oLook(ob);
       o = true;
     }
     else if (tag === "F" && hunk.kind !== "dir")
@@ -201,21 +224,40 @@ function spansHtml(hunk, from, to, pass, link, ord, seen, out, post) {
     const sty = look ? ' style="' + (look.fg ? "color:" + look.fg : "") +
                        (look.bg ? (look.fg ? ";" : "") + "background:" + look.bg : "") +
                        '"' : "";
-    const span = '<span class="tok-' + tag + (href ? "" : els) +
-                 sideClass(side, pass) + '"' + id + sty + '>' +
-                 esc(dec(text, s, e)) + "</span>";
-    //  A reference that resolves to nothing is PLAIN PAINTED TEXT — never a
-    //  link that 404s (ruling 2026-08-15).
-    out.push(wr ? formHtml(post, wr, els, span)
-           : href ? '<a' + (els ? ' class="els"' : "") + ' href="' + esc(href) +
-                    '">' + span + '</a>' : span);
+    //  BEE-047: a write face is a self-contained one-button FORM — the spell in
+    //  a hidden input, the styled face the submit button; blob/style.css strips
+    //  the button back to its span.  A resolving-to-nothing reference is PLAIN
+    //  PAINTED TEXT — never a link that 404s (ruling 2026-08-15).
+    if (wr !== "")
+      bput(b, '<form class="act' + els + '" method="post" action="' + esc(post) +
+              '"><input type="hidden" name="s" value="' + esc(wr) +
+              '"><button type="submit">');
+    else if (href !== "")
+      bput(b, '<a' + (els ? ' class="els"' : "") + ' href="' + esc(href) + '">');
+    bput(b, '<span class="tok-' + tag + (href ? "" : els) +
+            sideClass(side, pass) + '"' + id + sty + '>');
+    escFeed(b, text, s, e);
+    bput(b, wr !== "" ? "</span></button></form>" :
+            href !== "" ? "</span></a>" : "</span>");
   }
   //  Bytes past the last token — an untokenised tail, or a whole hunk with no
   //  toks (a blob, an unknown extension) — paint as one anchorable plain span.
   const tail = prev > from ? prev : from;
-  if (tail < to)
-    out.push('<span class="tok-S" id="' + anchorId(ord, tail) + '">' +
-             esc(dec(text, tail, to)) + "</span>");
+  if (tail < to) {
+    bput(b, '<span class="tok-S" id="' + anchorId(ord, tail) + '">');
+    escFeed(b, text, tail, to);
+    bput(b, "</span>");
+  }
+}
+
+//  BEE-047: a write face as a self-contained one-button FORM — the spell in a
+//  hidden input, the styled face the submit button.  blob/style.css strips the
+//  button back to the span it wraps, so the frame paints as it does with acts
+//  off; `action` is the page's own `/<repo>/act` (http.js actPath).
+function formHtml(action, spell, els, span) {
+  return '<form class="act' + els + '" method="post" action="' + esc(action) +
+         '"><input type="hidden" name="s" value="' + esc(spell) +
+         '"><button type="submit">' + span + "</button></form>";
 }
 
 //  BEE-030: does the hunk / the row [off, end] carry an elastic `B` span?  A
@@ -225,10 +267,15 @@ function hasElastic(toks) {
   for (let i = 0; i < toks.length; i++) if (TOK_TAG(toks[i]) === "B") return true;
   return false;
 }
+//  Bisected to the row as spansHtml is: the old head-to-tail scan ran per row
+//  over ALL toks — ~1.7s of a board's 2.2s paint (quadratic, 473 rows x 9753).
 function rowHasB(hunk, off, end) {
   const toks = hunk.toks;
-  let prev = 0;
-  for (let i = 0; i < toks.length; i++) {
+  let lo = 0, hi = toks.length;
+  while (lo < hi) { const m = (lo + hi) >> 1;
+    if (TOK_END(toks[m]) < off) lo = m + 1; else hi = m; }
+  let prev = lo > 0 ? TOK_END(toks[lo - 1]) : 0;
+  for (let i = lo; i < toks.length && prev <= end; i++) {
     const e = TOK_END(toks[i]);
     if (TOK_TAG(toks[i]) === "B" &&
         ((e > off && prev < end) || (prev === e && prev >= off && e <= end)))
@@ -239,31 +286,34 @@ function rowHasB(hunk, off, end) {
 }
 
 function hunkHtml(hunk, link, ord, tog, post) {
-  ord = ord || 0;
-  const out = ['<div class="hunk"><div class="banner">', esc(hunk.uri || ""),
-               tog ? " " + tog : "",
-               '</div><pre class="body">'];
+  const b = io.buf(1 << 16);
+  hunkFeed(b, hunk, link, ord || 0, tog, post);
+  return utf8.Decode(b.data());
+}
+
+function hunkFeed(b, hunk, link, ord, tog, post) {
+  bput(b, '<div class="hunk"><div class="banner">' + esc(hunk.uri || "") +
+          (tog ? " " + tog : "") + '</div><pre class="body">');
   const seen = new Set();
   if (wrap.hasDiffSides(hunk.toks)) {
     //  BEE-021: a diff hunk is painted ROW by row — an inline row in place, a
     //  split block as its rm rows then its in rows (the pager's very index).
     for (const r of wrap.indexRows(hunk, wrap.NO_CLAMP, false)) {
-      spansHtml(hunk, r.off, r.end, r.pass, link, ord, seen, out, post);
-      out.push("\n");
+      spansHtml(hunk, r.off, r.end, r.pass, link, ord, seen, b, post);
+      bput(b, "\n");
     }
   } else if (hasElastic(hunk.toks)) {
     //  BEE-030: a line holding a `B` span becomes a flex `.row` the browser
     //  stretches/ellipsizes to ITS width; a block box needs no '\n' of its own.
     for (const r of wrap.indexRows(hunk, wrap.NO_CLAMP, false)) {
-      const b = rowHasB(hunk, r.off, r.end);
-      if (b) out.push('<span class="row">');
-      spansHtml(hunk, r.off, r.end, wrap.PASS_NORMAL, link, ord, seen, out, post);
-      out.push(b ? "</span>" : "\n");
+      const rb = rowHasB(hunk, r.off, r.end);
+      if (rb) bput(b, '<span class="row">');
+      spansHtml(hunk, r.off, r.end, wrap.PASS_NORMAL, link, ord, seen, b, post);
+      bput(b, rb ? "</span>" : "\n");
     }
-  } else spansHtml(hunk, 0, hunk.text.length, wrap.PASS_NORMAL, link, ord, seen, out,
-                   post);
-  out.push('</pre></div>');
-  return out.join("");
+  } else spansHtml(hunk, 0, hunk.text.length, wrap.PASS_NORMAL, link, ord, seen,
+                   b, post);
+  bput(b, '</pre></div>');
 }
 
 //  BEE-032: `tog` (a prebuilt toggle anchor) rides the FIRST hunk's own banner
@@ -272,10 +322,10 @@ function hunkHtml(hunk, link, ord, tog, post) {
 //  the painter sees, so a locked server shows no live-looking button.
 function hunksHtml(hunks, link, tog, post) {
   if (!hunks || !hunks.length) return '<pre class="note">(nothing to show)</pre>';
-  const out = [];
+  const b = io.buf(1 << 18);
   for (let i = 0; i < hunks.length; i++)
-    out.push(hunkHtml(hunks[i], link, i, i === 0 ? tog : "", post));
-  return out.join("");
+    hunkFeed(b, hunks[i], link, i, i === 0 ? tog : "", post);
+  return utf8.Decode(b.data());
 }
 
 //  The toggle anchor to the OTHER view of the same bytes (rendered <-> source).
