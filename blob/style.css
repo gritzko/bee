@@ -38,3 +38,8 @@ a:hover{border-bottom-style:solid}
 form.act{display:inline;margin:0;padding:0;border:0}
 form.act>button{font:inherit;color:inherit;background:none;border:0;margin:0;padding:0;white-space:pre;text-align:inherit;line-height:inherit;cursor:pointer}
 .row>form.act{flex:0 0 auto}
+/*  BEE-055: the act report's notification bubble — a fixed overlay OFF the
+    document flow, a little transparent; its [x] is the plain close button.  */
+.flash{position:fixed;top:8px;right:8px;z-index:9;max-width:44em;opacity:.93;padding:4px 28px 4px 10px;box-shadow:0 1px 6px rgba(0,0,0,.35)}
+.flash>pre{margin:0;font:inherit;white-space:pre-wrap;overflow-wrap:anywhere}
+.flash>button.x{position:absolute;top:1px;right:4px;font:inherit;color:inherit;background:none;border:0;padding:0 4px;cursor:pointer}

@@ -96,7 +96,8 @@ const GROUND = "body{background:" + XTERM16[15] + ";color:" + XTERM16[0] + "}";
 //  $BRO_THEME picks the browser's palette exactly as it picks the pager's.
 function stylesheet(thm) {
   thm = thm || theme.select();
-  const out = [frame(), GROUND, ".banner{" + sgrCss(thm.banner) + "}"];
+  const out = [frame(), GROUND, ".banner{" + sgrCss(thm.banner) + "}",
+               ".flash{" + sgrCss(thm.banner) + "}"];   // BEE-055: the bubble's tone
   for (const tag in thm.slots) {
     const css = sgrCss(thm.slots[tag]);
     if (css) out.push(".tok-" + tag + "{" + css + "}");
@@ -357,6 +358,15 @@ function viewBar(title, label, href) {
          (title && tog ? " " : "") + tog + "</div></div>";
 }
 
+//  BEE-055: the act's report (or refusal) as a NOTIFICATION BUBBLE — a fixed
+//  overlay off the document flow, translucent, its [x] the only way it leaves.
+//  Colour is the theme's banner pair (stylesheet), geometry blob/style.css.
+function flash(line) {
+  if (!line) return "";
+  return '<div class="flash"><pre>' + esc(line) + "</pre>" +
+         '<button class="x" onclick="this.parentNode.remove()">&#215;</button></div>';
+}
+
 //  LITE-035: a rendered Markdown fragment in the SAME chrome the painted hunks
 //  wear — mark/html.js emits the body, this is all the page it gets.
 function markBody(fragment) {
@@ -408,6 +418,7 @@ module.exports = {
   page: page,
   errorPage: errorPage,
   viewBar: viewBar,
+  flash: flash,
   toggle: toggle,
   markBody: markBody,
   esc: esc,

@@ -450,8 +450,11 @@ function respond(sock, status, reason, type, body, headOnly, extra) {
   sock.end();
 }
 
+//  BEE-055: `no-store`, so a spent flash never replays from the browser's own
+//  cache — every HTML page here is a live view of the repo anyway.
 function sendPage(sock, status, reason, title, body, headOnly) {
-  respond(sock, status, reason, HTML, utf8.Encode(body), headOnly);
+  respond(sock, status, reason, HTML, utf8.Encode(body), headOnly,
+          [["Cache-Control", "no-store"]]);
 }
 
 //  --- LITE-036: `/bytes/<path>[?<rev>]` --------------------------------------
@@ -767,7 +770,7 @@ function handle(req, sock, st) {
   else body = html.hunksHtml(hunks, link, "", acts(st, mount));
   //  BEE-047: the act's one report line is SPENT here — on the very page its
   //  303 sent the browser back to, and only once.
-  if (st.flash && !only) { body = html.viewBar(st.flash, "", "") + body; st.flash = ""; }
+  if (st.flash && !only) { body = html.flash(st.flash) + body; st.flash = ""; }
   sendPage(sock, 200, "OK", title, html.page(title, body), only);
   return "200";
 }
