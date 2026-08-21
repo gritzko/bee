@@ -127,9 +127,11 @@ function integrate(verb, ff) {
     if (!ff) st.run(["git", "-C", at, MERGE, "--abort"]);
     throw "bee: " + verb + ": " + u + " did not integrate — the worktree is as it was";
   }
+  //  "safe in the stash" is the phrase test/sync/run.sh:250:mw pins: git spells
+  //  its own reapply-conflict advice differently across versions.
   if (stashTip(at) !== was)
     throw "bee: " + verb + ": merged " + u + ", but the autostash would not " +
-          "reapply — your edits are safe in `git stash`, resolve them there";
+          "reapply — your edits are safe in the stash, `git stash pop` to resolve";
   return verb + " " + u + " " + head(at);
 }
 

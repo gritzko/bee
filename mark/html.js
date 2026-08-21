@@ -278,7 +278,10 @@ function render(doc, opts) {
           cr();
           //  BEE-032: the checkbox IS the task item's marker — `.task` lets
           //  the sheet drop the list bullet, so an item never wears two.
-          put(node.taskChecked !== undefined ? '<li class="task">' : "<li>");
+          //  The tight paragraph below drops its tag, so the item's own line
+          //  byte (the list quad's `boff`) rides the <li> — a permalink's landing.
+          put(node.taskChecked !== undefined ? '<li class="task"' + idOf(node) + ">"
+                                             : "<li" + idOf(node) + ">");
           if (node.taskChecked !== undefined)
             put('<input type="checkbox"' + (node.taskChecked ? ' checked=""' : "") +
                 ' disabled="" /> ');
@@ -297,7 +300,7 @@ function render(doc, opts) {
             (body === null ? esc(lit) : body) + "</code></pre>\n");
         break;
       }
-      case "thematic_break": cr(); put("<hr />\n"); break;
+      case "thematic_break": cr(); put("<hr" + idOf(node) + " />\n"); break;
       //  SAFE: the block's own bytes, escaped — cmark drops them for a comment.
       case "html_block": cr(); put(esc(node.literal)); cr(); break;
       //  ---- the GFM table -------------------------------------------------
