@@ -97,7 +97,7 @@ mkdir -p "$SRC/repo-TKT-1/build" && printf 'O0\n' > "$SRC/repo-TKT-1/build/seed.
 bee wts > "$WORK/one" 2> "$WORK/one.err" || { echo "wts: the verb failed" >&2;
     cat "$WORK/one.err" >&2; exit 2; }
 
-[ "$(wc -l < "$WORK/one")" = 3 ] &&
+[ "$(( $(wc -l < "$WORK/one") ))" = 3 ] &&
   ok "three worktrees under \$SRC_ROOT" || bad "three worktrees under \$SRC_ROOT" "$WORK/one"
 
 if grep -q '^repo-TKT-1 ' "$WORK/one" && grep -q '^repo-TKT-2 ' "$WORK/one"

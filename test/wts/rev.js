@@ -65,7 +65,9 @@ check("the-watcher-comes-up", cache.start(SRC) && cache.live());
 const s0 = cache.rev(SRC), a0 = cache.rev(A), b0 = cache.rev(B);
 check("a-quiet-tree-stands-still", cache.rev(A) === a0 && cache.rev(B) === b0);
 
-put(A + "/sub/x.txt", "one\n");
+//  A CREATE, not an overwrite of the committed x.txt: a kqueue dir watch
+//  (FSW.c pins dirs only) never sees a content write to an existing file.
+put(A + "/sub/z.txt", "one\n");
 check("an-event-under-a-wt-moves-its-rev",
       settle(function () { return cache.rev(A) !== a0; }), cache.rev(A) + " vs " + a0);
 check("a-sibling-wt-stands-still", cache.rev(B) === b0, cache.rev(B));

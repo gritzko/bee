@@ -92,7 +92,8 @@ printf '##  Miscellany\n    Now: OPEN\n\nan odd page.\n' > "$BETA/todo/GET/GET-0
 printf '#   GET-011: the TODO-013 shape\n\n    Now: OPEN\n    Sev: CRIT\n\nbody.\n' \
   > "$BETA/todo/GET/GET-011.mkd"
 cp "$BETA/todo/GET/GET-011.mkd" "$BETA/todo/GET/GET-012.mkd"
-sed -i '1s/.*/#   GET-012: the TODO-013 shape, shelved/' "$BETA/todo/GET/GET-012.mkd"
+sed '1s/.*/#   GET-012: the TODO-013 shape, shelved/' "$BETA/todo/GET/GET-012.mkd" \
+    > "$BETA/todo/GET/GET-012.tmp" && mv "$BETA/todo/GET/GET-012.tmp" "$BETA/todo/GET/GET-012.mkd"
 mk GET-005 "has a worktree"
 mk GET-007 "one of two"
 mk GET-008 "two of two"
@@ -166,13 +167,13 @@ then ok "...and nothing was committed — the edit waits for the user"
 else bad "the verb committed the meta tree"; fi
 
 # --- the pair is ADDED when the page carries none --------------------------
-N2=$(wc -l < "$BETA/todo/GET/GET-002.mkd")
+N2=$(( $(wc -l < "$BETA/todo/GET/GET-002.mkd") ))
 bee dont GET-002 > "$WORK/d2" 2> "$WORK/d2e"; RC=$?
 if [ "$RC" = 0 ] && grep -q 'GET-002' "$WORK/d2"
 then ok "dont GET-002 answers its row"
 else bad "dont GET-002 (rc $RC)" "$WORK/d2" "$WORK/d2e"; fi
 if [ "$(sed -n 2p "$BETA/todo/GET/GET-002.mkd")" = "    Now: DONT" ] &&
-   [ "$(wc -l < "$BETA/todo/GET/GET-002.mkd")" = "$((N2 + 1))" ] &&
+   [ "$(( $(wc -l < "$BETA/todo/GET/GET-002.mkd") ))" = "$((N2 + 1))" ] &&
    [ "$(grep -c 'Now:' "$BETA/todo/GET/GET-002.mkd")" = 1 ] &&
    grep -q 'nothing but prose here' "$BETA/todo/GET/GET-002.mkd"
 then ok "...ONE line added at the four-space house indent, the body untouched"
@@ -183,7 +184,7 @@ else bad "the pair was not added under the header" "$BETA/todo/GET/GET-002.mkd";
 # indent — and the title left exactly as its author wrote it.
 for k in GET-011 GET-012; do
     L0=$(head -1 "$BETA/todo/GET/$k.mkd")
-    N0=$(wc -l < "$BETA/todo/GET/$k.mkd")
+    N0=$(( $(wc -l < "$BETA/todo/GET/$k.mkd") ))
     case $k in GET-011) V=done; M=DONE ;; *) V=dont; M=DONT ;; esac
     bee $V $k > "$WORK/t13.$k" 2> "$WORK/t13e.$k"; RC=$?
     F="$BETA/todo/GET/$k.mkd"
@@ -193,7 +194,7 @@ for k in GET-011 GET-012; do
     if [ "$(sed -n 3p "$F")" = "    Now: $M" ] && [ "$(sed -n 2p "$F")" = "" ]
     then ok "...rewriting the pair IN PLACE, under the blank line, at its own indent"
     else bad "the pair was not rewritten in place" "$F"; fi
-    if [ "$(wc -l < "$F")" = "$N0" ]
+    if [ "$(( $(wc -l < "$F") ))" = "$N0" ]
     then ok "...splicing NO line anywhere — the page is the same length"
     else bad "a line was spliced into the page" "$F"; fi
     if [ "$(grep -c 'Now:' "$F")" = 1 ] && [ "$(grep -c '^Now:' "$F")" = 0 ]

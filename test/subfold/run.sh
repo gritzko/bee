@@ -122,7 +122,7 @@ G -C "$P" reset -q                                   # back to an all-unstaged t
 # ==========================================================================
 rtin "$P" add > "$WORK/l3" 2>"$WORK/l3e"; RC=$?
 if [ "$RC" = 0 ] && [ "$(cat "$WORK/l3")" = "add 4 staged" ] &&
-   [ "$(wc -l < "$WORK/l3")" = "1" ] && [ ! -s "$WORK/l3e" ]
+   [ "$(( $(wc -l < "$WORK/l3") ))" = "1" ] && [ ! -s "$WORK/l3e" ]
 then ok "bare \`add\` counts across the tree in ONE line — no per-sub cascade"
 else bad "the folded add report (rc $RC)" "$WORK/l3" "$WORK/l3e"; fi
 if git -C "$P/s1"   diff --cached --name-only | grep -qx 'a.txt' &&
@@ -137,14 +137,14 @@ else bad "a gitlink was bumped with no commit behind it"; fi
 
 rtin "$P" rm > "$WORK/l4" 2>"$WORK/l4e"; RC=$?
 if [ "$RC" = 0 ] && [ "$(cat "$WORK/l4")" = "rm 2 staged" ] &&
-   [ "$(wc -l < "$WORK/l4")" = "1" ] &&
+   [ "$(( $(wc -l < "$WORK/l4") ))" = "1" ] &&
    git -C "$P/s1/g" diff --cached --name-only --diff-filter=D | grep -qx 'gd.txt'
 then ok "bare \`rm\` sweeps the gone class down to the grandchild"
 else bad "the folded rm (rc $RC)" "$WORK/l4" "$WORK/l4e"; fi
 
 rtin "$P" add + > "$WORK/l5" 2>"$WORK/l5e"; RC=$?
 if [ "$RC" = 0 ] && [ "$(cat "$WORK/l5")" = "add + 2 staged" ] &&
-   [ "$(wc -l < "$WORK/l5")" = "1" ] &&
+   [ "$(( $(wc -l < "$WORK/l5") ))" = "1" ] &&
    git -C "$P/s1" diff --cached --name-only | grep -qx 'sn.txt'
 then ok "bare \`add +\` sweeps the untracked class too"
 else bad "the folded add + (rc $RC)" "$WORK/l5" "$WORK/l5e"; fi
@@ -157,7 +157,7 @@ for _v in 'add:nothing to add' 'add +:nothing to add' 'rm:nothing to rm'; do
     # shellcheck disable=SC2086
     rtin "$P" $_verb > "$WORK/l6" 2>"$WORK/l6e"; RC=$?
     if [ "$RC" = 0 ] && [ "$(cat "$WORK/l6")" = "$_say" ] &&
-       [ "$(wc -l < "$WORK/l6")" = "1" ] && [ ! -s "$WORK/l6e" ]
+       [ "$(( $(wc -l < "$WORK/l6") ))" = "1" ] && [ ! -s "$WORK/l6e" ]
     then ok "\`bee $_verb\` over a swept tree: \"$_say\", ONE line"
     else bad "the empty-class cascade for \`$_verb\` (rc $RC)" "$WORK/l6" "$WORK/l6e"; fi
 done
