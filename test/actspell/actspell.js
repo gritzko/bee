@@ -115,4 +115,32 @@ p5._applyPath("two.txt");
 check("a PATH typed at the bar still opens a view", p5.stack.length === 1,
       "stack " + p5.stack.length);
 
+//  ---- BEE-058: an act on an ARGUMENT-LESS view still refreshes -------------
+//  An arg-less `status` is spelled bare (view/status.js:371:we), so the door has to
+//  read the lone word as a VERB; otherwise the refresh after the act looks for a
+//  FILE named `status`, misses, and the bar says "cannot open status".
+const bare = door.openTarget("status");
+check("the door opens a BARE verb spell", bare !== null && bare.length > 0,
+      String(bare));
+check("...as the view that word names", bare !== null && bare[0].uri === "status",
+      bare === null ? "null" : bare[0].uri);
+
+function unstage() {                             // the act below needs its own proof
+  const st = require("stage.js");
+  st.run(["git", "-C", st.root(), "reset", "-q"]);
+}
+unstage();
+if (bare === null) {
+  check("an act on a bare `status` view keeps the bar", false, "the door will not open `status`");
+} else {
+  const p6 = new pagerlib.Pager(-1, { tty: -1, color: false, open: door.openTarget });
+  p6.setHunks(bare, "status");
+  p6.rows(80);
+  const ran = p6._actSpell("add one.txt");
+  check("an act on a bare `status` view runs as a mutation", ran === true, String(ran));
+  check("...landing the staging", fixture.staged() === "one.txt", fixture.staged());
+  check("...and the bar carries the act's report, not a refusal",
+        p6.message === "add 1 staged", p6.message);
+}
+
 w1((bad ? "FAILED " : "DONE ") + n + " checks\n");

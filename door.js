@@ -542,8 +542,12 @@ function posOf(full, anchor) {
            anchor: anchor || "" };
 }
 
-//  A target with an arg is a verb line, anything else a reference — so a file
-//  merely NAMED `log` still opens as the file.
+//  A target whose first word is a VERB is a verb line, anything else a
+//  reference; a file merely NAMED `log` still opens as the file when it is
+//  spelled with evidence (`./log`, `log:1`).
+//  BEE-058: a BARE verb runs too, on an empty arg — the pager refreshes a view
+//  on its own recorded spell (view/status.js:371:we spells an arg-less one
+//  `status`), so a bare word that misses as a verb here misses the refresh.
 //  BEE-003: `pos` is the AMBIENT the target is read FROM — the pager hands the
 //  view it clicked in, http the page it painted; without one the cwd stands.
 function openTarget(target, pos) {
@@ -551,7 +555,7 @@ function openTarget(target, pos) {
   if (pos !== undefined && pos !== null)
     return mnt.within(pos, function () { return openTarget(target); });
   const sp = target.indexOf(" ");
-  const fn = sp > 0 ? VERBS[target.slice(0, sp)] : null;
+  const fn = verbOf(sp > 0 ? target.slice(0, sp) : target);
   if (!fn) {
     const seat = seatOf(target);
     //  BEE-003: a miss has WORDS to it (`refusal`, ruling 3), but three pty
@@ -572,7 +576,7 @@ function openTarget(target, pos) {
     return hs;
   }
   let hunks;
-  try { hunks = fn(target.slice(sp + 1).trim()); } catch (e) { return null; }
+  try { hunks = fn(sp > 0 ? target.slice(sp + 1).trim() : ""); } catch (e) { return null; }
   return hunks && hunks.length ? hunks : null;
 }
 
