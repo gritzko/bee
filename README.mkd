@@ -88,6 +88,9 @@ The standalone (bundled) `bee` binary call patterns:
  -  `bee cite <path>[?<rev>]` -- the file with every anchored reference on it already quoted, one line above the landing and two below
      1. `f.c:12` and the permalink `f.c:12:aB` alike, resolved through the same door `see` asks; a bare filename or a ticket code is left alone
      2. a miss, an ambiguity or a target quoted higher up adds nothing, so the page still reads as the file
+ -  `bee cited <path>` -- the mirror of `cite`: every reference ELSEWHERE that points at this file, quoted under the line it lands on
+     1. the backlink rows only narrow the search -- each suspect is opened, lexed once and resolved in its own repo, so a same-named file in another tree quotes nothing
+     2. the quote is the CITING lines, banded with the carrier's path and line, so its header opens the page that cited; a bare name or a ticket code sits in a block above the file
  -  `bee todo [TOPIC] [Key:Value]...` -- the ticket board: `<●> KEY ┄ title` per open ticket, the row a click onto `bee see KEY`
      1. bare, the board of the context repo's `todo/` -- topic headers with counts, `Sub:` families on dotted rails; when that repo (or, with no context, the local one) has no `todo/`, every registered repo's, newest first, each row prefixed by its repo
      2. `TOPIC` is one topic's list, `Key:Value` a filter -- keys AND, one key repeated ORs, `Key:*` is presence and `Key:` absence; `Sev:` paints the bullet CRIT red, HIGH orange, LOW dim

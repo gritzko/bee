@@ -75,6 +75,9 @@ const ROUTE = {
   //  BEE-050: the same file with its anchored references quoted in place; each
   //  quote's band is the target, so a click walks on from where it was cited.
   cite:     "cite",                 //  /cite/<path>[?<rev>]
+  //  BEE-057: the other direction — who points HERE.  Each quote's band is the
+  //  CARRIER, so a click leaves for the page that did the citing.
+  cited:    "cited",                //  /cited/<path>
   //  BEE-046: the same bytes under the diff wash, which the sheet's own
   //  side-in/side-rm classes paint — no second palette on this side either.
   dog:      "dog",                  //  /dog/<path>
