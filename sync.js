@@ -147,6 +147,32 @@ function push(args) {
 //  `--autostash`.  `ff` is `pull`'s ladder — behind-only is a fast-forward by
 //  construction, so `--ff-only` makes a diverged pair fail LOUD (git puts the
 //  autostash back itself there) rather than quietly weave a merge commit.
+//  BEE-037 revised: the merge moves the gitlinks HEAD records, so the checkouts
+//  under them must follow — a sub left where it stood reads "new commits" until
+//  a hand-run `git submodule update` (QJAB-007's worktree sat stale that way).
+//  Depth-first as `descend` is, git's own detached move, a commit the sub has
+//  never seen fetched first.  -> how many followed; `left` takes the ones that
+//  would not, since the merge has landed and no rollback can follow it.
+function follow(at, left) {
+  let n = 0;
+  for (const s of subs.mounts(at)) {
+    if (!s.live) continue;               // uninitialised: `bee fork` grows those
+    if (s.head !== s.sha) {
+      if (word(s.wt, ["rev-parse", "--verify", "--quiet", s.sha + "^{commit}"]) === null)
+        st.run(["git", "-C", s.wt, "fetch", "-q"]);
+      //  Work in the sub is git's to refuse, in its own words: that sub keeps
+      //  its head, the report line names it, and the descent goes on.
+      if (st.run(["git", "-C", s.wt, "checkout", "-q", "--detach", s.sha]) !== 0) {
+        left.push(s.path);
+        continue;
+      }
+      n++;
+    }
+    n += follow(s.wt, left);
+  }
+  return n;
+}
+
 function integrate(verb, ff) {
   const at = st.root();
   const u = upstream(at, verb);
@@ -167,7 +193,11 @@ function integrate(verb, ff) {
   if (stashTip(at) !== was)
     throw "bee: " + verb + ": merged " + u + ", but the autostash would not " +
           "reapply — your edits are safe in the stash, `git stash pop` to resolve";
-  return verb + " " + u + " " + head(at);
+  const left = [];
+  const n = follow(at, left);
+  return verb + " " + u + " " + head(at) +
+         (n ? " " + n + " sub" + (n > 1 ? "s" : "") : "") +
+         (left.length ? " " + left.length + " behind" : "");
 }
 
 function pull(args) {

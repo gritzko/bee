@@ -29,6 +29,7 @@ function check(name, cond, got) {
 const SRC = io.getenv("SRC_ROOT");
 const ALPHA = SRC + "/alpha";
 const DIRTY = "alpha-GET-001", STAGED = "alpha-GET-002";
+const MIXED = "alpha-GET-003";                   // BEE-039 rev: one class, both axes
 const COLS = 100;
 
 function board() { return todo.todo("GET", { from: ALPHA }); }
@@ -136,6 +137,16 @@ check("the staged frame reads as it always did",
         .map(function (s) { return s.text; }).join("") === "[ i ~1         ]",
       st.map(function (s) { return s.text; }).join(""));
 
+//  ---- 2b. a class split over both axes counts BOTH (BEE-039 revised) ------
+//  The slot says HOW MANY rows the class holds, staged or not; the wash says
+//  whether a button still has work — a.txt is staged, b.txt is not.
+const mx = frameSpans(rowSpans(h, "GET-003")), mbtn = buttonsOf(mx);
+lit(mbtn, "~2", "chg", "//" + MIXED + " add");
+check("a mixed class counts the staged row too",
+      mx.filter(function (s) { return s.tag !== "O"; })
+        .map(function (s) { return s.text; }).join("") === "[ i ~2         ]",
+      mx.map(function (s) { return s.text; }).join(""));
+
 //  ---- 3. every cell of a face clicks --------------------------------------
 const p0 = new pagerlib.Pager(-1, { tty: -1, color: false });
 const chg = byFace(dbtn, "~1");
@@ -153,7 +164,8 @@ check("the file frame carries no `list` target of its own",
 
 //  ---- 4. plain and the pipe are what they were before the buttons ----------
 const GOLD = "GET-001: dirty tree [ i ~1 -1 +1   ] [ ≡         ]\n" +
-             "GET-002: all staged [ i ~1         ] [ ≡        ✓]\n";
+             "GET-002: all staged [ i ~1         ] [ ≡        ✓]\n" +
+             "GET-003: mixed class [ i ~2         ] [ ≡        ✓]\n";
 const pl = utf8.Decode(h.plain);
 check("plain is the pre-button golden, byte for byte", pl === GOLD, pl);
 check("...with no look byte and no SGR",

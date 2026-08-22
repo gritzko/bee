@@ -70,20 +70,27 @@ const CHG = "chg";                 // where a column the quad under-tells lands
 
 function blankFold() {
   return { un: { chg: 0, add: 0, del: 0 }, st: { chg: 0, add: 0, del: 0 },
-           staged: 0, dirty: false };
+           all: { chg: 0, add: 0, del: 0 }, staged: 0, dirty: false };
 }
 
 //  fold(rows) -> the split, off the rows stat() already holds — never a second
 //  git walk (BEE-039 design).  A row can tally on BOTH axes (staged, then
 //  edited again); a conflict is the one exclusive case, since there is no clean
 //  stage entry behind it, so it counts as unstaged work whatever its columns say.
+//  BEE-039 revised: `all` is the class ITSELF — every changed, new or gone row
+//  once, staged or not — since a slot that showed only the unstaged half read
+//  `~2` over a worktree of five staged files (wtstat.js:127 slot).
 function fold(rows) {
   const f = blankFold();
   for (const r of (rows || [])) {
-    if (r.con) { f.un.chg++; continue; }
+    if (r.con) { f.un.chg++; f.all.chg++; continue; }
     const w = r.quad.charAt(3), s = r.quad.charAt(2);
     if (w !== quad.CH.same) f.un[COL[w] || CHG]++;
     if (s !== quad.CH.same) { f.st[COL[s] || CHG]++; f.staged++; }
+    //  A row edited again after staging is ONE row of its class: the worktree
+    //  column names what it is now, the stage column what it was staged as.
+    if (w !== quad.CH.same) f.all[COL[w] || CHG]++;
+    else if (s !== quad.CH.same) f.all[COL[s] || CHG]++;
   }
   f.dirty = (f.un.chg + f.un.add + f.un.del) > 0;
   return f;
@@ -92,6 +99,7 @@ function fold(rows) {
 function addFold(f, d) {
   for (const c in d.un) f.un[c] += d.un[c];
   for (const c in d.st) f.st[c] += d.st[c];
+  for (const c in d.all) f.all[c] += d.all[c];
   f.staged += d.staged;
 }
 
@@ -124,13 +132,11 @@ const PAIRW = SLOTW * 2 + 1;       // a diverged `A⇄B` spans both slots and th
 const BLANK = "  ";
 const FACE = theme.BTN_FACE, SIG = theme.BTN_SIGIL;
 
-//  One 2-cell count, be's THREE-STATE rule (todo.js:786:TO countSlot): rows left
-//  to stage show the UNSTAGED number, a wholly staged class shows the STAGED
-//  one, an empty class blanks.  Which of the two is LIT is paint (BEE-041).
-function slot(sigil, un, st) {
-  if (un > 0) return theme.countFace(sigil, un);
-  if (st > 0) return theme.countFace(sigil, st);
-  return BLANK;
+//  One 2-cell count: the class's OWN size, staged rows included, an empty class
+//  blank.  Whether it is LIT is the other axis and paint's (BEE-041) — a count
+//  and a button are not the same question (BEE-039 revised).
+function slot(sigil, tot) {
+  return tot > 0 ? theme.countFace(sigil, tot) : BLANK;
 }
 
 const ZERO3 = { chg: 0, add: 0, del: 0 };
@@ -141,13 +147,13 @@ const ZERO3 = { chg: 0, add: 0, del: 0 };
 //  plain string and the pager's clickable panel can never drift apart.
 function cell(t, k, n, s) { return { t: t, k: k, n: n || "", s: s || "" }; }
 
-//  BEE-041: be's THREE-STATE slot (todo.js:786:TO countSlot) — rows left to stage
-//  LIGHT the button (the unstaged count, wash and spell), a wholly staged class
-//  keeps its colour but sheds both (info), an empty class blanks.
-function countCell(sigil, un, st, name, ctx, verb) {
-  const t = slot(sigil, un, st);
+//  BEE-041: the slot COUNTS the class and the wash says whether it still has
+//  work — one row left to stage LIGHTS the button (spell and all), a wholly
+//  staged class keeps its colour but sheds both (info), an empty class blanks.
+function countCell(sigil, un, tot, name, ctx, verb) {
+  const t = slot(sigil, tot);
   if (un > 0) return cell(t, ctx ? "btn" : "info", name, ctx ? ctx + " " + verb : "");
-  return st > 0 ? cell(t, "info", name) : cell(t, "blank");
+  return tot > 0 ? cell(t, "info", name) : cell(t, "blank");
 }
 
 //  `[ i ~2 -1 +1   ]` — the staging surface: the status face, then chg/del/add
@@ -158,17 +164,17 @@ function countCell(sigil, un, st, name, ctx, verb) {
 //  context slot (main.js:264:eY), so ` i` names the wt after the verb and the three
 //  class buttons before it.  No word (an unnameable worktree): no spell at all.
 function fileCells(s, wt) {
-  const un = (s && s.un) || ZERO3, sg = (s && s.st) || ZERO3;
+  const un = (s && s.un) || ZERO3, tot = (s && s.all) || ZERO3;
   const ctx = wt ? "//" + wt : "";
   return [
     cell("[", "br"),
     cell(FACE.status, ctx ? "btn" : "info", "status", ctx ? "status " + ctx : ""),
     cell(" ", "gap"),
-    countCell(SIG.chg, un.chg, sg.chg, "chg", ctx, "add"),
+    countCell(SIG.chg, un.chg, tot.chg, "chg", ctx, "add"),
     cell(" ", "gap"),
-    countCell(SIG.del, un.del, sg.del, "del", ctx, "rm"),
+    countCell(SIG.del, un.del, tot.del, "del", ctx, "rm"),
     cell(" ", "gap"),
-    countCell(SIG.add, un.add, sg.add, "add", ctx, "add +"),
+    countCell(SIG.add, un.add, tot.add, "add", ctx, "add +"),
     cell(" ", "gap"),
     cell(BLANK, "blank"),                    // held for BEE-044's run button
     cell("]", "br")];
@@ -210,9 +216,9 @@ function commitCells(s, wt, msg) {
   const pair = a && b
     ? [histCell((Math.min(a, 99) + "⇄" + Math.min(b, 99)).padStart(PAIRW, " "),
                 "merge", act, "merge")]
-    : [histCell(slot("+", a, 0), "push", act, "push"),
+    : [histCell(slot("+", a), "push", act, "push"),
        cell(" ", "gap"),
-       histCell(slot("-", b, 0), "pull", act, "pull")];
+       histCell(slot("-", b), "pull", act, "pull")];
   const ci = s && s.staged > 0
     ? cell(FACE.commit, ctx && msg ? "btn" : "info", "commit",
            ctx && msg ? ctx + " commit -m " + quoted(msg) : "")

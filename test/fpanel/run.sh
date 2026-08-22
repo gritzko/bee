@@ -64,6 +64,10 @@ cat > "$SRC/alpha/todo/GET/GET-002.mkd" <<'EOF'
 #   GET-002: all staged
     Now: OPEN
 EOF
+cat > "$SRC/alpha/todo/GET/GET-003.mkd" <<'EOF'
+#   GET-003: mixed class
+    Now: OPEN
+EOF
 printf 'a\n' > "$SRC/alpha/a.txt"
 printf 'b\n' > "$SRC/alpha/b.txt"
 ( cd "$SRC/alpha" && git add -A &&
@@ -73,6 +77,7 @@ printf '%s\n' "$SRC/alpha" > "$REG"
 
 git -C "$SRC/alpha" worktree add -q -b GET-001 "$SRC/alpha-GET-001" || exit 2
 git -C "$SRC/alpha" worktree add -q -b GET-002 "$SRC/alpha-GET-002" || exit 2
+git -C "$SRC/alpha" worktree add -q -b GET-003 "$SRC/alpha-GET-003" || exit 2
 # GET-001: one of each unstaged class — modified, gone, untracked.
 printf 'edited\n' > "$SRC/alpha-GET-001/a.txt"
 rm "$SRC/alpha-GET-001/b.txt"
@@ -80,6 +85,10 @@ printf 'new\n' > "$SRC/alpha-GET-001/c.txt"
 # GET-002: the one change WHOLLY staged — nothing left for a button to do.
 printf 'edited\n' > "$SRC/alpha-GET-002/a.txt"
 git -C "$SRC/alpha-GET-002" add a.txt || exit 2
+# BEE-039 revised: GET-003 splits ONE class over both axes — a.txt staged, b.txt not.
+printf 'edited\n' > "$SRC/alpha-GET-003/a.txt"
+git -C "$SRC/alpha-GET-003" add a.txt || exit 2
+printf 'edited\n' > "$SRC/alpha-GET-003/b.txt"
 
 # The JS leg (QJAB-001: the --eval script door; requires climb via $WORK/jsrc).
 ( cd "$WORK" && HOME="$FH" SRC_ROOT="$SRC" "$RT" --eval "require('$CASE/fpanel.js')" ) \

@@ -88,7 +88,12 @@ function synth(un, st, staged, ahead, behind) {
   const cs = [];
   for (let i = 0; i < ahead; i++) cs.push({ quad: ".o.." });
   for (let i = 0; i < behind; i++) cs.push({ quad: "o..." });
-  return { un: un, st: st, staged: staged, dirty: false, model: { commits: cs } };
+  //  BEE-039 revised: a slot counts its whole class, so a stat carries `all`;
+  //  these cases are single-axis, where the class is whichever axis holds it.
+  const all = { chg: Math.max(un.chg, st.chg), add: Math.max(un.add, st.add),
+                del: Math.max(un.del, st.del) };
+  return { un: un, st: st, all: all, staged: staged, dirty: false,
+           model: { commits: cs } };
 }
 const Z3 = { chg: 0, add: 0, del: 0 };
 {
