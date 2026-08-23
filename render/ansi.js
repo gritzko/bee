@@ -15,6 +15,28 @@ const UTF8_LEN = wrap.UTF8_LEN;
 
 const ESC = String.fromCharCode(27);
 
+//  CODE-039: a C0 control or DEL in HUNK BYTES repaints or spoofs the terminal
+//  (a crafted commit subject, author or filename), so the byte sink swaps each
+//  one for `?` — one byte, one column, so the row geometry is unmoved.  The
+//  row's own '\n' and '\t' are geometry, not injection, and ride through; the
+//  renderer's own SGR never passes here, it is spelled by `enc`.
+const CTL_SUB = "?";
+function isCtl(c) { return (c < 0x20 && c !== 0x0a && c !== 0x09) || c === 0x7f; }
+//  The STRING twin, for text that is one terminal line: its breaks and tabs go
+//  too, since neither belongs in a band.
+function ctlText(s) { return String(s).replace(/[\x00-\x1f\x7f]/g, CTL_SUB); }
+//  Display columns of such a line: one per CODEPOINT, the unit render/wrap.js's
+//  row index counts — a byte count under-fills a band carrying UTF-8.
+function colsOf(s) {
+  let n = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c >= 0xd800 && c < 0xdc00 && i + 1 < s.length) i++;
+    n++;
+  }
+  return n;
+}
+
 //  --- ansi64 model (abc/ANSI.h) -------------------------------------------
 //  ansi64 as {fm,fg,bm,bg,fl}: fg mode/value, bg mode/value, attr flags.
 //  OR-combine is field-wise — a fg-only and a bg-only state merge cleanly,
@@ -202,6 +224,12 @@ function emitBody(hunk, off, end, color, pass, enc, raw, wash, els) {
         enc(deltaSGR(want, cur)); cur = want;
       }
     }
+    //  CODE-039: the control byte itself is never written out — it is painted
+    //  as a substitute of the same width, inside the cell's own colour.
+    if (isCtl(text[pos])) {
+      if (runLo >= 0) { raw(runLo, pos); runLo = -1; }
+      enc(CTL_SUB); pos += clen; continue;
+    }
     if (runLo < 0) runLo = pos;
     pos += clen;
   }
@@ -223,13 +251,14 @@ function paintRow(hunk, off, end, color, pass, wash, els) {
 }
 
 //  Render the THEME_BANNER colour band for a hunk URI, space-filled to `cols`
-//  (HUNKu8sFeedBanner HUNKOutColor).  `used` is the URI BYTE length (the C
-//  u8csLen), matching the C fill exactly.
+//  (HUNKu8sFeedBanner HUNKOutColor).  CODE-039: the band is ONE terminal line,
+//  so the uri is control-filtered on the way in, and `used` counts the COLUMNS
+//  it takes — a byte count left a UTF-8 uri's band short.
 function bannerColor(uriStr, cols, enc) {
-  const uriBytes = utf8.Encode(uriStr);
+  const safe = ctlText(uriStr || "");
   enc(deltaSGR(THEME_BANNER, A0));
-  enc(uriStr);
-  let used = uriBytes.length, pad = "";
+  enc(safe);
+  let used = colsOf(safe), pad = "";
   while (used < cols) { pad += " "; used++; }
   enc(pad);
   enc(resetSGR(THEME_BANNER));
@@ -288,6 +317,8 @@ module.exports = {
   aEq: aEq,
   //  The banner band the colour sink opens each hunk with.
   bannerColor: bannerColor,
+  //  CODE-039: the C0/DEL filter and the column count the band fills by.
+  ctlText: ctlText, colsOf: colsOf,
   THEME_BANNER: THEME_BANNER,
   //  LITE-010: the diff wash slots + the tok32 side vocabulary.
   SIDE_EQ: SIDE_EQ, SIDE_IN: SIDE_IN, SIDE_RM: SIDE_RM,
