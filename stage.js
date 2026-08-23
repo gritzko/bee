@@ -70,16 +70,26 @@ function list(argv) {
 
 //  Run a STAGER with `bytes` on its stdin — the second half of the pipe the
 //  ticket draws, as a second spawn, no shell between them.  -> its exit code.
-function feed(argv, bytes) {
-  const ch = spawn(argv);
-  //  A child that died before reading answers on the reap, not here (SIGPIPE
-  //  is ignored process-wide, so the write comes back EPIPE).
-  try { io.writeAll(ch.stdin, bytes); } catch (e) {}
-  io.close(ch.stdin);
-  const said = slurp(ch.stdout);            // drain: never block a chatty git
-  io.close(ch.stdout);
-  if (said.length) io.writeAll(1, said);
-  return reap(ch.pid, argv);
+//  CODE-032: the batch rides a SCRATCH FILE, not a pipe — a whole list written
+//  into a child we only read afterwards deadlocks the moment the child talks.
+function feed(argv, bytes, at) {
+  const gd = idx.gitdirOf(at);
+  if (gd === null) throw "bee: not a git repository";
+  const tmp = gd + "/bee-stage." + io.getpid();
+  try {
+    const fd = io.open(tmp, "c");
+    io.writeAll(fd, bytes);
+    io.close(fd);
+    //  Its stdout is INHERITED like every other child's (run), so a chatty git
+    //  reaches the user directly and no pipe can ever fill.
+    const rd = io.open(tmp, "r");
+    let pid;
+    try { pid = io.spawnFds(argv[0], argv, rd, -1); }
+    catch (e) { throw "bee: cannot run " + argv[0] + " (" + e + ")"; }
+    const rc = reap(pid, argv);
+    io.close(rd);
+    return rc;
+  } finally { try { io.unlink(tmp); } catch (e) {} }
 }
 
 function count(bytes) {
@@ -121,7 +131,7 @@ function classIn(say, at, cl) {
   const n = count(bytes);
   if (n === 0) return 0;
   const stager = cl.stage(at);
-  if (feed(stager, bytes) !== 0) throw "bee: " + say + ": git " + stager[3] + " refused";
+  if (feed(stager, bytes, at) !== 0) throw "bee: " + say + ": git " + stager[3] + " refused";
   return n;
 }
 
