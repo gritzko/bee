@@ -172,12 +172,18 @@ function serves(root, rel) {
 //  Every worktree a partial may resolve in (BEE-003): the registry's own lines
 //  plus the submodules a registered parent carries without a line of their own
 //  (BEE-006:49:3B installs them, an older registry has none).
-const SUBS = new Map();
+const SUBS = new Map();         //  worktree root -> { rev, subs }
 
 //  The tip-tree walk is the one costly step here, so it is memoized per root.
+//  CODE-044: keyed on the BEE-048 fsw rev like TIPS and LANES, so a submodule
+//  mounted or removed under a resident server is seen without a restart; with
+//  no watcher there is no rev and no event either, so the one-shot CLI run
+//  memoizes for its lifetime exactly as it did (wtstat.js:40:sb's law).
 function subsOf(root) {
+  const cache = require("./cache.js");
+  const rev = cache.live() ? cache.rev(root) : null;   // read BEFORE the walk
   const hit = SUBS.get(root);
-  if (hit !== undefined) return hit;
+  if (hit !== undefined && hit.rev === rev) return hit.subs;
   let out = [];
   let ctx = null;
   try {
@@ -186,7 +192,7 @@ function subsOf(root) {
     out = s.subs.map(function (x) { return { path: x.path, root: x.root }; });
   } catch (e) { out = []; }
   finally { if (ctx !== null) idx.closeRepo(ctx); }
-  SUBS.set(root, out);
+  SUBS.set(root, { rev: rev, subs: out });
   return out;
 }
 
