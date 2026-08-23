@@ -113,7 +113,7 @@ function run(argv) {
 
 //  `git worktree repair` INSIDE the moved tree, then in every gitlink of it.
 //  The tree's own `.git` leg still names the repo that knows it, so each run
-//  finds THAT repo and re-points its `gitdir` back — which is how fork.js:94's
+//  finds THAT repo and re-points its `gitdir` back — which is how fork.js:96's
 //  per-gitlink sub worktrees repair, each through its own sub repo.
 //  CODE-042: the child's status is the answer — the FIRST failure names the
 //  tree and the command, since a swallowed one leaves a broken back-pointer.

@@ -80,23 +80,25 @@ function subsAt(root, sha) {
 
 //  Give every gitlink of `dest` a worktree of ITS OWN repo, detached at the
 //  commit the parent records, then descend — `root` is the original checkout
-//  the sub repos are found through, `added` the rollback trail.  -> the count.
-function grow(root, dest, subs, added) {
-  let n = 0;
+//  the sub repos are found through, `added` the rollback trail, `pfx` the path
+//  down from the FORK ROOT (BEE-059:27) and `t` the { n, skipped } tally.
+function grow(root, dest, subs, added, pfx, t) {
   for (const s of subs) {
     const from = root + "/" + s.path, at = dest + "/" + s.path;
-    if (idx.gitdirOf(from) === null)
-      throw "bee: submodule " + s.path + ": there is no repo at " + from;
+    const name = pfx + s.path;
+    //  A gitlink nobody initialised — quickjs-ng pins test262 `update = none` —
+    //  is skipped in words as index/index.js:938:og does, its dir left empty.
+    if (idx.gitdirOf(from) === null) { t.skipped++; continue; }
     const kids = subsAt(from, s.sha);
     if (kids === null)
-      throw "bee: submodule " + s.path + ": commit " + s.sha.slice(0, 8) +
+      throw "bee: submodule " + name + ": commit " + s.sha.slice(0, 8) +
             " is not here — fetch it first";
     if (run(["git", "-C", from, "worktree", "add", "-q", "--detach", at, s.sha]) !== 0)
-      throw "bee: submodule " + s.path + ": git worktree add refused " + at;
+      throw "bee: submodule " + name + ": git worktree add refused " + at;
     added.push({ repo: from, path: at });
-    n += 1 + grow(from, at, kids, added);
+    t.n++;
+    grow(from, at, kids, added, name + "/", t);
   }
-  return n;
 }
 
 //  A refusal leaves NOTHING behind (BEE-026:44): the worktrees go in the reverse
@@ -136,15 +138,18 @@ function fork(args) {
              : ["git", "-C", m.root, "worktree", "add", "-q", "-b", tail, dest];
   if (run(argv) !== 0) throw "bee: " + word + ": git worktree add refused";
   const added = [{ repo: m.root, path: dest }];
-  let n = 0;
+  const t = { n: 0, skipped: 0 };
   try {
     //  The tree is the one the new worktree CHECKED OUT — HEAD's for a fresh
     //  branch, the branch's own when it was there already.
     const hd = refs.head(idx.gitdirOf(dest));
     if (hd === null) throw "bee: " + word + ": the new worktree has no HEAD";
-    n = grow(m.root, dest, subsAt(m.root, hd.sha) || [], added);
+    grow(m.root, dest, subsAt(m.root, hd.sha) || [], added, "", t);
   } catch (e) { rollback(added); throw e; }
-  return dest + " " + tail + " " + n + " submodule" + (n === 1 ? "" : "s");
+  //  An empty submodule dir is never a surprise: the skips are counted out loud
+  //  (BEE-059:25), and the line keeps its old shape when nothing was skipped.
+  return dest + " " + tail + " " + t.n + " submodule" + (t.n === 1 ? "" : "s") +
+         (t.skipped ? ", " + t.skipped + " skipped" : "");
 }
 
 module.exports = { fork: fork, VERB: VERB, srcRoot: srcRoot };
