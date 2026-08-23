@@ -383,6 +383,20 @@ else
     bad "resume leg (rc $RC)" "$WORK/rs.out"
 fi
 
+# V6c: BEE-061 — a MARK stamped for a tip whose CPAR rows never landed.  The
+# poison is stamped by hand on a CLONE (its origin/master is the upstream the
+# status column needs), then `index`, `log` and `status` are pinned against the
+# healthy reading, and the heal must re-derive ONE commit, not the whole index.
+git clone -q "$REPO" "$WORK/prepo" 2>/dev/null || { echo "index: cannot clone the fixture" >&2; exit 2; }
+LITE_FIX="$WORK/prepo" rt --eval "require('$CASE/poison.js')" > "$WORK/ps.out" 2>"$WORK/ps.err"; RC=$?
+if [ "$RC" = 0 ] && grep -q '^DONE' "$WORK/ps.out" && ! grep -q '^FAIL' "$WORK/ps.out"; then
+    N=$(grep -c '^ok' "$WORK/ps.out"); CHECKS=$((CHECKS + N))
+    ok "poison leg: $N checks (a mark without its rows heals, readers stay true)"
+else
+    cat "$WORK/ps.out"; head -5 "$WORK/ps.err"
+    bad "poison leg (rc $RC)" "$WORK/ps.out"
+fi
+
 # V7: `.git/be` is DERIVED — rm -rf it and the next run rebuilds it whole.
 rm -rf "$REPO/.git/be"
 rt index "$REPO" > "$WORK/o5" 2>"$WORK/e5"; RC=$?

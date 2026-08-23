@@ -1033,11 +1033,15 @@ function bringUp(ctx, ix, opts) {
     rec.tracks = t.file; rec.tracked = t.added;
   }
   const refHl = bare ? hlOfSha(tip) : hlOfText(hd.ref);
+  const st = state(ix);
   //  The watermark is the fast no-op only: the tip it names is already indexed
   //  with everything below it, so there is nothing to scan and nothing to do.
-  if (markSet(ix, refHl).has(hlOfSha(tip))) { rec.upToDate = true; return rec; }
+  //  A mark whose tip has no CPAR row is a lie (BEE-061: rows lost under a
+  //  surviving mark), so the tip's own done flag is read beside it — one seek.
+  if (markSet(ix, refHl).has(hlOfSha(tip)) && st.done.has(hlOfSha(tip))) {
+    rec.upToDate = true; return rec;
+  }
 
-  const st = state(ix);
   const prog = progress();
   const w = collect(r, tip, st.done, prog);
   //  The gitlink paths the tip carries, minted once (BEE-006); a repo with no
