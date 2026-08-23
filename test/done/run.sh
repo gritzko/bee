@@ -280,6 +280,25 @@ if [ -d "$DEST2" ] && [ ! -e "$SRC/gamma-GET-010" ] &&
 then ok "...and a submodule-LESS worktree rides git worktree move itself"
 else bad "the git-native move leg" "$WORK/d10" "$WORK/d10e" "$WORK/st2"; fi
 
+# --- CODE-042: a tree whose gitdir link cannot be rewritten ----------------
+# The back-pointer names a dir that is not there, so `git worktree repair`
+# cannot fix it up after the rename — and the report must SAY so, by tree and
+# by command, instead of answering a clean `mov` row.
+mk GET-013 "a dangling back-pointer"
+gitq "$BETA" worktree add -q -b GET-013 "$SRC/beta-GET-013" master || exit 2
+printf 'gitdir: %s\n' "$SRC/nowhere/.git/worktrees/GET-013" > "$SRC/beta-GET-013/.git"
+bee done GET-013 > "$WORK/d13" 2> "$WORK/d13e"; RC=$?
+DEST3="$SRC/done/beta-GET-013"
+if grep -q 'worktree repair' "$WORK/d13" && grep -q "$DEST3" "$WORK/d13"
+then ok "an unrepairable retire NAMES the tree and the failed repair command"
+else bad "the failed repair was reported clean (rc $RC)" "$WORK/d13" "$WORK/d13e"; fi
+if ! grep -q '^mov ' "$WORK/d13"
+then ok "...and never answers the plain 'mov' success row"
+else bad "a broken repair still reported a clean move" "$WORK/d13"; fi
+if grep -q '^    Now: DONE$' "$BETA/todo/GET/GET-013.mkd" && [ -d "$DEST3" ]
+then ok "...while the page flip and the move itself still stand"
+else bad "the failed repair undid the close" "$BETA/todo/GET/GET-013.mkd"; fi
+
 # --- the done root never lists as a ticket worktree ------------------------
 bee wts > "$WORK/w1" 2>"$WORK/w1e"; RC=$?
 if [ "$RC" = 0 ] && ! grep -q 'GET-005\|GET-010' "$WORK/w1"

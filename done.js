@@ -115,23 +115,30 @@ function run(argv) {
 //  The tree's own `.git` leg still names the repo that knows it, so each run
 //  finds THAT repo and re-points its `gitdir` back — which is how fork.js:94's
 //  per-gitlink sub worktrees repair, each through its own sub repo.
+//  CODE-042: the child's status is the answer — the FIRST failure names the
+//  tree and the command, since a swallowed one leaves a broken back-pointer.
 function repair(dir) {
-  run(["git", "-C", dir, "worktree", "repair"]);
-  for (const s of subs.mounts(dir)) if (s.live) repair(s.wt);
+  const rc = run(["git", "-C", dir, "worktree", "repair"]);
+  let why = rc === 0 ? "" : "git -C " + dir + " worktree repair failed (rc " + rc + ")";
+  for (const s of subs.mounts(dir)) if (s.live) {
+    const w = repair(s.wt);
+    if (why === "") why = w;
+  }
+  return why;
 }
 
 //  Move the worktree to the done root.  `git worktree move` is the first leg,
 //  but it REFUSES a tree holding submodules — and fork.js gives every gitlink
 //  one — so the rename plus repair is the normal leg for a forked worktree, and
-//  the plain rename preserves dirty work either way.  -> "" or the refusal.
+//  the plain rename preserves dirty work either way.  -> "" or what went
+//  wrong: the rename's refusal, or CODE-042's failed repair.
 function moveWt(from, dest) {
   const main = idx.mainOf(from);
   if (subs.mounts(from).length === 0 && main !== from &&
       run(["git", "-C", main, "worktree", "move", from, dest]) === 0) return "";
   try { io.rename(from, dest); }
   catch (e) { return "cannot move " + from + " to " + dest + " (" + e + ")"; }
-  repair(dest);
-  return "";
+  return repair(dest);
 }
 
 //  The worktree a ticket KEY owns — the board's own match, the scanned tail read
