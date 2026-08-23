@@ -33,6 +33,9 @@ const TEXT = "text/plain; charset=utf-8";
 const OCTET = "application/octet-stream";
 const MAXBYTES = wv.MAX_SOURCE_SIZE;    // LITE-036: the shared source cap, 4 MB
 const MAXPOST = 4 << 10;                // BEE-047: a spell is a line, not a file
+//  CODE-036: the request ASSEMBLY deadline — a loopback client that has not
+//  handed over a whole head (and body) in this long is refused and closed.
+const MAXWAIT = 5000;                   // milliseconds
 
 //  --- the QJAB-004 coupling --------------------------------------------------
 //  EVERY http leaf call lives in these two functions, so an API change is edited
@@ -782,6 +785,21 @@ function listen(args, door) {
 
   const srv = net.createServer(function (sock) {
     let buf = new Uint8Array(0), done = false;
+    //  CODE-036: assembly runs on a clock — a request that is not whole when it
+    //  strikes is answered 408 and its fd dropped, so no client parks one.
+    const clock = setTimeout(function () {
+      if (done) return;
+      done = true;
+      //  The 408 reaches the wire first: the fd is dropped on the tick after
+      //  its bytes flush, never in the middle of the flush itself.
+      sock.once("drain", function () { setTimeout(function () { sock.destroy(); }, 0); });
+      try {
+        respond(sock, 408, "Request Timeout", TEXT,
+                utf8.Encode("bee http: that request never arrived\n"), false);
+      } catch (e) { sock.destroy(); }
+      io.log("- - 408\n");
+    }, MAXWAIT);
+    sock.on("close", function () { clearTimeout(clock); });
     sock.on("error", function () { });                   // a dropped browser is not news
     sock.on("data", function (chunk) {
       if (done) return;

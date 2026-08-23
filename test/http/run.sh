@@ -321,6 +321,23 @@ if [ -n "$HL" ] && [ "$HL" = "$GL" ]
 then ok "HEAD answers GET's own length ($HL) with no body"
 else bad "HEAD length '$HL' vs GET '$GL'" "$WORK/hdr"; fi
 
+# ==========================================================================
+# leg 4c — CODE-036: request ASSEMBLY has a deadline.  A trickle POST that
+# never completes its body must be refused and its socket dropped, not parked.
+# ==========================================================================
+( cd "$WORK" && HOME="$FAKEHOME" BEE_PORT="$PORT" "$RT" --eval "require('$CASE/stall.js')" ) \
+  > "$WORK/s.out" 2>"$WORK/s.err"; RC=$?
+if [ "$RC" = 0 ] && grep -q '^DONE' "$WORK/s.out" && ! grep -q '^FAIL' "$WORK/s.out"; then
+    N=$(grep -c '^ok' "$WORK/s.out"); CHECKS=$((CHECKS + N))
+    ok "stalled-request leg: $N checks ($(grep '^DONE' "$WORK/s.out" | cut -d, -f2-))"
+else
+    cat "$WORK/s.out"; head -5 "$WORK/s.err"
+    bad "stalled-request leg (rc $RC)" "$WORK/s.out"
+fi
+if grep -q '^- - 408' "$WORK/srv.log"
+then ok "and the refusal is on the access log"
+else bad "no 408 line on the message stream" "$WORK/srv.log"; fi
+
 # It survived all of that.
 if kill -0 "$SRVPID" 2>/dev/null
 then ok "the server is still up after every leg"
