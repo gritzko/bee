@@ -113,4 +113,51 @@ function S(bytes) { return utf8.Decode(bytes); }
         wv.extOf("x.tar.gz"));
 }
 
+//  --- 7. CODE-040: an absent side falls back, it does not throw ------------
+{
+  check("null-ours-is-null", wv.weave3(B("a\n"), null, B("b\n"), "txt") === null);
+  check("null-theirs-is-null", wv.weave3(B("a\n"), B("b\n"), null, "txt") === null);
+  check("undefined-both-sides-is-null",
+        wv.weave3(B("a\n"), undefined, undefined, "txt") === null);
+  check("bytesEq-tolerates-an-absent-side",
+        wv.bytesEq(null, B("a\n")) === false && wv.bytesEq(B("a\n"), null) === false &&
+        wv.bytesEq(null, null) === true && wv.bytesEq(B("a\n"), B("a\n")) === true);
+}
+
+//  --- 8. CODE-040: the 32-bit membership mask has a hard ceiling -----------
+//  One side is one bit, so `1 << g` wraps past 31 sides and NOTHING matches the
+//  spine: the whole file reads as one divergent run.  At the ceiling the spine
+//  must still be right; over it, mergedLive must refuse instead of mis-merging.
+{
+  const hid = function (v) { return ("000000000000000" + v.toString(16)).slice(-16); };
+  //  `ng` sides over one base: side 0 rewrites line 2 to Y, side 1 to X, the
+  //  rest re-fold the base unchanged.  The shared "a\n"/"c\n" are the spine,
+  //  so the one conflict span is the middle, [2,4) — never the whole file.
+  const build = function (ng) {
+    const bid = hid(1), ids = [bid], groups = [];
+    let w = wv.fold(null, B("a\nb\nc\n"), "txt", bid, []);
+    for (let i = 0; i < ng; i++) {
+      const id = hid(0x10 + i);
+      w = wv.fold(w, B(i === 0 ? "a\nY\nc\n" : i === 1 ? "a\nX\nc\n" : "a\nb\nc\n"),
+                  "txt", id, [bid]);
+      ids.push(id); groups.push([bid, id]);
+    }
+    const mrg = hid(0xff);
+    return { w: wv.merge(w, mrg, ids), rev: mrg, groups: groups };
+  };
+  const spanOf = function (ng) {
+    const t = build(ng), m = wv.mergedLive(t.w, t.rev, t.groups);
+    return S(m.bytes) + " " + JSON.stringify(m.spans);
+  };
+  check("mask-ceiling-is-31", wv.MAX_GROUPS === 31, wv.MAX_GROUPS);
+  check("2-sides-span-the-divergence-only",
+        spanOf(2) === 'a\nXY\nc\n [{"from":2,"to":4}]', spanOf(2));
+  check("31-sides-span-the-divergence-only",
+        spanOf(31) === 'a\nXY\nc\n [{"from":2,"to":4}]', spanOf(31));
+  let threw = "";
+  try { spanOf(32); } catch (e) { threw = String(e); }
+  check("32-sides-refuse-loudly", threw.indexOf("membership mask") >= 0,
+        threw || "no throw");
+}
+
 w1((bad ? "FAILED " : "DONE ") + n + " checks\n");

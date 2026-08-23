@@ -33,6 +33,8 @@ function extOf(path) {
 }
 
 function bytesEq(a, b) {
+  //  CODE-040: an absent side has no length to read; only two absences match.
+  if (!a || !b) return !a && !b;
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
   return true;
@@ -59,9 +61,16 @@ function merge(base, hash, ancestors) {
 //  the weave at `rev`, no fences, `groupIds` one hashlet-id array per side.
 //  Returns { bytes, spans }, the spans being the conflicting [from,to) ranges:
 //  a run of non-shared tokens conflicts iff two membership masks are disjoint.
+//  One side is one bit of a 32-bit mask, so 31 of them is the hard ceiling.
+const MAX_GROUPS = 31;
 function mergedLive(wm, rev, groupIds) {
   const ng = groupIds.length;
-  const spine = ng >= 32 ? 0xFFFFFFFF : ((1 << ng) - 1);
+  //  CODE-040: the membership mask is one 32-bit int, so bit `ng` wraps past
+  //  MAX_GROUPS and no run would ever match the spine; refuse, never mis-merge.
+  if (ng > MAX_GROUPS)
+    throw new Error("weave: " + ng + " sides is over the " + MAX_GROUPS +
+                    " the membership mask holds");
+  const spine = ((1 << ng) >>> 0) - 1;
   const sets = groupIds.map(function (g) { return new Set(g); });
   const text = [], mask = [], live = [];
   wm.rewind(rev);
@@ -128,6 +137,9 @@ const _W3_BASE = "0000000000000001", _W3_OURS = "0000000000000002",
 //  edits coexist and a divergent region reads back markerless with spans.
 //  null means unweavable (binary, over cap) and the caller falls back loudly.
 function weave3(base, ours, theirs, ext) {
+  //  CODE-040: an absent ours or theirs is unweavable, not a throw — the
+  //  caller falls back loudly, as it does for a binary or over-cap side.
+  if (!ours || !theirs) return null;
   base = base || new Uint8Array(0);
   //  Trivial resolutions carry no conflict spans (PATCH-025, DIS-080).
   const clean = function (b) { return { bytes: b, spans: [] }; };
@@ -327,6 +339,7 @@ module.exports = { weave3: weave3, mergedLive: mergedLive,
                    bytesEq: bytesEq, extOf: extOf, isBinary: isBinary,
                    MAX_SOURCE_SIZE: MAX_SOURCE_SIZE,
                    MAX_SOURCE_MARKED_UP: MAX_SOURCE_MARKED_UP,
+                   MAX_GROUPS: MAX_GROUPS,
                    //  The one weave a diff projects (BEE-005).
                    weaveDiff: weaveDiff, blobDiff: blobDiff,
                    foldWt: foldWt, blobOf: blobOf,
