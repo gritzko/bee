@@ -33,6 +33,7 @@ const TEXT = "text/plain; charset=utf-8";
 const OCTET = "application/octet-stream";
 const MAXBYTES = wv.MAX_SOURCE_SIZE;    // LITE-036: the shared source cap, 4 MB
 const MAXPOST = 4 << 10;                // BEE-047: a spell is a line, not a file
+const FLASHMS = 30000;                  // CODE-035: how long a report waits for its landing
 //  CODE-036: the request ASSEMBLY deadline — a loopback client that has not
 //  handed over a whole head (and body) in this long is refused and closed.
 const MAXWAIT = 5000;                   // milliseconds
@@ -580,6 +581,25 @@ function formField(body, name) {
   return "";
 }
 
+//  CODE-035: a URL (a Referer, a request line) -> the PAGE it names, path and
+//  query and nothing else — what the 303's Location and the landing GET share.
+function pageAt(u) {
+  let p;
+  try { p = uri._parse(String(u === undefined || u === null ? "" : u)); }
+  catch (e) { return ""; }
+  if (p === null) return "";
+  return String(p.path || "/") + (p.query ? "?" + p.query : "");
+}
+
+//  CODE-035: is this request the landing the pending report was bound to?  A
+//  landing that never comes lets the report go, rather than ambushing a later one.
+function flashDue(st, req) {
+  const f = st.flash;
+  if (f === null) return false;
+  if (Date.now() - f.when > FLASHMS) { st.flash = null; return false; }
+  return f.at !== "" && f.at === pageAt(req.uri);
+}
+
 //  The clicked spell, run exactly as a pager click runs it (pager.js:642:6S
 //  `_actSpell`): the map says the word writes, act.js's own `shape` says THIS
 //  spell does, the rev tree is bumped, and 303 sends the browser back to the
@@ -619,7 +639,9 @@ function actPost(req, sock, st) {
   //  BEE-047: the report line takes the top of the page the browser lands on
   //  (handle() spends `flash`); with no page to go back to it IS the answer.
   if (back === "") return refuse(sock, 200, "OK", line + "\n");
-  st.flash = line;
+  //  CODE-035: the report is the POSTER'S — it is bound to the very landing
+  //  this 303 names, so no other client's page paints it or spends it.
+  st.flash = { line: line, at: pageAt(back), when: Date.now() };
   respond(sock, 303, "See Other", TEXT, utf8.Encode(line + "\n"), false,
           [["Location", back]]);
   return "303";
@@ -752,7 +774,7 @@ function handle(req, sock, st) {
   else body = html.hunksHtml(hunks, link, "", acts(st, mount));
   //  BEE-047: the act's one report line is SPENT here — on the very page its
   //  303 sent the browser back to, and only once.
-  if (st.flash && !only) { body = html.flash(st.flash) + body; st.flash = ""; }
+  if (!only && flashDue(st, req)) { body = html.flash(st.flash.line) + body; st.flash = null; }
   sendPage(sock, 200, "OK", title, html.page(title, body), only);
   return "200";
 }
@@ -786,7 +808,7 @@ function listen(args, door) {
              : { name: mnt.basename(root), root: root, prefix: "", own: mnt.basename(root),
                  top: root, dup: false };
 
-  const st = { door: door, root: root, home: home, acts: !ro, flash: "",
+  const st = { door: door, root: root, home: home, acts: !ro, flash: null,
                css: utf8.Encode(html.stylesheet()),
                icon: io.mmap(__dirname + "/blob/favicon.ico", "r").data() };
 

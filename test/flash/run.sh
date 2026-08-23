@@ -129,6 +129,17 @@ if grep -F ".flash" "$WORK/body" | grep -q "opacity"
 then ok "and somewhat transparent"
 else bad "no opacity on .flash" "$WORK/body"; fi
 
+# ==========================================================================
+# leg 4 — CODE-035: TWO CLIENTS.  The report belongs to the poster: it is
+# bound to the landing the 303 named, so another tab's page, painted first,
+# never carries it and never spends it.
+# ==========================================================================
+post "done GET-998"
+curl -s -o "$WORK/body" "$BASE/alpha/list/"      # the other tab, another page
+hasnt "another client's page does not steal the report" "TODONONE"
+curl -s -o "$WORK/body" "$BASE/alpha/todo"
+has "and the poster's own landing still spends it" "TODONONE"
+
 if [ "$FAILED" != 0 ]; then
     echo "FAIL [bee/flash] $FAILED of $CHECKS checks failed" >&2
     exit 1
