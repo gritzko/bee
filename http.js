@@ -93,6 +93,12 @@ const ROUTE = {
   choose:   "choose",               //  /<repo>/choose/<ref>
 };
 
+//  CODE-033: URL head -> the view it names, or undefined; an OWN-property test,
+//  the twin of door.js `verbOf`, so `toString` is a path segment, never a route.
+function routeVerb(head) {
+  return Object.prototype.hasOwnProperty.call(ROUTE, head) ? ROUTE[head] : undefined;
+}
+
 //  LITE-036: the EXTENSION -> content type table — the ONE place a served byte
 //  stream is typed, and never off the bytes.  Off the list is octet-stream (the
 //  browser downloads, interprets nothing); `svg` is deliberately absent, being
@@ -142,15 +148,16 @@ function routeOf(reqUri, names) {
   const at = names && names.indexOf(first) >= 0 ? 2 : 1;
   if (at === 1) {
     own.head = first;
-    own.verb = ROUTE[first];
+    own.verb = routeVerb(first);
     own.arg = segs.slice(2).map(unesc).join("/") + q;
     return own;
   }
   own.repo = first;
   const head = segs.length > 2 ? unesc(segs[2]) : "";
-  if (Object.prototype.hasOwnProperty.call(ROUTE, head)) {
+  const hv = routeVerb(head);
+  if (hv !== undefined) {
     own.head = head;
-    own.verb = ROUTE[head];
+    own.verb = hv;
     own.arg = segs.slice(3).map(unesc).join("/") + q;
     return own;
   }
@@ -174,7 +181,7 @@ function repoNames() {
 function urlOf(pg, target) {
   const sp = target.indexOf(" ");
   const verb = sp > 0 ? target.slice(0, sp) : "";
-  return ROUTE[verb] && verb !== ""
+  return verb !== "" && routeVerb(verb) !== undefined
     ? argUrl(pg, verb, target.slice(sp + 1).trim())
     : refUrl(pg, target);
 }

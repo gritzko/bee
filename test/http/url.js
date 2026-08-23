@@ -79,6 +79,14 @@ check("...and it keeps the raw path for the Location",
 //  A percent-escaped segment comes back as the byte it stands for (abc/URI).
 check("a %20 segment decodes", srv.routeOf("/cat/a%20b.txt").arg === "a b.txt",
       srv.routeOf("/cat/a%20b.txt").arg);
+//  CODE-033: the table is read by OWN property, so an inherited Object name is
+//  no verb — `toString` names a page no more than `nope` does, either way up.
+check("an inherited name names no verb", srv.routeOf("/toString/x").verb === undefined,
+      typeof srv.routeOf("/toString/x").verb);
+check("...nor behind a repo, where it is a path",
+      srv.routeOf("/repo/toString/x", NAMES).verb === "path" &&
+      srv.routeOf("/repo/toString/x", NAMES).arg === "toString/x",
+      srv.routeOf("/repo/toString/x", NAMES).verb);
 
 //  --- the same table backwards, pager target -> url ------------------------
 //  A page's own state: the root it serves, the door it resolves references
@@ -172,6 +180,11 @@ check("a dir reference opens in list",
 //  NOTHING answers -> no href; the painter leaves plain text
 check("an unresolvable reference gets NO url",
       srv.urlOf(mkpg(doorOf(null, null, null), 8), "nosuch.c:3") === "");
+//  CODE-033: the same guard backwards — a target whose first word is an
+//  inherited Object name is a REFERENCE, not a verb line, so it gets no url.
+check("an inherited name is no verb line",
+      srv.urlOf(mkpg(doorOf(null, null, null), 8), "toString x") === "",
+      srv.urlOf(mkpg(doorOf(null, null, null), 8), "toString x"));
 //  BEE-012: SEVERAL answer -> a CHOICE, not a miss: the chooser page, read in
 //  this page's own repo.  Before this it folded to "" beside a real miss.
 check("an ambiguous reference gets the chooser url",

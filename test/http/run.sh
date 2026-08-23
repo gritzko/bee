@@ -292,6 +292,14 @@ has  "it says so in plain words" "there is no nope/x in the worktree"
 page "no such file" "/repo/cat/missing.txt" 404
 has  "the verb's own plain words" "cat: there is no missing.txt in the worktree"
 page "no such commit" "/repo/commit/deadbeef" 404
+# CODE-033: an inherited Object name is no verb — `/toString/x` is read as a
+# path that is not there, repo-qualified or (after the 301) bare.
+page "an inherited name is no verb" "/repo/toString/x" 404
+has  "the refusal names the path" "cat: there is no toString/x in the worktree"
+curl -s -L -D "$WORK/hdr" -o "$WORK/body" "$BASE/toString/x"
+if grep -q '^HTTP/1.1 404' "$WORK/hdr"
+then ok "...and so is the repo-less spelling, after its 301"
+else bad "a repo-less inherited name must 404" "$WORK/hdr" "$WORK/body"; fi
 
 method() {   # method <label> <verb> <want-status>
     curl -s -X "$2" -D "$WORK/hdr" -o "$WORK/body" "$BASE/"

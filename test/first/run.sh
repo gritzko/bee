@@ -220,6 +220,14 @@ if [ "$RC" = 0 ] && grep -q '^§ a.txt' "$WORK/p1" && grep -q '^A0-dirty$' "$WOR
 then ok "a path arg inside a repo is still the filesystem view, not the browser"
 else bad "path arg inside a repo (rc $RC)" "$WORK/p1" "$WORK/p1e"; fi
 
+# CODE-033: the verb table is read by OWN property, so a word naming an
+# inherited Object method is an argument like any other — a path that is not
+# there, refused in words, never `Object.prototype.toString` run as a view.
+rtin "$REPO" --plain toString x > "$WORK/p2" 2>"$WORK/p2e"; RC=$?
+if [ "$RC" != 0 ] && [ ! -s "$WORK/p2" ] && grep -q '^cannot open toString$' "$WORK/p2e"
+then ok "an inherited Object name is no verb, it is an argument"
+else bad "inherited name as a verb (rc $RC)" "$WORK/p2" "$WORK/p2e"; fi
+
 # ==========================================================================
 # leg 6 — the probe and the first run, headless + on a real pty (first.js)
 # ==========================================================================
