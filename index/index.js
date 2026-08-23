@@ -284,6 +284,9 @@ function readCommit(r, name) {
           ts: cts || ats, ats: ats || cts,
           author: pc.author || "", subject: firstLine(pc.body) };
   }
+  //  CODE-034: swept at the cap like its siblings — BEE-048 lets the ctx
+  //  outlive the request, so an uncapped memo leaks in a resident `bee http`.
+  if (r.commits.size >= TREE_CACHE_MAX) r.commits.clear();
   r.commits.set(name, m);
   return m;
 }
