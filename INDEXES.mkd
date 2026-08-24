@@ -237,10 +237,16 @@ for the same reason — the open confirms.
     there is no ambiguity to skip and no local descent to depend on. A ref
     spelling the carrier's own path mints no row, and a binary or over-cap blob
     is never tokenised.
- -  A QUERY FANS OUT over the [BEE-001] registry: every registered index is
-    opened READ-ONLY and NONE is brought up, so a stale foreign index answers
-    with fewer suspects and never with a wrong one; a repo that cannot be opened
-    is skipped in silence. Suspects print repo-qualified, the local repo first.
+ -  A QUERY FANS OUT over the [BEE-001] registry and BRINGS EACH LANE UP before
+    reading it ([BEE-065]): on any use an index has to be updated, and while the
+    repo may be read-only its `<gitdir>/be` never is. The bring-up is the one
+    `bee index` runs — commit walk, then this scan — it registers nothing and
+    writes nothing outside that dir, and a repo being walked names itself on
+    stderr rather than stalling mute. A repo that refuses it (an unreadable
+    gitdir, a `be/` unwritable after all) falls back to the read-only open and
+    then to silence, so one broken repo never poisons the fan-out. Suspects
+    print repo-qualified, the local repo first. The pre-commit hook's own
+    foreign opens stay READ-ONLY, so no `git commit` pays a foreign walk.
  -  FALSE SUSPECTS ARE THE PRICE of keying on text alone: no dst repo id is
     recorded, so two repos carrying a same-named file suspect each other's
     carriers, and a ref spelled deeper than the grandparent keys like a
@@ -305,6 +311,7 @@ The gaps, stated so a reader does not go looking for them.
 [BEE-033]: /todo/BEE/BEE-033.mkd
 [BEE-025]: /todo/BEE/BEE-025.mkd
 [BEE-063]: /todo/BEE/BEE-063.mkd
+[BEE-065]: /todo/BEE/BEE-065.mkd
 [LITE-006]: /todo/LITE/LITE-006.mkd
 [TODO-003]: /todo/TODO/TODO-003.mkd
 [/meta/todo]: /meta/todo.mkd

@@ -329,8 +329,8 @@ function indexDir(gitdir) {
 }
 
 //  `abc.index` mkdirs `<gitdir>/be`, derived state this verb owns.  `bulk` is
-//  DOG-032's big-memtable derive, `ro` a read-only open (BEE-002:29:qe): a
-//  cross-repo query brings nothing up and sweeps nothing.
+//  DOG-032's big-memtable derive, `ro` a read-only open — the rung a fan-out
+//  falls back to when the repo refuses to be brought up (BEE-065:22).
 function openIndex(gitdir, bulk, ro) {
   const o = { dir: indexDir(gitdir), ext: IDX_EXT };
   if (bulk) { o.mem = IDX_BULK_ROWS; o.durable = false; }
@@ -405,6 +405,9 @@ function progress() {
       last = t; dirty = true;
       raw("\r" + s + "\x1b[K");
     },
+    //  One unthrottled line saying WHAT the ticks below are walking: a cold
+    //  repo in a query's fan-out names itself rather than stalling mute (BEE-065:23).
+    note: function (s) { if (on) raw(s + "\n"); },
     done: function () { if (on && dirty) { dirty = false; raw("\r\x1b[K"); } }
   };
 }
@@ -1029,6 +1032,31 @@ function indexSubs(ctx, rec, opts) {
   }
 }
 
+//  --- the fan-out's open (BEE-065:11) ----------------------------------------
+//  On ANY use an index has to be updated: the repo a query fans out over may be
+//  read-only, its `<gitdir>/be` never is, and a lane left cold answers silence.
+
+//  upForeign(ctx, what) -> one registered repo's index, brought up the passes
+//  `bee index` runs (`track: false`, nothing written outside the index dir), or
+//  null.  The BEE-065:22 ladder is that bring-up, then a read-only open of the
+//  rows already there, then silence: one broken repo never poisons the fan-out.
+function upForeign(ctx, what) {
+  try {
+    const ix = openIndex(ctx.gitdir, fresh(ctx.gitdir));
+    try {
+      bringUp(ctx, ix, { track: false, what: what });
+      //  The query families live off the LINK/SYM round, which `bee index` runs
+      //  right here (BEE-007); a commit walk alone would answer with no rows.
+      require("./lindex.js").scan(ctx, ix);
+      return ix;
+    } catch (e) { try { ix.close(); } catch (e2) {} }
+  } catch (e) {}
+  //  An unreadable gitdir or a `be/` unwritable after all: the rows already
+  //  there still narrow the grep, and a repo with none simply does not answer.
+  if (fresh(ctx.gitdir)) return null;
+  try { return openIndex(ctx.gitdir, false, true); } catch (e) { return null; }
+}
+
 //  bringUp(ctx, ix, opts) -> the summary record.  The lazy step: the O(1) mark
 //  check, then index strictly the commits the index does not hold yet, reading
 //  only what it probes and touches (LITE-028:39:~1).  `opts.tip` indexes from an
@@ -1059,6 +1087,9 @@ function bringUp(ctx, ix, opts) {
   }
 
   const prog = progress();
+  //  Past the O(1) no-op there is real walking to do, so `opts.what` — a
+  //  fan-out's name for this repo — is said once, before the ticks (BEE-065:23).
+  if (opts.what) prog.note(opts.what);
   const w = collect(r, tip, st.done, prog);
   //  The gitlink paths the tip carries, minted once (BEE-006); a repo with no
   //  `.gitmodules` there answers with the empty list and pays nothing per commit.
@@ -1209,6 +1240,8 @@ function hexOfHl(hl60) { return hl60.toString(16).padStart(15, "0"); }
 module.exports = {
   index: index, summary: summary, track: track, repos: repos,
   openIndex: openIndex, openKv: openKv, sweep: sweep,
+  //  BEE-065: what a cross-repo query opens a foreign lane with.
+  upForeign: upForeign,
   discover: discover, openRepo: openRepo, closeRepo: closeRepo, epoch: epoch,
   //  BEE-063: one (kind, path_hl) span, what every folding reader now takes.
   revSpan: revSpan,

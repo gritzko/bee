@@ -177,9 +177,15 @@ function targetOf(ctx, ix, staged, partial) {
   return foreignTarget(ctx, partial);
 }
 
+//  Whether the hook's mid-commit fan-out brings a foreign lane up the way a
+//  query does.  It stays off: walking a cold foreign history inside someone's
+//  `git commit` is latency nobody asked for (BEE-065:28), and flipping it costs
+//  the one call site below.  Awaiting gritzko's ruling.
+const HOOK_BRINGS_UP = false;
+
 //  The fan-out over the mount table (BEE-014:47:P7): being registered is the whole
-//  permission.  Each repo opens read-only, never brought up (BEE-002:65:qe); a
-//  target no registered repo holds mints nothing.  -> { root, rel } or null.
+//  permission.  Each repo opens read-only (BEE-065:28), so the commit pays no
+//  walk; a target no registered repo holds mints nothing.  -> { root, rel } or null.
 function foreignTarget(ctx, partial) {
   const mnt = require("./mount.js");
   const spellings = require("door.js").refSpellings(partial);
@@ -200,7 +206,9 @@ function inForeign(root, spellings) {
   try {
     tctx = idx.openRepo(root, true);
     if (!(tctx.head && tctx.head.sha)) return null;
-    tix = idx.openIndex(tctx.gitdir, false, true);
+    tix = HOOK_BRINGS_UP ? idx.upForeign(tctx, "indexing " + tctx.root)
+                         : idx.openIndex(tctx.gitdir, false, true);
+    if (tix === null) return null;
     for (const t of spellings) {
       const hits = rs.resolveAt(tctx, tix, tctx.head.sha, t);
       if (hits.length === 1) return { rel: hits[0] };

@@ -4,7 +4,7 @@
 //  text hashlets of the target's own segments, minted from the ref text alone
 //  (BEE-002:50:qe) with no repo id (BEE-002:55:qe), so indexing order cannot change
 //  a key.  The scan is lazy and tip-only (LITE-033:20:PS, LITE-033:32:PS); the
-//  query fans out read-only over the registry (BEE-002:60:qe, BEE-002:65:qe).
+//  query fans out over the registry, each lane brought up first (BEE-065:21).
 //  BEE-063:28 rides that one pass with a second family, SYM (kind 9), and the
 //  `bee sym` verb — same suspects contract, its own watermark.
 "use strict";
@@ -313,14 +313,14 @@ function nameIn(r, treeSha, want) {
 }
 
 //  One registered repo's answer, repo-qualified (BEE-002:65:qe).  Its index is
-//  opened read-only and never brought up, since a stale foreign index answers
-//  with fewer suspects, never a wrong one; anything unopenable is skipped.
+//  brought UP first (BEE-065:21), since a cold or swept lane would answer
+//  silence; a repo that refuses the bring-up falls down `upForeign`'s ladder.
 function foreign(path, q) {
   let ctx = null, ix = null;
   try {
     ctx = idx.openRepo(path, false);
-    if (idx.fresh(ctx.gitdir)) return [];         // no index of this format
-    ix = idx.openIndex(ctx.gitdir, false, true);
+    ix = idx.upForeign(ctx, "indexing " + ctx.root);
+    if (ix === null) return [];                   // no lane to read at all
     const want = new Set();
     carriers(ix, q, want);
     if (want.size === 0) return [];
@@ -431,15 +431,15 @@ function symIn(ctx, ix, symhl, out) {
   for (const p of paths) out.push(ctx.root + "/" + p);
 }
 
-//  One registered repo's answer (BEE-002:65:qe): opened READ-ONLY and never
-//  brought up, so a stale foreign index answers with fewer suspects and never
-//  with a wrong one; anything unopenable is skipped in silence.
+//  One registered repo's answer (BEE-002:65:qe), off a lane brought UP first
+//  (BEE-065:21): a repo registered yesterday, or one fed by a plain `git push`,
+//  used to answer nothing at all.  Anything unopenable is skipped in silence.
 function symForeign(path, symhl, out) {
   let ctx = null, ix = null;
   try {
     ctx = idx.openRepo(path, false);
-    if (idx.fresh(ctx.gitdir)) return;            // no index of this format
-    ix = idx.openIndex(ctx.gitdir, false, true);
+    ix = idx.upForeign(ctx, "indexing " + ctx.root);
+    if (ix === null) return;                      // no lane to read at all
     symIn(ctx, ix, symhl, out);
   } catch (e) { return; }
   finally {
@@ -449,8 +449,8 @@ function symForeign(path, symhl, out) {
 }
 
 //  sym(ident, opts) -> the repo-qualified files that MAY mention `ident`, the
-//  local repo first, the registered ones after.  The local rows come up first
-//  (the verb's own bring-up); no other index is ever written.
+//  local repo first, the registered ones after.  Every lane it reads comes up
+//  first, the local one here and the foreign ones in `symForeign` (BEE-065:11).
 function sym(ident, opts) {
   opts = opts || {};
   const text = String(ident === undefined ? "" : ident).trim();
