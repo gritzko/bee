@@ -12,6 +12,7 @@ const idx = require("index/index.js");
 const dag = require("index/dag.js");
 const refs = require("index/refs.js");
 const rd = require("index/read.js");
+const subs = require("index/subs.js");
 const df = require("./diff.js");
 const quad = require("./quad.js");
 
@@ -106,7 +107,8 @@ function statClean(st, e, idxRon) {
 //  The bytes on disk at one tracked path -> its blob sha, or null when gone.
 //  A gitlink answers with the submodule's own head, so an advanced one reads
 //  `v`; an uninitialised one reads as unchanged rather than as removed, which
-//  is `rec` — the sha the commit recorded — standing in (BEE-040).
+//  is `rec` — the sha the commit recorded — standing in (BEE-040).  Content
+//  inside a sub moves no head, so it is `subRows` that tells of it (STATUS-023:15).
 function wtSha(ctx, path, sub, e, st, idxRon, rec) {
   if (sub) {
     const hd = refs.head(idx.gitdirOf(ctx.root + "/" + path) || "");
@@ -324,6 +326,36 @@ function hunkOf(uriStr, rows, summary) {
            plain: plainOf(rows, summary), bare: true };
 }
 
+//  How many mount levels the listing descends.  A sub that mounts an ancestor
+//  would otherwise walk for ever, and no honest tree nests anywhere near this deep.
+const SUB_DEPTH = 8;
+
+function byPath(a, b) { return a.path < b.path ? -1 : a.path > b.path ? 1 : 0; }
+
+//  subRows(root, depth) -> { rows, counts }: every live mount's own status rows,
+//  the path mount-qualified, since a gitlink sha can say nothing about the
+//  content under it (STATUS-023:15).  The walk is view/wtstat.js:112:4I foldSubs's
+//  — fold the mount, then its grandchildren — so the listing and the `bee wts`
+//  tally read the very same files.
+function subRows(root, depth) {
+  const rows = [], counts = { track: 0, head: 0, stage: 0, wt: 0, con: 0 };
+  if (depth <= 0) return { rows: rows, counts: counts };
+  const take = function (prefix, part) {
+    for (const r of part.rows)
+      rows.push({ path: prefix + r.path, quad: r.quad, con: r.con,
+                  gitlink: r.gitlink });
+    for (const k in counts) counts[k] += part.counts[k];
+  };
+  for (const s of subs.mounts(root)) {
+    if (!s.live) continue;             // uninitialised, or a BEE-059 skip: silent
+    //  An unreadable sub lists nothing and never errors the view (BEE-040).
+    try { take(s.path + "/", status("", { from: s.wt, subs: 0 }).model); }
+    catch (e) { continue; }
+    take(s.path + "/", subRows(s.wt, depth - 1));
+  }
+  return { rows: rows, counts: counts };
+}
+
 //  status(arg, opts) -> { uri, model, rows, hunks }.  Head is the base and
 //  the upstream comes off index/refs.js (detached or untracked: track = head).
 //  The root tree is the merge base's, since column 1 stands on the fork
@@ -359,15 +391,25 @@ function status(arg, opts) {
       base: baseL, stage: st.rows, wt: wtOf(ctx, baseL, st.rows, st.cache),
       con: st.con, gitlink: gitlink, ahead: div.ahead, behind: div.behind });
 
+    //  The mounts' rows join the parent's for PAINTING, so one emitter feeds the
+    //  CLI, the pager and the page alike; `model` stays THIS repo's own, which
+    //  is what view/wtstat.js:112:4I foldSubs adds its mounts up on top of.
+    const sub = subRows(ctx.root, opts.subs === undefined ? SUB_DEPTH : opts.subs | 0);
+    const shown = sub.rows.length ? model.rows.concat(sub.rows).sort(byPath)
+                                  : model.rows;
+    const tally = {};
+    for (const k in model.counts) tally[k] = model.counts[k] + sub.counts[k];
+
     const branch = ctx.head.ref === "HEAD" ? "HEAD"
                  : ctx.head.ref.slice(0, 11) === "refs/heads/"
                    ? ctx.head.ref.slice(11) : ctx.head.ref;
-    const rows = rowsOf(model, ctx);
+    const rows = rowsOf({ commits: model.commits, rows: shown }, ctx);
     //  The degraded run says both halves of what it lost: the column, and the
     //  neighbour the worktree rung had to stand on instead.
     const note = st.note ? st.note + "; the worktree column reads against HEAD" : "";
-    const summary = summaryOf(model, { branch: branch, track: up ? up.short : "",
-                                       note: note });
+    const summary = summaryOf({ counts: tally },
+                              { branch: branch, track: up ? up.short : "",
+                                note: note });
     const uriStr = "status" + (arg ? " " + arg : "");
     return { uri: uriStr, model: model, rows: rows,
              hunks: [hunkOf(uriStr, rows, summary)] };
@@ -377,6 +419,7 @@ function status(arg, opts) {
 module.exports = { status: status, rowsOf: rowsOf, hunkOf: hunkOf,
                    plainOf: plainOf, summaryOf: summaryOf, plainQuad: plainQuad,
                    leaves: leaves, stageOf: stageOf, wtOf: wtOf,
+                   subRows: subRows,
                    //  BEE-024 takes the stage column and this walk as its
                    //  candidate set; the quad is the only other caller.
                    scanUntracked: scanUntracked,

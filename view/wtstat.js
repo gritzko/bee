@@ -47,7 +47,9 @@ function stat(root) {
   SC.misses++;
   let v = null;
   try {
-    const m = st.status("", { from: root }).model;
+    //  STATUS-023: the view paints the mounts' rows itself now, so this read
+    //  skips that descent — `foldSubs` walks them with its per-sub rev memo.
+    const m = st.status("", { from: root, subs: 0 }).model;
     const f = fold(m.rows);
     foldSubs(f, root);                     // BEE-040: the WHOLE tree's counts
     f.dirty = (f.un.chg + f.un.add + f.un.del) > 0;
@@ -115,7 +117,8 @@ function foldSubs(f, root) {
     if (had !== undefined && had.rev === rv) { addFold(f, had.d); continue; }
     const d = blankFold();
     //  An unreadable sub tallies nothing and never errors the row.
-    try { addFold(d, fold(st.status("", { from: s.wt }).model.rows)); } catch (e) {}
+    try { addFold(d, fold(st.status("", { from: s.wt, subs: 0 }).model.rows)); }
+    catch (e) {}
     foldSubs(d, s.wt);                     // then its own grandchildren
     if (cache.live()) SUBS.set(s.wt, { rev: rv, d: d });
     addFold(f, d);
