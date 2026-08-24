@@ -1036,6 +1036,16 @@ function indexSubs(ctx, rec, opts) {
 //  On ANY use an index has to be updated: the repo a query fans out over may be
 //  read-only, its `<gitdir>/be` never is, and a lane left cold answers silence.
 
+//  BEE-067: the gitdirs whose bring-up already failed in THIS process — the
+//  ladder below is silent by design, and a `bee http` fan-out would otherwise
+//  repeat the same refusal on every request it serves.  Said once, then quiet.
+const FOREIGN_SAID = new Set();
+function foreignFailed(ctx, e) {
+  if (FOREIGN_SAID.has(ctx.gitdir)) return;
+  FOREIGN_SAID.add(ctx.gitdir);
+  progress().note("bee: " + ctx.repo + ": index bring-up failed (" + e + ")");
+}
+
 //  upForeign(ctx, what) -> one registered repo's index, brought up the passes
 //  `bee index` runs (`track: false`, nothing written outside the index dir), or
 //  null.  The BEE-065:22 ladder is that bring-up, then a read-only open of the
@@ -1049,8 +1059,8 @@ function upForeign(ctx, what) {
       //  right here (BEE-007); a commit walk alone would answer with no rows.
       require("./lindex.js").scan(ctx, ix);
       return ix;
-    } catch (e) { try { ix.close(); } catch (e2) {} }
-  } catch (e) {}
+    } catch (e) { foreignFailed(ctx, e); try { ix.close(); } catch (e2) {} }
+  } catch (e) { foreignFailed(ctx, e); }
   //  An unreadable gitdir or a `be/` unwritable after all: the rows already
   //  there still narrow the grep, and a repo with none simply does not answer.
   if (fresh(ctx.gitdir)) return null;
@@ -1256,8 +1266,9 @@ module.exports = {
   subAt: subAt, subRevs: subRevs, submodules: submodules, subsSaid: subsSaid,
   MODE_SUB: MODE_SUB,
   bringUp: bringUp, reader: reader, readCommit: readCommit, readTree: readTree,
-  //  `lindex` reuses the pruning tree diff and the batching writer (LITE-033).
-  descend: descend, idxWriter: idxWriter, 
+  //  `lindex` reuses the pruning tree diff, the batching writer (LITE-033) and
+  //  the tty-only message channel every long pass speaks on (BEE-067).
+  descend: descend, idxWriter: idxWriter, progress: progress, 
   //  The dir fuse (view/list.js) reads a dir's newest rev with these (LITE-044).
   lastRev: lastRev, revValAt: revValAt,
   //  Dates off the index alone, no ODB read: commit and blob (BEE-033).

@@ -115,7 +115,57 @@ function esc(s) {
           .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-function dec(bytes, lo, hi) { return utf8.Decode(bytes.slice(lo, hi)); }
+//  --- bytes that are not UTF-8 (BEE-067) --------------------------------------
+//  A tracked blob can be genuinely ISO-8859-1 or EUC-JP and still be prose
+//  someone opens; the painter feeds hunk bytes into the page buffer VERBATIM
+//  (escFeed), so one such byte used to 500 the whole response.
+
+//  The length of the well-formed UTF-8 sequence at `at`, or 0 — the Unicode
+//  table, so an overlong, a surrogate and anything past U+10FFFF are no
+//  sequence at all, exactly as the runtime's strict decoder reads them.
+function seqLen(b, at) {
+  const c = b[at];
+  if (c < 0x80) return 1;
+  let lo = 0x80, hi = 0xbf, len;
+  if (c >= 0xc2 && c <= 0xdf) len = 2;
+  else if (c >= 0xe0 && c <= 0xef) {
+    len = 3; if (c === 0xe0) lo = 0xa0; else if (c === 0xed) hi = 0x9f;
+  } else if (c >= 0xf0 && c <= 0xf4) {
+    len = 4; if (c === 0xf0) lo = 0x90; else if (c === 0xf4) hi = 0x8f;
+  } else return 0;
+  if (at + len > b.length) return 0;
+  if (b[at + 1] < lo || b[at + 1] > hi) return 0;
+  for (let i = 2; i < len; i++) if ((b[at + i] & 0xc0) !== 0x80) return 0;
+  return len;
+}
+
+//  Every refused byte as U+FFFD, the way every reader paints one; the valid
+//  runs between them decode in one native call each.
+function lossy(bytes) {
+  let out = "", run = 0, at = 0;
+  while (at < bytes.length) {
+    const n = seqLen(bytes, at);
+    if (n > 0) { at += n; continue; }
+    if (at > run) out += utf8.Decode(bytes.slice(run, at));
+    out += "\uFFFD";
+    run = ++at;
+  }
+  return at > run ? out + utf8.Decode(bytes.slice(run, at)) : out;
+}
+
+//  Bytes -> text, never a throw.  The strict decode IS the fast path: only a
+//  buffer that already refused pays the walk above, so a page of clean UTF-8
+//  costs exactly what it did.
+function decode(bytes) {
+  try { return utf8.Decode(bytes); } catch (e) { return lossy(bytes); }
+}
+
+//  A span read as a TARGET, not as text: bytes that will not decode spell no
+//  reference, so the face paints plain rather than linking somewhere invented.
+function dec(bytes, lo, hi) {
+  const b = bytes.slice(lo, hi);
+  try { return utf8.Decode(b); } catch (e) { return ""; }
+}
 
 //  ONE hunk -> its HTML: the banner band, then a `<pre>` of tagged spans;
 //  `link` is the router's `(pagerTarget) -> url | ""`.  LITE-034: a token span
@@ -277,7 +327,7 @@ function rowHasB(hunk, off, end) {
 function hunkHtml(hunk, link, ord, tog, post) {
   const b = io.buf(1 << 16);
   hunkFeed(b, hunk, link, ord || 0, tog, post);
-  return utf8.Decode(b.data());
+  return decode(b.data());
 }
 
 //  BEE-050:31 a hunk that NAMES a target (`hunk.ref`, an excerpt's own path +
@@ -324,7 +374,7 @@ function hunksHtml(hunks, link, tog, post) {
   const b = io.buf(1 << 18);
   for (let i = 0; i < hunks.length; i++)
     hunkFeed(b, hunks[i], link, i, i === 0 ? tog : "", post);
-  return utf8.Decode(b.data());
+  return decode(b.data());
 }
 
 //  The toggle anchor to the OTHER view of the same bytes (rendered <-> source).
@@ -402,6 +452,8 @@ module.exports = {
   toggle: toggle,
   markBody: markBody,
   esc: esc,
+  //  BEE-067: the ONE painter-side decode — a refused byte paints, never throws.
+  decode: decode,
   sgrCss: sgrCss,
   color256: color256,
   anchorId: anchorId,

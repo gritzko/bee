@@ -399,12 +399,12 @@ function autoSegs(pg, text) {
   for (const f of fs) {
     const url = refUrl(pg, f.text);
     if (url === "") continue;
-    if (f.lo > at) segs.push({ text: utf8.Decode(bytes.slice(at, f.lo)) });
+    if (f.lo > at) segs.push({ text: html.decode(bytes.slice(at, f.lo)) });
     segs.push({ text: f.text, href: url });
     at = f.hi;
   }
   if (segs.length === 0) return null;
-  if (at < bytes.length) segs.push({ text: utf8.Decode(bytes.slice(at)) });
+  if (at < bytes.length) segs.push({ text: html.decode(bytes.slice(at)) });
   return segs;
 }
 
@@ -412,7 +412,9 @@ function autoSegs(pg, text) {
 //  own parser plus the ONE emitter; links resolve against the document's OWN
 //  directory, the way a reader reads them.
 function pageBody(pg, rel, arg, hunks, toHtml) {
-  const src = hunks.length ? utf8.Decode(hunks[0].text) : "";
+  //  BEE-067: a RENDERED page over a blob that is not UTF-8 reads its refused
+  //  bytes as U+FFFD, the same replacement the painted view shows.
+  const src = hunks.length ? html.decode(hunks[0].text) : "";
   const cut = rel.lastIndexOf("/");
   const dir = cut < 0 ? "" : rel.slice(0, cut + 1);
   const body = toHtml(src, {

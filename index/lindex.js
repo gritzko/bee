@@ -115,7 +115,7 @@ const SYM_MIN = 3;                     // shorter than three chars never mints
 //  it.  Both sides ride this one walk — the scan mints its rows off it and the
 //  verb finds its mentions off it (BEE-066:15) — so an index and a `bee sym`
 //  answer can never disagree about what a mention is.
-function eachSym(bytes, toks, each) {
+function eachSym(bytes, toks, each, bad) {
   let lo = 0;
   for (let i = 0; i < toks.length; i++) {
     const at = lo, hi = toks[i] & 0xffffff;
@@ -123,7 +123,11 @@ function eachSym(bytes, toks, each) {
     if (hi - at < SYM_MIN) continue;
     const tag = (toks[i] >>> 27) & 0x1f;
     if (!SYM_TAGS.has(tag)) continue;
-    const text = utf8.Decode(bytes.slice(at, hi));
+    //  BEE-067: a span that is not UTF-8 is no symbol anyone can spell, so it
+    //  is skipped here rather than thrown out of the whole round; `bad` counts
+    //  them for the ONE line the scan says about this blob.
+    const text = hk.decode(bytes, at, hi);
+    if (text === null) { if (bad) bad.n++; continue; }
     if (text.length < SYM_MIN) continue;
     each(text, tag, at, hi);
   }
@@ -132,13 +136,13 @@ function eachSym(bytes, toks, each) {
 //  One blob's symbols -> Map(text -> the tags it lexed as here).  Deduped at
 //  mint time, so a symbol used twenty times in a file is ONE row (BEE-063:23),
 //  and read off the array the F-token filter already parsed — no second lex.
-function symsOf(bytes, toks) {
+function symsOf(bytes, toks, bad) {
   const out = new Map();
   eachSym(bytes, toks, function (text, tag) {
     let s = out.get(text);
     if (s === undefined) out.set(text, s = []);
     if (s.indexOf(tag) < 0) s.push(tag);
-  });
+  }, bad);
   return out;
 }
 
@@ -243,6 +247,9 @@ function scan(ctx, ix) {
   //  3. One tokenised pass per new blob, two families out of it.
   const wr = idx.idxWriter(ix);
   const cache = new Map();
+  //  BEE-067: the spans this blob refused, counted by the two minters and said
+  //  ONCE per file — a EUC-JP fixture has hundreds and none of them is news.
+  const prog = idx.progress(), bad = { n: 0 };
   for (const c of changed) {
     //  `descend` yields changed dirs as well (LITE-044); a subtree carries no
     //  prose, so it is skipped here rather than read back off the ODB.
@@ -254,8 +261,15 @@ function scan(ctx, ix) {
     if (bytes.length > wv.MAX_SOURCE_SIZE || wv.isBinary(bytes)) continue;
     rec.files++;
     const toks = hk.parse(bytes, wv.extOf(c.path));
-    if (!linkUp) linkRows(ix, wr, cache, rec, c, bytes, toks);
-    if (!symUp) symRowsOf(ix, wr, cache, rec, c, bytes, toks);
+    bad.n = 0;
+    if (!linkUp) linkRows(ix, wr, cache, rec, c, bytes, toks, bad);
+    if (!symUp) symRowsOf(ix, wr, cache, rec, c, bytes, toks, bad);
+    //  Those spans mint nothing and NOTHING else changes: the file is counted,
+    //  its readable tokens are rows, and the marks below still land — so the
+    //  next run no-ops off them instead of re-lexing the tip forever (BEE-067:9).
+    if (bad.n)
+      prog.note("lindex: " + c.path + ": " + bad.n + " token span" +
+                (bad.n === 1 ? "" : "s") + " not UTF-8, skipped");
   }
   wr.seal();
 
@@ -269,9 +283,9 @@ function scan(ctx, ix) {
 
 //  One blob's LINK rows (LITE-033): every `F` token the lexer fused, keyed by
 //  the ref's own segments and by nothing this repo resolved.
-function linkRows(ix, wr, cache, rec, c, bytes, toks) {
+function linkRows(ix, wr, cache, rec, c, bytes, toks, bad) {
   const splitRef = require("door.js").splitRef;   // the one ref split point
-  for (const t of hk.fTokensOn(bytes, toks)) {
+  for (const t of hk.fTokensOn(bytes, toks, bad)) {
     //  The anchor is shed through the one `splitRef`: the row names a file,
     //  not a place, so `:12:24` and `:58:mJ` alike drop here.
     const sp = splitRef(t.text);
@@ -292,9 +306,9 @@ function linkRows(ix, wr, cache, rec, c, bytes, toks) {
 
 //  One blob's SYM rows (BEE-063): one per symbol the gates let through, keyed
 //  by the symbol text VERBATIM and by the canonical tags it lexed as here.
-function symRowsOf(ix, wr, cache, rec, c, bytes, toks) {
+function symRowsOf(ix, wr, cache, rec, c, bytes, toks, bad) {
   const val = symRow(c.path);
-  for (const [text, tags] of symsOf(bytes, toks)) {
+  for (const [text, tags] of symsOf(bytes, toks, bad)) {
     rec.syms++;
     const key = symKey(idx.fnHl(text), typeSlots(tags));
     const have = valsOn(ix, key, cache);

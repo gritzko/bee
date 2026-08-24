@@ -29,12 +29,27 @@ function parse(bytes, ext) {
 
 function fTokens(bytes, ext) { return fTokensOn(bytes, parse(bytes, ext)); }
 
-function fTokensOn(bytes, toks) {
+//  BEE-067: one raw span -> its text, or null when those bytes are not UTF-8.
+//  A tracked blob can be genuinely ISO-8859-1 or EUC-JP (git.git's t/t3434
+//  fixtures), and a strict decode there threw a whole repo's round away.  The
+//  try IS the test: the guard rides the span the caller already holds, so the
+//  hot path pays nothing and no second pass over the bytes is taken.
+function decode(bytes, lo, hi) {
+  try { return utf8.Decode(bytes.slice(lo, hi)); } catch (e) { return null; }
+}
+
+//  `bad`, when given, counts the spans refused — the caller says so ONCE per
+//  blob rather than once per token (BEE-067:47).
+function fTokensOn(bytes, toks, bad) {
   const out = [];
   for (let i = 0; i < toks.length; i++) {
     if (((toks[i] >>> 27) & 0x1f) !== TOK32_F) continue;
     const lo = i > 0 ? (toks[i - 1] & 0xffffff) : 0, hi = toks[i] & 0xffffff;
-    out.push({ lo: lo, hi: hi, text: utf8.Decode(bytes.slice(lo, hi)) });
+    //  No reference can be spelled in bytes no reader can read, so a span that
+    //  will not decode is simply not a ref; the blob's other tokens still mint.
+    const text = decode(bytes, lo, hi);
+    if (text === null) { if (bad) bad.n++; continue; }
+    out.push({ lo: lo, hi: hi, text: text });
   }
   return out;
 }
@@ -542,7 +557,9 @@ module.exports = { precommit: precommit, postcommit: postcommit,
                    //  The one link scanner, shared with index/lindex.js (LITE-033);
                    //  `parse` + `fTokensOn` are its halves, so the SYM round
                    //  rides the same token array (BEE-063:28).
+                   //  `decode` is the ONE span guard both families ride (BEE-067).
                    fTokens: fTokens, parse: parse, fTokensOn: fTokensOn,
+                   decode: decode,
                    //  The minter itself, shared with index/mint.js: the verb is
                    //  this pass with another scan and write-back (BEE-016:34:KH).
                    targetOf: targetOf, rewrite: rewrite, components: components,
