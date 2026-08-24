@@ -58,6 +58,9 @@ const VERBS = {
   //  BEE-022: the quad over the live worktree — the one view that reads the
   //  index and the bytes on disk, not a rev.
   status: function (arg, opts) { return require("view/status.js").status(arg, vopts(opts)).hunks; },
+  //  BEE-066: the symbol's mentions as hunks, one per window the open confirmed,
+  //  narrowed by the filter words; `--paths` keeps BEE-063's bare path list.
+  sym:  function (arg, opts) { return require("view/sym.js").sym(arg, vopts(opts)).hunks; },
   //  BEE-017: the only view whose arg is a LIST of refs — one chunk each, and
   //  the one CLI door onto a permalink, which had none before it.
   see:  function (arg, opts) { return require("view/see.js").see(arg, vopts(opts)).hunks; },

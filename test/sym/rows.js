@@ -173,7 +173,10 @@ check("sym-rows-exist", syms.length > 0, "rows " + syms.length);
 
 //  --- 9. the query off those rows ------------------------------------------
 {
-  const out = li.sym("u8bFeed", { repo: repo });
+  //  BEE-066: `sym` answers in records now, `paths` the mode that names the
+  //  suspects without opening any of them — which is what these rows are about.
+  const out = li.sym("u8bFeed", { repo: repo, paths: true })
+                .map(function (r) { return r.full; });
   const root = io.realpath(repo);
   check("the-verb-names-both-carriers",
         out.indexOf(root + "/src/abc/TCP.c") >= 0 &&

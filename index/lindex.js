@@ -111,11 +111,11 @@ function typeSlots(tags) {
 const SYM_TAGS = new Set([18, 13, 2]);
 const SYM_MIN = 3;                     // shorter than three chars never mints
 
-//  One blob's symbols -> Map(text -> the tags it lexed as here).  Deduped at
-//  mint time, so a symbol used twenty times in a file is ONE row (BEE-063:23),
-//  and read off the array the F-token filter already parsed — no second lex.
-function symsOf(bytes, toks) {
-  const out = new Map();
+//  THE MINT GATE, walked once: `each(text, tag, lo, hi)` per token that passes
+//  it.  Both sides ride this one walk — the scan mints its rows off it and the
+//  verb finds its mentions off it (BEE-066:15) — so an index and a `bee sym`
+//  answer can never disagree about what a mention is.
+function eachSym(bytes, toks, each) {
   let lo = 0;
   for (let i = 0; i < toks.length; i++) {
     const at = lo, hi = toks[i] & 0xffffff;
@@ -125,10 +125,32 @@ function symsOf(bytes, toks) {
     if (!SYM_TAGS.has(tag)) continue;
     const text = utf8.Decode(bytes.slice(at, hi));
     if (text.length < SYM_MIN) continue;
+    each(text, tag, at, hi);
+  }
+}
+
+//  One blob's symbols -> Map(text -> the tags it lexed as here).  Deduped at
+//  mint time, so a symbol used twenty times in a file is ONE row (BEE-063:23),
+//  and read off the array the F-token filter already parsed — no second lex.
+function symsOf(bytes, toks) {
+  const out = new Map();
+  eachSym(bytes, toks, function (text, tag) {
     let s = out.get(text);
     if (s === undefined) out.set(text, s = []);
     if (s.indexOf(tag) < 0) s.push(tag);
-  }
+  });
+  return out;
+}
+
+//  Where `text` is mentioned in one blob, as byte spans in reading order: the
+//  very tokens a row would have been minted from, compared VERBATIM as the mint
+//  keyed them (BEE-063:25).  No positions are stored, so this is what the verb
+//  opens a suspect for (BEE-066:10).
+function mentions(bytes, toks, text) {
+  const out = [];
+  eachSym(bytes, toks, function (t, tag, lo, hi) {
+    if (t === text) out.push({ lo: lo, hi: hi });
+  });
   return out;
 }
 
@@ -381,6 +403,83 @@ function symSuspects(ix, symhl, want) {
   }
 }
 
+//  --- the filter words (BEE-066:24) -------------------------------------------
+//  A word opening with `.` and holding no slash names an EXTENSION, anything
+//  else a PATH run matched SEGMENT-ALIGNED, so `dog/abc` never answers for
+//  `catalog/abc`.  Words of a kind are ORed and the two kinds ANDed: `.c .h
+//  dog/abc` reads "under dog/abc, in a C or a header file".
+function symFilter(words) {
+  const f = { exts: [], paths: [], hls: [], fns: [] };
+  for (const w of words === undefined ? [] : words) {
+    if (w.charAt(0) === "." && w.indexOf("/") < 0) { f.exts.push(w.slice(1)); continue; }
+    const segs = [];
+    for (const s of w.split("/")) if (s !== "" && s !== ".") segs.push(s);
+    if (segs.length === 0) continue;             // a bare `/` narrows nothing
+    f.paths.push(segs);
+    f.hls.push(segs.map(function (s) { return idx.segHl(s, 10n); }));
+    //  A run may END at the basename, which the val keys by its own 20 bits.
+    f.fns.push(fn20(segs[segs.length - 1]));
+  }
+  return f.exts.length || f.paths.length ? f : null;
+}
+
+//  Is `run` a contiguous stretch of `all`?  Segments and hashlets alike, since
+//  both compare by value — one matcher for the prune and for the exact check.
+function runIn(all, run) {
+  for (let i = 0; i + run.length <= all.length; i++) {
+    let hit = true;
+    for (let j = 0; j < run.length && hit; j++) if (all[i + j] !== run[j]) hit = false;
+    if (hit) return true;
+  }
+  return false;
+}
+
+//  A repo ROOT as hashlets.  The run is matched over the address the verb
+//  prints, and a registered submodule wears half of it in its root — `dog/abc`
+//  is the root of one quickjab lane, never a dir of its rows.
+function rootHls(root) {
+  const out = [];
+  for (const s of String(root).split("/")) if (s !== "") out.push(idx.segHl(s, 10n));
+  return out;
+}
+
+//  A row REFUSED before any tree is read (BEE-066:24): the root is known text
+//  and the val carries its top four dirs and its basename as hashlets, so a
+//  filter run that cannot sit in a chain spelled WHOLE drops the suspect here.
+//  Dirs past the four slots leave a hole no run can be refused across —
+//  hashlets narrow and the name confirms (INDEXES.mkd, the suspects contract).
+function sigFits(sig, f, root) {
+  if (f === null || f.hls.length === 0) return true;
+  const chain = root.slice();
+  for (let i = 0; i < SYM_SEGS; i++) {
+    const s = sigSeg(sig, i);
+    if (s === 0n) break;                         // `0` is absent: the chain ends
+    if (i === SYM_SEGS - 1) return true;         // a full chain may go deeper
+    chain.push(s);
+  }
+  const fn = sig & FN20_MASK;
+  for (let i = 0; i < f.hls.length; i++) {
+    const run = f.hls[i];
+    if (runIn(chain, run)) return true;
+    //  A run may END at the basename, whose own 20 bits the val keys apart.
+    const dirs = run.slice(0, run.length - 1);
+    if (f.fns[i] === fn && dirs.length <= chain.length &&
+        runIn(chain.slice(chain.length - dirs.length), dirs)) return true;
+  }
+  return false;
+}
+
+//  The EXACT check the hashlets only approximated, over the FULL address's own
+//  segments and the extension the weave lexer keys on (index/weave.js:29:ET).
+function pathFits(full, f) {
+  if (f === null) return true;
+  if (f.exts.length && f.exts.indexOf(wv.extOf(full)) < 0) return false;
+  if (f.paths.length === 0) return true;
+  const segs = full.split("/");
+  for (const run of f.paths) if (runIn(segs, run)) return true;
+  return false;
+}
+
 //  The dir hashlets the rows name, level by level: the descent's prune table.
 //  A `0` slot names no dir at that level, so it lets nothing through.
 function segLevels(want) {
@@ -413,34 +512,76 @@ function nameSyms(r, treeSha, depth, want, dirs, prefix, out) {
   }
 }
 
-//  One repo's answer, repo-qualified.  Past the cap it prints the count and
-//  asks for a narrower query instead of descending the whole tree (BEE-063:37).
-function symIn(ctx, ix, symhl, out) {
-  const want = new Set();
-  symSuspects(ix, symhl, want);
-  if (want.size === 0) return;
-  if (want.size > SYM_CAP) {
-    out.push(ctx.root + ": " + want.size + " files carry it — narrow the query");
-    return;
+//  The bytes a READER would meet at one suspect: the worktree file when it is
+//  there — that is the file a `file:line` opens (BEE-066:22) — else the tip
+//  blob the row named, which is all a bare checkout has.
+function suspectBytes(ctx, tree, path) {
+  let b = require("view/cat.js").wtBytes(ctx.root + "/" + path);
+  if (b !== null && b !== "dir") return b;
+  const e = require("index/read.js").entryAt(ctx.r, tree, path);
+  return e === null || e.dir ? null : blobBytes(ctx, e.sha);
+}
+
+//  One suspect SETTLED by opening it (BEE-066:10): its mention spans, or null
+//  when the file no longer carries the symbol and the suspect simply drops out.
+//  A blob no lexer will touch answers with its name alone, never a garbage hunk.
+function confirm(ctx, tree, path, text) {
+  const rec = { root: ctx.root, path: path, full: ctx.root + "/" + path };
+  const bytes = suspectBytes(ctx, tree, path);
+  if (bytes === null) return null;
+  if (bytes.length > wv.MAX_SOURCE_SIZE || wv.isBinary(bytes))
+    { rec.opaque = true; return rec; }
+  rec.ext = wv.extOf(path);
+  rec.bytes = bytes;
+  //  The one lex rides along: the view paints these very spans (view/sym.js:143),
+  //  so a second parse could only disagree with the gate that just ran.
+  rec.toks = hk.parse(bytes, rec.ext);
+  rec.hits = mentions(bytes, rec.toks, text);
+  return rec.hits.length ? rec : null;
+}
+
+//  One repo's answer as RECORDS, repo-qualified: `{ over }` past the cap, else
+//  one per file the open confirmed.  `q.paths` is the scripting mode, which
+//  names the suspects without opening any of them, as BEE-063 did throughout.
+//  Past the cap the count and the "narrow the query" ask stand in (BEE-063:37).
+function symIn(ctx, ix, q, out) {
+  let want = new Set();
+  symSuspects(ix, q.hl, want);
+  //  A path filter drops rows BEFORE the cap is weighed and before any tree is
+  //  read, which is what lets a narrowed query answer where the whole-symbol
+  //  one would only ask for a narrower one (BEE-066:24).
+  const f = q.filter === undefined ? null : q.filter;
+  if (f !== null) {
+    const root = rootHls(ctx.root), kept = new Set();
+    for (const sig of want) if (sigFits(sig, f, root)) kept.add(sig);
+    want = kept;
   }
+  if (want.size === 0) return;
+  if (want.size > SYM_CAP) { out.push({ root: ctx.root, over: want.size }); return; }
   const tipC = idx.readCommit(ctx.r, ctx.head.sha);
   if (tipC === null || !tipC.tree) return;
   const paths = [];
   nameSyms(ctx.r, tipC.tree, 0, want, segLevels(want), "", paths);
   paths.sort();
-  for (const p of paths) out.push(ctx.root + "/" + p);
+  for (const p of paths) {
+    const full = ctx.root + "/" + p;
+    if (!pathFits(full, f)) continue;
+    if (q.paths) { out.push({ root: ctx.root, path: p, full: full }); continue; }
+    const rec = confirm(ctx, tipC.tree, p, q.text);
+    if (rec !== null) out.push(rec);
+  }
 }
 
 //  One registered repo's answer (BEE-002:65:qe), off a lane brought UP first
 //  (BEE-065:21): a repo registered yesterday, or one fed by a plain `git push`,
 //  used to answer nothing at all.  Anything unopenable is skipped in silence.
-function symForeign(path, symhl, out) {
+function symForeign(path, q, out) {
   let ctx = null, ix = null;
   try {
     ctx = idx.openRepo(path, false);
     ix = idx.upForeign(ctx, "indexing " + ctx.root);
     if (ix === null) return;                      // no lane to read at all
-    symIn(ctx, ix, symhl, out);
+    symIn(ctx, ix, q, out);
   } catch (e) { return; }
   finally {
     if (ix !== null) { try { ix.close(); } catch (e) {} }
@@ -448,14 +589,21 @@ function symForeign(path, symhl, out) {
   }
 }
 
-//  sym(ident, opts) -> the repo-qualified files that MAY mention `ident`, the
-//  local repo first, the registered ones after.  Every lane it reads comes up
-//  first, the local one here and the foreign ones in `symForeign` (BEE-065:11).
+//  A record's identity for the dedup: a file answers once however many repos
+//  reach it, and a capped repo once under its own root.
+function symId(rec) { return rec.over ? rec.root + "/*" : rec.full; }
+
+//  sym(ident, opts) -> the RECORDS of the files that mention `ident`, the local
+//  repo first, the registered ones after.  Every lane it reads comes up first,
+//  the local one here and the foreign ones in `symForeign` (BEE-065:11); each
+//  record is opened and confirmed, since the rows are suspects and no position
+//  is stored.
 function sym(ident, opts) {
   opts = opts || {};
   const text = String(ident === undefined ? "" : ident).trim();
   if (text === "") return [];
-  const symhl = idx.fnHl(text);
+  const q = { hl: idx.fnHl(text), text: text, paths: (opts && opts.paths) === true,
+              filter: symFilter(opts.words) };
   const ctx = idx.openRepo(opts.repo === undefined ? io.cwd() : opts.repo, true);
   const out = [], seen = new Set();
   try {
@@ -463,17 +611,18 @@ function sym(ident, opts) {
     try {
       idx.bringUp(ctx, ix, { track: false });
       scan(ctx, ix);
-      symIn(ctx, ix, symhl, out);
+      symIn(ctx, ix, q, out);
     } finally { try { ix.close(); } catch (e) {} }
-    for (const line of out) seen.add(line);
+    for (const rec of out) seen.add(symId(rec));
     for (const repo of idx.repos(opts.home).sort()) {
       if (repo === ctx.root || repo === ctx.repo) continue;  // the local one answered
       let real = repo;
       try { real = io.realpath(repo); } catch (e) {}
       if (real === ctx.root) continue;
       const got = [];
-      symForeign(repo, symhl, got);
-      for (const line of got) if (!seen.has(line)) { seen.add(line); out.push(line); }
+      symForeign(repo, q, got);
+      for (const rec of got)
+        if (!seen.has(symId(rec))) { seen.add(symId(rec)); out.push(rec); }
     }
   } finally { idx.closeRepo(ctx); }
   return out;
@@ -518,5 +667,7 @@ module.exports = { lindex: lindex, summary: summary,
                    sym: sym, symKey: symKey, symVal: symVal, symRow: symRow,
                    symSeg: symSeg, symFn: symFn, symSig: symSig,
                    typeSlots: typeSlots, symsOf: symsOf, symIn: symIn,
+                   eachSym: eachSym, mentions: mentions, confirm: confirm,
+                   symFilter: symFilter, sigFits: sigFits, pathFits: pathFits, rootHls: rootHls,
                    symSuspects: symSuspects, symForeign: symForeign,
                    SYMDEX_REF: SYMDEX_REF, SYM_CAP: SYM_CAP };

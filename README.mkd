@@ -61,13 +61,22 @@ The standalone (bundled) `bee` binary call patterns:
      2. `<target>`: the paths that may link to a file or a ticket code, looked
         up in every repo of `~/.config/bee/repos` (read-only) and printed
         repo-qualified, the local repo first
- -  `bee sym <ident>` -- symbol-mention suspects (BEE-063); one prefix scan of
-    the SYM rows the same tip-blob pass mints
-     1. the files that may mention `<ident>`, looked up in every repo of
-        `~/.config/bee/repos` (read-only) and printed repo-qualified, the local
-        repo first
-     2. the symbol is hashed VERBATIM, so `u8bFeed` and `U8BFeed` are two queries
-     3. past ~200 suspects a repo prints the count and asks for a narrower query
+ -  `bee sym [--paths] <ident> [.ext|<dir>]...` -- where a symbol is mentioned
+    (BEE-063, BEE-066); one prefix scan of the SYM rows the tip-blob pass mints
+     1. every hit is a canonical hunk: `uri` the address `<path>:<line>`, text
+        the raw mention line with a line of context either side, the file's own
+        tags with the mention marked; two windows merge where they overlap
+     2. the rows are suspects and store no positions, so each file is OPENED and
+        one that no longer carries the symbol prints nothing at all
+     3. the bytes are the worktree file when there is one, else the tip blob;
+        a binary or over-cap blob prints its path bare
+     4. every repo of `~/.config/bee/repos` answers (read-only), the local first
+     5. the symbol is hashed VERBATIM, so `u8bFeed` and `U8BFeed` are two queries
+     6. past ~200 suspects a repo prints the count and asks for a narrower query
+     7. a further word narrows: `.c` an extension, `dog/abc/` a SEGMENT-ALIGNED
+        path run at any depth (never `catalog/abc`); alike words OR, the two
+        kinds AND, and a path run prunes the rows before the cap is weighed
+     8. `--paths`: one repo-qualified path per line and no file opened, for scripts
  -  `bee log [<n>] [<hex>|<path>][?<rev>]` -- commit log, newest first; off-mainline rows grey
      1. bare: the checked-out tip's ancestry; `<n>` caps the rows, `0` = all
      2. `<hex>`: that commit's ancestry

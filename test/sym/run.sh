@@ -9,6 +9,10 @@
 #           kind, the SYM key/val layout, the canonical tag slots and the
 #           watermark under hlOfText("symdex").
 #
+# BEE-066 made HUNKS the default answer, so the suspect list this suite is about
+# is now asked for by name — `--paths`, the scripting mode it kept.  The hunks
+# themselves are test/symhunk/run.sh's subject, not this one's.
+#
 # THE GAP THIS REPROS: before this the index could say who LINKS to a file and
 # nothing at all about who MENTIONS a symbol — `bee sym u8bFeed` answered "no
 # such verb" — and the kind nibble sat in the LOW bits, so a family this fat
@@ -85,7 +89,7 @@ indexbytes() { cat "$REPO"/.git/be/* 2>/dev/null | wc -c | tr -d ' '; }
 # leg 1 — the symbol at the FIRST revision
 # ==========================================================================
 # S1: THE REPRO — one prefix scan names the one file that mentions it.
-rtin "$REPO" sym u8bFeed > "$WORK/q1" 2>"$WORK/q1e"; RC=$?
+rtin "$REPO" sym --paths u8bFeed > "$WORK/q1" 2>"$WORK/q1e"; RC=$?
 if [ "$RC" = 0 ] && [ "$(cat "$WORK/q1")" = "$RREPO/src/abc/TCP.c" ]
 then ok "sym u8bFeed names the one carrier at c0"
 else bad "sym u8bFeed names the one carrier at c0 (rc $RC)" "$WORK/q1" "$WORK/q1e"; fi
@@ -102,7 +106,7 @@ else bad "a two-char name and a comment word mint nothing ($RC/$RC2)" \
 # S3: THE RERUN WRITES NOTHING — the tip has not moved, so the symdex mark hits
 # and not one byte lands in the index.
 BEFORE=$(indexbytes)
-rtin "$REPO" sym u8bFeed > "$WORK/q4" 2>"$WORK/q4e"; RC=$?
+rtin "$REPO" sym --paths u8bFeed > "$WORK/q4" 2>"$WORK/q4e"; RC=$?
 AFTER=$(indexbytes)
 if [ "$RC" = 0 ] && [ "$BEFORE" = "$AFTER" ] &&
    [ "$(cat "$WORK/q4")" = "$RREPO/src/abc/TCP.c" ]
@@ -117,7 +121,7 @@ printf 'int u8bFeed(int n) { return n; }\n' > "$REPO/net/WIRE.c"
 g add -A
 GIT_AUTHOR_DATE="2022-01-02T00:00:00Z" GIT_COMMITTER_DATE="2022-01-02T00:00:00Z" \
   g commit -q -m c1
-rtin "$REPO" sym u8bFeed > "$WORK/q5" 2>"$WORK/q5e"; RC=$?
+rtin "$REPO" sym --paths u8bFeed > "$WORK/q5" 2>"$WORK/q5e"; RC=$?
 printf '%s/net/WIRE.c\n%s/src/abc/TCP.c\n' "$RREPO" "$RREPO" > "$WORK/q5w"
 if [ "$RC" = 0 ] && cmp -s "$WORK/q5w" "$WORK/q5"
 then ok "the new revision's carrier joins the suspects, sorted"
@@ -128,7 +132,7 @@ else bad "the new revision's carrier joins the suspects (rc $RC)" \
 # leg 3 — the EXTENSION IS THE FORMAT: a `.lite2.idx` file is swept
 # ==========================================================================
 printf 'PRE-BEE-063 INDEX\n' > "$REPO/.git/be/0000000000.lite2.idx"
-rtin "$REPO" sym u8bFeed > "$WORK/q6" 2>"$WORK/q6e"; RC=$?
+rtin "$REPO" sym --paths u8bFeed > "$WORK/q6" 2>"$WORK/q6e"; RC=$?
 if [ "$RC" = 0 ] && [ ! -f "$REPO/.git/be/0000000000.lite2.idx" ] &&
    cmp -s "$WORK/q5w" "$WORK/q6"
 then ok "a stale .lite2.idx is swept and the lane rebuilds lazily"
@@ -136,7 +140,7 @@ else bad "a stale .lite2.idx is swept (rc $RC)" "$WORK/q6" "$WORK/q6e"; fi
 
 # L3b: and the whole derived dir rebuilds from the ODB alone.
 rm -rf "$REPO/.git/be"
-rtin "$REPO" sym u8bFeed > "$WORK/q7" 2>"$WORK/q7e"; RC=$?
+rtin "$REPO" sym --paths u8bFeed > "$WORK/q7" 2>"$WORK/q7e"; RC=$?
 if [ "$RC" = 0 ] && cmp -s "$WORK/q5w" "$WORK/q7"
 then ok "rm -rf .git/be rebuilds the SYM rows from the TIP blobs alone"
 else bad "rm -rf .git/be rebuilds the SYM rows (rc $RC)" "$WORK/q7" "$WORK/q7e"; fi
@@ -179,7 +183,7 @@ else bad "both fixture repos install into the registry ($RCA/$RCB)" \
          "$WORK/iae" "$WORK/ibe" "$FAKEHOME/.config/bee/repos"; fi
 
 # X1: the local repo's suspects come FIRST, the registered one's after.
-rtin "$REPO" sym u8bFeed > "$WORK/x1" 2>"$WORK/x1e"; RC=$?
+rtin "$REPO" sym --paths u8bFeed > "$WORK/x1" 2>"$WORK/x1e"; RC=$?
 printf '%s/net/WIRE.c\n%s/src/abc/TCP.c\n%s/lib/net/SOCK.c\n' "$RREPO" "$RREPO" "$RB" \
   > "$WORK/x1w"
 if [ "$RC" = 0 ] && cmp -s "$WORK/x1w" "$WORK/x1"
@@ -189,7 +193,7 @@ else bad "a cross-repo mention answers (rc $RC)" "$WORK/x1w" "$WORK/x1" "$WORK/x
 # X2: the foreign index is never brought UP — B's rows do not move when a query
 # runs from REPO, so a stale foreign lane answers with fewer suspects, never wrong.
 XB=$(cat "$B"/.git/be/* 2>/dev/null | wc -c | tr -d ' ')
-rtin "$REPO" sym u8bFeed > /dev/null 2>&1
+rtin "$REPO" sym --paths u8bFeed > /dev/null 2>&1
 XA=$(cat "$B"/.git/be/* 2>/dev/null | wc -c | tr -d ' ')
 if [ "$XB" = "$XA" ]
 then ok "a query brings no foreign index up ($XB bytes)"

@@ -10,6 +10,9 @@
 #   4  an UNWRITABLE `be/` degrades to the read-only open, silently, exit 0
 #   5  two processes bringing the same cold repo up at once both survive
 #
+# BEE-066 made HUNKS the default answer; the suspect lists these legs compare
+# are asked for by name — `--paths` — exactly as test/sym/run.sh does.
+#
 # THE GAP THIS REPROS: with the read-only fan-out every check of leg 1 printed
 # nothing at all, and legs 3-5 had no lane to read either.
 #
@@ -113,7 +116,7 @@ BHEAD=$(git -C "$B" rev-parse HEAD)
 [ -d "$B/.git/be" ] && { echo "coldfan: B is not cold" >&2; exit 2; }
 
 # C1: THE REPRO — B has no index at all and the SYM fan-out still answers.
-rtin "$A" sym zqWidget > "$WORK/c1" 2>"$WORK/c1e"; RC=$?
+rtin "$A" sym --paths zqWidget > "$WORK/c1" 2>"$WORK/c1e"; RC=$?
 if [ "$RC" = 0 ] && [ "$(cat "$WORK/c1")" = "$RB/lib/net/SOCK.c" ]
 then ok "the first sym query brings a COLD registered repo up and answers"
 else bad "the first sym query answers off a cold repo (rc $RC)" "$WORK/c1" "$WORK/c1e"; fi
@@ -146,7 +149,7 @@ else bad "a piped run says nothing on stderr" "$WORK/c1e" "$WORK/c3e"; fi
 # leg 2 — the SECOND query no-ops off the mark
 # ==========================================================================
 runs "$B" > "$WORK/b.runs1"; BB=$(bytes "$B")
-rtin "$A" sym zqWidget > "$WORK/c6" 2>"$WORK/c6e"; RC=$?
+rtin "$A" sym --paths zqWidget > "$WORK/c6" 2>"$WORK/c6e"; RC=$?
 runs "$B" > "$WORK/b.runs2"; BA=$(bytes "$B")
 if [ "$RC" = 0 ] && [ "$(cat "$WORK/c6")" = "$RB/lib/net/SOCK.c" ] &&
    cmp -s "$WORK/b.runs1" "$WORK/b.runs2" && [ "$BB" = "$BA" ]
@@ -161,7 +164,7 @@ else bad "the second query writes nothing (rc $RC, $BB -> $BA)" \
 # exactly what the BEE-063 bump left behind in every registered repo.
 rm -rf "$B/.git/be"; mkdir -p "$B/.git/be"
 printf 'PRE-BEE-063 INDEX\n' > "$B/.git/be/0000000000.lite2.idx"
-rtin "$A" sym zqWidget > "$WORK/c7" 2>"$WORK/c7e"; RC=$?
+rtin "$A" sym --paths zqWidget > "$WORK/c7" 2>"$WORK/c7e"; RC=$?
 if [ "$RC" = 0 ] && [ "$(cat "$WORK/c7")" = "$RB/lib/net/SOCK.c" ] &&
    [ ! -f "$B/.git/be/0000000000.lite2.idx" ]
 then ok "a swept-format foreign lane is rebuilt and answers on the first query"
@@ -182,7 +185,7 @@ printf 'void fresh(void) { zqGadget(9); }\n' > "$D/new/BBB.c"
   git commit -q -m c1 ) || exit 2
 runs "$D" > "$WORK/d.runs1"
 chmod 0555 "$D/.git/be"
-rtin "$A" sym zqGadget > "$WORK/c8" 2>"$WORK/c8e"; RC=$?
+rtin "$A" sym --paths zqGadget > "$WORK/c8" 2>"$WORK/c8e"; RC=$?
 runs "$D" > "$WORK/d.runs2"
 chmod 0755 "$D/.git/be"
 if [ "$RC" = 0 ] && [ "$(cat "$WORK/c8")" = "$RD/old/AAA.c" ] && [ ! -s "$WORK/c8e" ] &&
@@ -192,7 +195,7 @@ else bad "an unwritable be/ degrades read-only (rc $RC)" "$WORK/c8" "$WORK/c8e" 
          "$WORK/d.runs1" "$WORK/d.runs2"; fi
 
 # C9: and with `be/` open again the very next query brings D up and finds both.
-rtin "$A" sym zqGadget > "$WORK/c9" 2>"$WORK/c9e"; RC=$?
+rtin "$A" sym --paths zqGadget > "$WORK/c9" 2>"$WORK/c9e"; RC=$?
 printf '%s/new/BBB.c\n%s/old/AAA.c\n' "$RD" "$RD" > "$WORK/c9w"
 if [ "$RC" = 0 ] && cmp -s "$WORK/c9w" "$WORK/c9"
 then ok "the next query over a writable be/ brings D up to its new tip"
@@ -208,8 +211,8 @@ else bad "the next query brings D up (rc $RC)" "$WORK/c9w" "$WORK/c9" "$WORK/c9e
 # is what the fan-out itself owes: the race never costs the ANSWER.
 printf '%s\n' "$RE" >> "$REG"
 [ -d "$E/.git/be" ] && { echo "coldfan: E is not cold" >&2; exit 2; }
-( rtin "$A" sym zqParallel > "$WORK/p1" 2>"$WORK/p1e"; echo $? > "$WORK/p1rc" ) &
-( rtin "$A" sym zqParallel > "$WORK/p2" 2>"$WORK/p2e"; echo $? > "$WORK/p2rc" ) &
+( rtin "$A" sym --paths zqParallel > "$WORK/p1" 2>"$WORK/p1e"; echo $? > "$WORK/p1rc" ) &
+( rtin "$A" sym --paths zqParallel > "$WORK/p2" 2>"$WORK/p2e"; echo $? > "$WORK/p2rc" ) &
 wait
 R1=$(cat "$WORK/p1rc"); R2=$(cat "$WORK/p2rc")
 if { [ "$R1" = 0 ] && [ "$(cat "$WORK/p1")" = "$RE/par/RACE.c" ]; } ||
@@ -220,15 +223,15 @@ else bad "a concurrent double bring-up still answers ($R1/$R2)" "$WORK/p1" "$WOR
 
 # C11: and the lane the race left is never torn — the next query reads it whole,
 # so a lost process costs a retry and never the index.
-rtin "$A" sym zqParallel > "$WORK/p3" 2>"$WORK/p3e"; RC=$?
+rtin "$A" sym --paths zqParallel > "$WORK/p3" 2>"$WORK/p3e"; RC=$?
 if [ "$RC" = 0 ] && [ "$(cat "$WORK/p3")" = "$RE/par/RACE.c" ]
 then ok "the raced lane reads back whole"
 else bad "the raced lane reads back whole (rc $RC)" "$WORK/p3" "$WORK/p3e"; fi
 
 # C12: and two queries over a WARM foreign lane are pure readers — DOG-046's
 # actual claim, and the case every fan-out after the first one is.
-( rtin "$A" sym zqParallel > "$WORK/p4" 2>"$WORK/p4e"; echo $? > "$WORK/p4rc" ) &
-( rtin "$A" sym zqParallel > "$WORK/p5" 2>"$WORK/p5e"; echo $? > "$WORK/p5rc" ) &
+( rtin "$A" sym --paths zqParallel > "$WORK/p4" 2>"$WORK/p4e"; echo $? > "$WORK/p4rc" ) &
+( rtin "$A" sym --paths zqParallel > "$WORK/p5" 2>"$WORK/p5e"; echo $? > "$WORK/p5rc" ) &
 wait
 R4=$(cat "$WORK/p4rc"); R5=$(cat "$WORK/p5rc")
 if [ "$R4" = 0 ] && [ "$R5" = 0 ] &&
