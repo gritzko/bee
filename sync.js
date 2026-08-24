@@ -137,7 +137,11 @@ function push(args) {
     if (stashTip(site) !== was)
       throw "bee: " + PUSH + ": landed on " + u + ", but its autostash would not " +
             "reapply — the edits are safe in `git stash` THERE";
-    return PUSH + " " + u + " " + head(at);
+    //  BEE-064: the land moved the gitlinks HEAD records AT THE SITE, so the
+    //  checkouts under them owe the same descent `integrate` runs (sync.js:208).
+    const left = [];
+    const n = follow(site, left);
+    return PUSH + " " + u + " " + head(at) + tally(n, left);
   }
   if (st.run(["git", "-C", at, PUSH, "-q"]) !== 0) throw "bee: " + PUSH + ": git refused";
   return PUSH + " " + u + " " + head(at);
@@ -173,6 +177,13 @@ function follow(at, left) {
   return n;
 }
 
+//  What a `follow` descent adds to the report line, so the fetch side and the
+//  land side (BEE-064:21) count in one and the same words.
+function tally(n, left) {
+  return (n ? " " + n + " sub" + (n > 1 ? "s" : "") : "") +
+         (left.length ? " " + left.length + " behind" : "");
+}
+
 function integrate(verb, ff) {
   const at = st.root();
   const u = upstream(at, verb);
@@ -195,9 +206,7 @@ function integrate(verb, ff) {
           "reapply — your edits are safe in the stash, `git stash pop` to resolve";
   const left = [];
   const n = follow(at, left);
-  return verb + " " + u + " " + head(at) +
-         (n ? " " + n + " sub" + (n > 1 ? "s" : "") : "") +
-         (left.length ? " " + left.length + " behind" : "");
+  return verb + " " + u + " " + head(at) + tally(n, left);
 }
 
 function pull(args) {
