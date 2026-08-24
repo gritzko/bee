@@ -51,6 +51,7 @@ export XDG_CACHE_HOME
 #  BEE-031: every runtime call runs under a FIXTURE home — `install` and
 #  `index` write `$HOME/.config/bee/repos`, never the user's own registry.
 export HOME="$FAKEHOME"
+ln -sf "$LITE" "$WORK/jsrc"                # TEST-005:8 unpacked-runtime climb
 rtin() { D=$1; shift; ( cd "$D" && HOME="$FAKEHOME" "$RT" "$@" ); }
 echo "status: runtime $RT, fixtures $WORK"
 
@@ -238,7 +239,6 @@ else bad "the view is not read-only"; fi
 # ==========================================================================
 # leg 6 — the pure MODEL, headless (view/quad.js)
 # ==========================================================================
-ln -sf "$LITE" "$WORK/jsrc"
 ( cd "$LITE" && HOME="$FAKEHOME" "$RT" --eval "require('$CASE/quad.js')" ) \
     > "$WORK/q.out" 2>"$WORK/q.err"; RC=$?
 if [ "$RC" = 0 ] && grep -q '^DONE' "$WORK/q.out" && ! grep -q '^FAIL' "$WORK/q.out"; then

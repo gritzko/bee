@@ -57,6 +57,7 @@ export XDG_CACHE_HOME
 #  BEE-031: every runtime call runs under a FIXTURE home — `install` and
 #  `index` write `$HOME/.config/bee/repos`, never the user's own registry.
 export HOME="$FAKEHOME"
+ln -sf "$LITE" "$WORK/jsrc"                # TEST-005:8 unpacked-runtime climb
 rtin() { D=$1; shift; ( cd "$D" && HOME="$FAKEHOME" "$RT" "$@" ); }
 echo "cat: runtime $RT, fixtures $WORK"
 
@@ -191,7 +192,6 @@ else bad "pager regression" "$WORK/pag.out"; fi
 # ==========================================================================
 # leg 3 — the hunk (be/test/cat/links, minus its grep-U half)
 # ==========================================================================
-ln -sf "$LITE" "$WORK/jsrc"
 ( cd "$LITE" && HOME="$FAKEHOME" LITE_FIX="$REPO" LITE_REV="$C2" \
   "$RT" --eval "require('$CASE/hunk.js')" ) > "$WORK/h.out" 2>"$WORK/h.err"; RC=$?
 if [ "$RC" = 0 ] && grep -q '^DONE' "$WORK/h.out" && ! grep -q '^FAIL' "$WORK/h.out"; then

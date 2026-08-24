@@ -54,6 +54,7 @@ export XDG_CACHE_HOME
 #  BEE-031: every runtime call runs under a FIXTURE home — `install` and
 #  `index` write `$HOME/.config/bee/repos`, never the user's own registry.
 export HOME="$FAKEHOME"
+ln -sf "$LITE" "$WORK/jsrc"                # TEST-005:8 unpacked-runtime climb
 rtin() { D=$1; shift; ( cd "$D" && HOME="$FAKEHOME" "$RT" "$@" ); }
 echo "list: runtime $RT, fixtures $WORK"
 
@@ -181,7 +182,6 @@ else bad "garbage index file broke the run (rc $RC)" "$WORK/old.out" "$WORK/old.
 # ==========================================================================
 # leg 2 — the FUSE itself (be/test/list/fuse.js ported), headless
 # ==========================================================================
-ln -sf "$LITE" "$WORK/jsrc"
 ( cd "$LITE" && HOME="$FAKEHOME" LITE_FIX="$REPO" LITE_TIP="$TIP" \
   "$RT" --eval "require('$CASE/fuse.js')" ) > "$WORK/f.out" 2>"$WORK/f.err"; RC=$?
 if [ "$RC" = 0 ] && grep -q '^DONE' "$WORK/f.out" && ! grep -q '^FAIL' "$WORK/f.out"; then

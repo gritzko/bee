@@ -45,6 +45,7 @@ export XDG_CACHE_HOME
 #  BEE-031: every runtime call runs under a FIXTURE home — nothing here ever
 #  writes the developer's own `$HOME/.config/bee/repos`.
 export HOME="$FAKEHOME"
+ln -sf "$LITE" "$WORK/jsrc"                # TEST-005:8 unpacked-runtime climb
 rtin() { D=$1; shift; ( cd "$D" && HOME="$FAKEHOME" "$RT" "$@" ); }
 echo "stage: runtime $RT, fixtures $WORK"
 

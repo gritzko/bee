@@ -5,6 +5,8 @@
 #   leg 2  a dirty parent still lands (autostash) and keeps its dirt
 #   leg 3  parent moved ahead -> push refuses, tells to pull first
 set -u
+CASE=$(cd "$(dirname "$0")" && pwd)              # bee/test/land
+LITE=$(cd "$CASE/../.." && pwd)                  # bee/
 RT="${LITEJAB:-jab}"
 case "$RT" in
     */*) [ -x "$RT" ] || { echo "land: no runtime at $RT" >&2; exit 2; } ;;
@@ -21,6 +23,7 @@ bad() { CHECKS=$((CHECKS + 1)); FAILED=$((FAILED + 1)); echo "FAIL $1"; shift
         for f in "$@"; do [ -f "$f" ] || continue; echo "--- $f ---"; cat "$f"; done; }
 FH="$WORK/home"; mkdir -p "$FH/.config/bee"
 SRC="$WORK/src"; mkdir -p "$SRC/alpha"
+ln -sf "$LITE" "$WORK/jsrc"                # TEST-005:8 unpacked-runtime climb
 rtin() { D=$1; shift; ( cd "$D" && HOME="$FH" SRC_ROOT="$SRC" "$RT" "$@" ); }
 G="git -c user.email=t@t -c user.name=t"
 

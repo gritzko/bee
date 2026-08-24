@@ -51,7 +51,9 @@ bad() {
     for f in "$@"; do [ -f "$f" ] || continue; echo "--- $f ---"; head -40 "$f"; done
 }
 ln -sf "$LITE" "$WORK/jsrc"                      # unpacked-runtime require climb
-FAKEHOME="$WORK/home"; mkdir -p "$FAKEHOME"
+#  TEST-005:8 the fixture home may NOT be $WORK/home: that is the served repo,
+#  and the require climb stops at $HOME — jsrc sits one level up, out of reach.
+FAKEHOME="$WORK/fakehome"; mkdir -p "$FAKEHOME"
 : "${XDG_CACHE_HOME:=${HOME}/.cache}"      # the pack cache stays on the REAL home
 export XDG_CACHE_HOME
 #  BEE-031: every runtime call runs under a FIXTURE home — `install` and

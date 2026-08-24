@@ -50,6 +50,7 @@ export XDG_CACHE_HOME
 #  BEE-031: every runtime call runs under a FIXTURE home — `install` and
 #  `index` write `$HOME/.config/bee/repos`, never the user's own registry.
 export HOME="$FAKEHOME"
+ln -sf "$LITE" "$WORK/jsrc"                # TEST-005:8 unpacked-runtime climb
 rtin() { D=$1; shift; ( cd "$D" && HOME="$FAKEHOME" "$RT" "$@" ); }
 echo "blob: runtime $RT, fixtures $WORK"
 
@@ -125,7 +126,6 @@ then ok "a bare 'lite blob' is refused in plain words"
 else bad "bare blob (rc $RC)" "$WORK/r0.out" "$WORK/r0.err"; fi
 
 # --- the tty side: ONE hunk, banner = the RESOLVED full sha ----------------
-ln -sf "$LITE" "$WORK/jsrc"
 ( cd "$LITE" && HOME="$FAKEHOME" "$RT" --eval \
   "const o = require('view/blob.js').blob('$SHORT', { from: '$REPO' });
    const w = (s) => { const b = utf8.Encode(s); const x = io.buf(b.length + 8); x.feed(b); io.writeAll(1, x); };

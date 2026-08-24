@@ -16,6 +16,7 @@
 set -u
 
 CASE=$(cd "$(dirname "$0")" && pwd)              # bee/test/chatty
+LITE=$(cd "$CASE/../.." && pwd)                  # bee/
 
 RT="${LITEJAB:-bee}"
 case "$RT" in
@@ -46,6 +47,7 @@ export XDG_CACHE_HOME
 #  BEE-031: every runtime call runs under a FIXTURE home — nothing here ever
 #  writes the developer's own `$HOME/.config/bee/repos`.
 export HOME="$FAKEHOME"
+ln -sf "$LITE" "$WORK/jsrc"                # TEST-005:8 unpacked-runtime climb
 echo "chatty: runtime $RT, fixtures $WORK"
 
 # The batch has to outgrow the 64K pipe before either end can wedge, so the
