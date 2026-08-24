@@ -114,7 +114,7 @@ then ok "bare \`lite\` in a git repo emits the board"
 else bad "bare run (rc $RC)" "$WORK/o1" "$WORK/e1"; fi
 
 # It INDEXED — the LITE-006 run family is in the repo's own .git/be/.
-if [ -d "$REPO/.git/be" ] && ls "$REPO/.git/be" | grep -q '\.lite2\.idx$'
+if [ -d "$REPO/.git/be" ] && ls "$REPO/.git/be" | grep -q '\.lite3\.idx$'
 then ok "...having built the index from scratch in <repo>/.git/be/"
 else bad "the bare run built no index" "$WORK/o1" "$WORK/e1"; fi
 

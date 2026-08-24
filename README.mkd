@@ -61,6 +61,13 @@ The standalone (bundled) `bee` binary call patterns:
      2. `<target>`: the paths that may link to a file or a ticket code, looked
         up in every repo of `~/.config/bee/repos` (read-only) and printed
         repo-qualified, the local repo first
+ -  `bee sym <ident>` -- symbol-mention suspects (BEE-063); one prefix scan of
+    the SYM rows the same tip-blob pass mints
+     1. the files that may mention `<ident>`, looked up in every repo of
+        `~/.config/bee/repos` (read-only) and printed repo-qualified, the local
+        repo first
+     2. the symbol is hashed VERBATIM, so `u8bFeed` and `U8BFeed` are two queries
+     3. past ~200 suspects a repo prints the count and asks for a narrower query
  -  `bee log [<n>] [<hex>|<path>][?<rev>]` -- commit log, newest first; off-mainline rows grey
      1. bare: the checked-out tip's ancestry; `<n>` caps the rows, `0` = all
      2. `<hex>`: that commit's ancestry

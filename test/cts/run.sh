@@ -82,7 +82,7 @@ g() { git -C "$REPO" "$@"; }
 C0=$(g rev-parse master~2); C1=$(g rev-parse master~1); C2=$(g rev-parse master)
 ORPH=$(g rev-parse orphan)
 B1=$(g rev-parse "$C0:dir/b.txt"); B2=$(g rev-parse "$C2:moved.txt")
-litebytes() { cat "$REPO"/.git/be/*.lite2.idx 2>/dev/null | wc -c | tr -d ' '; }
+litebytes() { cat "$REPO"/.git/be/*.lite3.idx 2>/dev/null | wc -c | tr -d ' '; }
 
 # ==========================================================================
 # leg 1 — the COLD MINT and the WARM no-op

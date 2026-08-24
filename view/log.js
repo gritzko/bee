@@ -216,18 +216,18 @@ function spineOf(ix, seed, hls) {
   return on;
 }
 
-//  The file history: one prefix scan of the path's `path_hl` for its REV-CMMT
-//  and REV-PARS rows.  PARS is the path's rewritten ancestry, what `git log
+//  The file history: the path's REV-CMMT and REV-PARS spans, one per kind since
+//  BEE-063:38.  PARS is the path's rewritten ancestry, what `git log
 //  --simplify-merges` computes, so the log is a reverse Kahn over it drained by
 //  a max heap on date; date alone misorders side branches (LITE-007:43:El).
 function fileLog(ix, r, rel, max) {
   const phl = idx.pathHl(rel);
   const cmt = new Map(), pars = new Map(), kids = new Map();
-  ix.prefix(phl << 24n, 24, function (e) {
-    const rev = idx.keyRev(e[0]), kind = idx.keyKind(e[0]);
-    if (kind === idx.K_CMMT) { cmt.set(rev, idx.valHl60(e[1])); return; }
-    if (kind !== idx.K_PARS) return;
-    const v = e[1];
+  idx.revSpan(ix, phl, idx.K_CMMT, function (k, v) {
+    cmt.set(idx.keyRev(k), idx.valHl60(v));
+  });
+  idx.revSpan(ix, phl, idx.K_PARS, function (k, v) {
+    const rev = idx.keyRev(k);
     let ps = pars.get(rev);
     if (ps === undefined) pars.set(rev, ps = []);
     for (const s of [(v >> 44n) & idx.REV_MAX, (v >> 24n) & idx.REV_MAX,

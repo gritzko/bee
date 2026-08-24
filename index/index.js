@@ -12,9 +12,10 @@ const isSha40 = refs.isSha40;
 
 //  The run family lives in the repo's own gitdir.
 const IDX_DIR = "be";
-//  The index format is its extension (BEE-002:115:qe): re-keyed LINK rows share
-//  the key space with the old ones, so `.lite.idx` retires and `openIndex` sweeps it.
-const IDX_EXT = ".lite2.idx";
+//  The index format is its extension (BEE-002:115:qe): BEE-063:36 moved the kind
+//  nibble to the key's TOP bits, so every older key reads as another family and
+//  `.lite2.idx` retires — `openIndex` sweeps it and the lane rebuilds lazily.
+const IDX_EXT = ".lite3.idx";
 //  The KEYED lane beside it (BEE-024:23): a second family in the SAME dir, so
 //  the sweep below has to know both exts or it unlinks the kv runs.
 const KV_EXT = ".kv.idx";
@@ -25,10 +26,15 @@ const IDX_BULK_ROWS = 1 << 16;
 const TREE_CACHE_MAX = 1 << 14;
 
 //  --- the field split -------------------------------------------------------
+//  The kind is the key's TOP nibble (BEE-063:9), so each family owns one
+//  contiguous 1/16 of the space and the fat SYM lane peppers no rev-lane page.
 const K_BLOB = 0x1n, K_CMMT = 0x2n, K_PARS = 0x3n;
 const K_CPAR = 0x4n, K_B2P = 0x5n, K_FSEG = 0x6n, K_MARK = 0xFn;
-//  The commit date (BEE-033); 7 is lindex.js's LINK, 9..E are still free.
+//  The commit date (BEE-033); 7 is lindex.js's LINK, A..E are still free.
 const K_CTS = 0x8n;
+//  The symbol-mention family (BEE-063:20), laid out in index/lindex.js.  With
+//  the kind leading the key every kind owns a range, so it needs no all-ones.
+const K_SYM = 0x9n;
 
 const REV_BITS = 20n, PHL_BITS = 40n;
 const REV_MAX = (1n << REV_BITS) - 1n;          // also the empty PARS slot
@@ -38,10 +44,10 @@ const HL60_MASK = (1n << 60n) - 1n;
 //  an empty (all-ones) parent slot (LITE-006:54:Rc).
 const CPAR_NONE = HL60_MASK;
 
-//  path_hl:40 | rev:20 | kind:4
-function revKey(phl, rev, kind) { return (phl << 24n) | (rev << 4n) | kind; }
-//  hashlet60:60 | kind:4
-function hlKey(hl60, kind) { return (hl60 << 4n) | kind; }
+//  kind:4 | path_hl:40 | rev:20
+function revKey(phl, rev, kind) { return (kind << 60n) | (phl << 20n) | rev; }
+//  kind:4 | hashlet60:60
+function hlKey(hl60, kind) { return (kind << 60n) | hl60; }
 //  hashlet60:60 | vnib:4
 function hlVal(hl60, vnib) { return (hl60 << 4n) | (vnib & 0xfn); }
 //  path_hl:40 | rev:20 | vnib:4  (the B2P value, the REV key without its kind)
@@ -53,7 +59,7 @@ function parsVal(p) {
   return (s[0] << 44n) | (s[1] << 24n) | (s[2] << 4n);
 }
 //  --- FSEG, the partial-path record (LITE-011) -------------------------------
-//  key = fn_hl:40 | prnt_hl:20 | 6, val = seg0..seg5:10 each root-first | vnib:4.
+//  key = 6 | fn_hl:40 | prnt_hl:20, val = seg0..seg5:10 each root-first | vnib:4.
 //  A pure function of the path text, minted once and never invalidated
 //  (LITE-011:30:a9); root-first is what anchors resolve.js (LITE-011:31:a9).
 const SEG_SLOTS = 6;                              // the val holds the top six
@@ -69,7 +75,8 @@ function segHl(name, bits) {
 //  The last segment's top 40 bits.  No bump: it names nothing absent.
 function fnHl(name) { return hlOfText(name) >> 20n; }
 
-function fsegKey(fn, prnt) { return (fn << 24n) | (prnt << 4n) | K_FSEG; }
+//  The fn:40 | prnt:20 split IS the rev key's, so it is built the one way.
+function fsegKey(fn, prnt) { return revKey(fn, prnt, K_FSEG); }
 function fsegVal(chain, depth) {
   let v = 0n;
   for (let i = 0; i < SEG_SLOTS; i++)
@@ -93,10 +100,11 @@ function fsegRow(path) {
            val: fsegVal(chain, dirs.length) };
 }
 
-function keyKind(k) { return k & 0xfn; }
-function keyPhl(k) { return k >> 24n; }
-function keyRev(k) { return (k >> 4n) & REV_MAX; }
-function keyHl60(k) { return k >> 4n; }
+function keyKind(k) { return k >> 60n; }
+function keyPhl(k) { return (k >> 20n) & PHL_MASK; }
+function keyRev(k) { return k & REV_MAX; }
+function keyHl60(k) { return k & HL60_MASK; }
+//  The VALUES kept their layout across BEE-063: only keys were re-packed.
 function valHl60(v) { return v >> 4n; }
 
 //  --- hashlets --------------------------------------------------------------
@@ -461,17 +469,26 @@ function hasDone(st, chl) {
   return hit;
 }
 
-//  One path's rows, by the key span its `path_hl` owns (LITE-028:41:~1): every
-//  REV row of the path is in [phl<<24, (phl+1)<<24), so one seek fills
-//  next/byPB/top.  Other kinds hash into that span too, so `row` filters by kind.
+//  One (kind, path_hl) span, rev-ordered: with the kind in the TOP nibble a
+//  path owns one span PER KIND (BEE-063:38), never one span for all of them, so
+//  every folding reader takes the two or three it wants and nothing else.
+function revSpan(ix, phl, kind, cb) {
+  const c = ix.seek(revKey(phl, 0n, kind));
+  while (c.next()) {
+    if (keyKind(c.key) !== kind || keyPhl(c.key) !== phl) break;
+    cb(c.key, c.val);
+  }
+}
+
+//  One path's rows (LITE-028:41:~1): the BLOB span then the CMMT one fill
+//  next/byPB/top.  BLOB still lands before CMMT for a given rev, which is what
+//  lets the commit slot of `top` be filled by the second pass.
 function loadPath(st, phl) {
   if (st.all || st.have.has(phl)) return;
   st.have.add(phl);
-  const c = st.ix.seek(phl << 24n);
-  while (c.next()) {
-    if (keyPhl(c.key) !== phl) break;
-    row(st, c.key, c.val);
-  }
+  const take = function (k, v) { row(st, k, v); };
+  revSpan(st.ix, phl, K_BLOB, take);
+  revSpan(st.ix, phl, K_CMMT, take);
 }
 
 //  --- the last rev, without the chain (LITE-044:49:5D) --------------------------
@@ -512,11 +529,10 @@ function loadDir(st, phl) {
                       commit: valHl60(revValAt(st.ix, phl, last, K_CMMT)) });
 }
 
-//  One index row into the state, the fold the old full pass did per row.
+//  One index row into the state, the fold the old full pass did per row.  Only
+//  the two REV kinds reach it now: a CPAR row can no longer share a path's span.
 function row(st, k, v) {
   const kind = keyKind(k);
-  if (kind === K_CPAR) { st.yes.add(keyHl60(k)); return; }
-  if (kind !== K_BLOB && kind !== K_CMMT) return;
   const phl = keyPhl(k), rev = keyRev(k);
   if (kind === K_BLOB) {
     const blob = valHl60(v);
@@ -539,7 +555,7 @@ function row(st, k, v) {
 }
 
 //  --- the commit date (BEE-033) ---------------------------------------------
-//  `CTS` (8) — key `commit_hl:60|8`, val `ats:60|vnib:4`: the AUTHOR time in
+//  `CTS` (8) — key `8|commit_hl:60`, val `ats:60|vnib:4`: the AUTHOR time in
 //  epoch seconds, what every bee view displays.  A miss answers null and the
 //  caller falls back to `readCommit`, so a lane filled before the kind existed
 //  is slow, never wrong (BEE-033:46).
@@ -1194,6 +1210,8 @@ module.exports = {
   index: index, summary: summary, track: track, repos: repos,
   openIndex: openIndex, openKv: openKv, sweep: sweep,
   discover: discover, openRepo: openRepo, closeRepo: closeRepo, epoch: epoch,
+  //  BEE-063: one (kind, path_hl) span, what every folding reader now takes.
+  revSpan: revSpan,
   //  BEE-048: the per-repo tip and the shared lane, both witnessed by fsw.
   repoRev: repoRev, tipTree: tipTree, laneOf: laneOf, laneDown: laneDown,
   laneShared: laneShared, stats: stats,
@@ -1220,6 +1238,7 @@ module.exports = {
   CPAR_NONE: CPAR_NONE,
   K_BLOB: K_BLOB, K_CMMT: K_CMMT, K_PARS: K_PARS,
   K_CPAR: K_CPAR, K_B2P: K_B2P, K_FSEG: K_FSEG, K_CTS: K_CTS, K_MARK: K_MARK,
+  K_SYM: K_SYM,
   REV_MAX: REV_MAX,
   //  The FSEG split, shared with index/resolve.js (LITE-011).
   SEG_SLOTS: SEG_SLOTS, DEPTH_MAX: DEPTH_MAX, segHl: segHl, fnHl: fnHl,

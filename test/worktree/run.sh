@@ -94,7 +94,7 @@ then ok "a bare \`bee\` run inside it adds no second line"
 else bad "the bare run adds no line (rc $RC)" "$WORK/l2" "$WORK/l2e" "$REG"; fi
 
 # The lane is the COMMON gitdir's, so the registered root is the indexed one.
-if ls "$MAIN/.git/be" 2>/dev/null | grep -q '\.lite2\.idx$' &&
+if ls "$MAIN/.git/be" 2>/dev/null | grep -q '\.lite3\.idx$' &&
    [ ! -d "$MAIN/.git/worktrees/wt/be" ]
 then ok "the lane is the main worktree's, not the checkout's"
 else bad "the lane is the main worktree's" "$WORK/l1"; fi

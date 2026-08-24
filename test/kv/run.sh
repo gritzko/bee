@@ -1,6 +1,6 @@
 #!/bin/sh
 # bee/test/kv/run.sh — BEE-024: the `kv` lane, the KEYED kv64 family beside
-# `*.lite2.idx` in `<gitdir>/be/`.  Legs over the landed bee tree:
+# `*.lite3.idx` in `<gitdir>/be/`.  Legs over the landed bee tree:
 #   verb  — this script: `bee index` fills the lane and says so on its ONE
 #           summary line; a rerun re-lexes nothing and writes not one byte; an
 #           edited file re-lexes; a vanished pair and a deleted file are
@@ -12,7 +12,7 @@
 #           literal-or-hash payload, `find`'s clauses, the path-hash collision
 #           detector and the crash-mid-sweep re-lex.
 #
-# THE GAP THIS REPROS: every lite2 row is a FACT about a blob or a commit, so
+# THE GAP THIS REPROS: every lite3 row is a FACT about a blob or a commit, so
 # bee had no record that could CHANGE value — `Now: OPEN` flipping to `DONE`
 # was unsayable, and the BEE-025 board had nothing to ask.  The kv lane is
 # keyed, so a re-put overwrites and a row is a mutable cell.
@@ -81,7 +81,7 @@ g() { git -C "$REPO" "$@"; }
 
 kvbytes()   { cat "$REPO"/.git/be/*.kv.idx 2>/dev/null | wc -c | tr -d ' '; }
 kvruns()    { ( cd "$REPO"/.git/be && ls *.kv.idx 2>/dev/null ); }
-litebytes() { cat "$REPO"/.git/be/*.lite2.idx 2>/dev/null | wc -c | tr -d ' '; }
+litebytes() { cat "$REPO"/.git/be/*.lite3.idx 2>/dev/null | wc -c | tr -d ' '; }
 # One `find` over the fixture, one absolute path per line.
 qry() { D=$1; shift; ( cd "$D" && HOME="$FAKEHOME" KV_ARGS="$*" \
         "$RT" --eval "require('$CASE/find.js')" ); }
@@ -97,9 +97,9 @@ then ok "the cold run fills the lane: 5 files, 9 pairs, on the one summary line"
 else bad "the cold run fills the lane (rc $RC)" "$WORK/i1" "$WORK/i1e"; fi
 
 # K2: the lane is a family of its OWN, beside the wh128 one, in the gitdir.
-if ls "$REPO"/.git/be/*.kv.idx >/dev/null 2>&1 && ls "$REPO"/.git/be/*.lite2.idx >/dev/null 2>&1
-then ok "the .kv.idx family sits beside .lite2.idx in <gitdir>/be"
-else bad "the .kv.idx family sits beside .lite2.idx" ; ls -l "$REPO"/.git/be; fi
+if ls "$REPO"/.git/be/*.kv.idx >/dev/null 2>&1 && ls "$REPO"/.git/be/*.lite3.idx >/dev/null 2>&1
+then ok "the .kv.idx family sits beside .lite3.idx in <gitdir>/be"
+else bad "the .kv.idx family sits beside .lite3.idx" ; ls -l "$REPO"/.git/be; fi
 
 # K3: the answers are off the rows — a meta pair, an intersection, a YAML key.
 qry "$REPO" 'Now=OPEN' > "$WORK/q1" 2>"$WORK/q1e"; RC=$?
@@ -139,7 +139,7 @@ else bad "a warm run writes nothing (rc $RC, $BEFORE -> $AFTER)" "$WORK/i2" "$WO
 # ==========================================================================
 # leg 3 — an EDITED file re-lexes and the cell OVERWRITES
 # ==========================================================================
-# K6: `Now: OPEN` flips to `DONE` in place — the thing lite2 cannot say.
+# K6: `Now: OPEN` flips to `DONE` in place — the thing lite3 cannot say.
 printf '#   AAA-001: the first\n\n    Now: DONE\n    Sev: HIGH\n    Who: gritzko\n\nbody\n' \
   > "$REPO/todo/AAA-001.mkd"
 rtin "$REPO" index > "$WORK/i3" 2>"$WORK/i3e"; RC=$?
@@ -221,13 +221,13 @@ then ok "the one sweep spares BOTH exts and still unlinks a retired one"
 else bad "the sweep spares both exts (rc $RC/$RC2, kv $KB->$KA, lite $LB->$LA)" \
          "$WORK/i7" "$WORK/i7e" "$WORK/i8e"; fi
 
-# K12: and the reverse — a kv query opens its own family and leaves lite2 alone.
+# K12: and the reverse — a kv query opens its own family and leaves lite3 alone.
 LB=$(litebytes)
 qry "$REPO" 'Now=DONE' > "$WORK/q11" 2>"$WORK/q11e"; RC=$?
 LA=$(litebytes)
 if [ "$RC" = 0 ] && [ "$LB" = "$LA" ] && [ -s "$WORK/q11" ]
-then ok "a kv query does not eat the lite2 runs"
-else bad "a kv query does not eat the lite2 runs (rc $RC, $LB -> $LA)" "$WORK/q11e"; fi
+then ok "a kv query does not eat the lite3 runs"
+else bad "a kv query does not eat the lite3 runs (rc $RC, $LB -> $LA)" "$WORK/q11e"; fi
 
 # ==========================================================================
 # leg 8 — the ROWS (the bit layout, the collision detector, the crash re-lex)

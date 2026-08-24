@@ -1,6 +1,6 @@
 #   Beagle-lite index records
 
-The record catalogue of the `.git/be/` index a lite verb reads and writes ([LITE-006]). One `abc.index("wh128", …)` family — a dog Pup stack of `(key:u64, val:u64)` rows, sorted by key, unkeyed (a key may carry many rows) — lives in the repo's OWN gitdir as `<gitdir>/be/*.lite2.idx`. Beside it, in the same dir, stands the KEYED `kv64` lane `*.kv.idx` ([BEE-024]), where a re-put OVERWRITES and a row is a mutable cell. Everything there is DERIVED: `rm -rf` it and the next run rebuilds it — and the EXTENSION IS THE FORMAT, so a file of neither live format is swept (unlinked) before either family opens ([BEE-002], [BEE-024]). Registered repos are listed in `$HOME/.config/bee/repos` ([BEE-001]), one absolute worktree path per line, written by `bee install`. The kind nibble is the LOW 4 bits of every key, so one index holds every record family and one scan sees them all.
+The record catalogue of the `.git/be/` index a lite verb reads and writes ([LITE-006]). One `abc.index("wh128", …)` family — a dog Pup stack of `(key:u64, val:u64)` rows, sorted by key, unkeyed (a key may carry many rows) — lives in the repo's OWN gitdir as `<gitdir>/be/*.lite3.idx`. Beside it, in the same dir, stands the KEYED `kv64` lane `*.kv.idx` ([BEE-024]), where a re-put OVERWRITES and a row is a mutable cell. Everything there is DERIVED: `rm -rf` it and the next run rebuilds it — and the EXTENSION IS THE FORMAT, so a file of neither live format is swept (unlinked) before either family opens ([BEE-002], [BEE-024], and `.lite2.idx` is what [BEE-063] retired that way). The kind nibble is the TOP 4 bits of every key ([BEE-063]), so one index still holds every record family, one scan still sees them all, and each family owns ONE contiguous 1/16 of the keyspace instead of peppering every page of the shared stack — which is what lets a family as fat as SYM live here at all. Registered repos are listed in `$HOME/.config/bee/repos` ([BEE-001]), one absolute worktree path per line, written by `bee install`.
 
 ##  Field vocabulary
 
@@ -17,28 +17,31 @@ The three field types every record is built out of; all are hashes, so the index
  -  `seg_hl` — the top 40/20/10 bits of ONE path segment's text hashlet
     (filename / parent dir / ancestor dir); `0` spells "absent", so a genuine
     0 hash bumps to 1 (the filename slot names nothing absent and never bumps).
+ -  `types` — four 5-bit tok32 tags ([BEE-063]), CANONICAL: sorted ascending,
+    deduped, `0` spelling absent (`'A'` is no tag in the alphabet) and the
+    lowest four winning, so a re-lex rebuilds the very same key.
 
 ##  Record kinds
 
-Nine kinds, the nibble in `key & 0xf`. Rows are never deleted and re-puts are idempotent.
+Ten kinds, the nibble in `key >> 60`. Rows are never deleted and re-puts are idempotent.
 
- -  `REV-BLOB` (1) — key `path_hl:40|rev:20|1`, val `blob_hl:60|vnib:4`: which
+ -  `REV-BLOB` (1) — key `1|path_hl:40|rev:20`, val `blob_hl:60|vnib:4`: which
     blob this path carries at this rev.
- -  `REV-CMMT` (2) — key `path_hl:40|rev:20|2`, val `commit_hl:60|vnib:4`: the
+ -  `REV-CMMT` (2) — key `2|path_hl:40|rev:20`, val `commit_hl:60|vnib:4`: the
     commit that introduced this rev of the path. A DIRECTORY path gets these and
     ONLY these ([LITE-044]): one row per commit that changed anything under it,
     which is what `lite list` attributes a dir row from.
- -  `REV-PARS` (3) — key `path_hl:40|rev:20|3`, val `par1:20|par2:20|par3:20|4`:
+ -  `REV-PARS` (3) — key `3|path_hl:40|rev:20`, val `par1:20|par2:20|par3:20|4`:
     this rev's parent REVS; a 4th+ parent rides a second row.
- -  `CPAR` (4) — key `commit_hl:60|4`, val `parent_hl:60|ord:4`: one row per
+ -  `CPAR` (4) — key `4|commit_hl:60`, val `parent_hl:60|ord:4`: one row per
     parent, first parent `ord` 0; a ROOT commit gets one row with an EMPTY parent.
- -  `B2P` (5) — key `blob_hl:60|5`, val `path_hl:40|rev:20|vnib:4`: the reverse
+ -  `B2P` (5) — key `5|blob_hl:60`, val `path_hl:40|rev:20|vnib:4`: the reverse
     map, which path/rev a blob is the content of.
- -  `FSEG` (6) — key `fn_hl:40|prnt_hl:20|6`, val `seg0..seg5:10 ROOT-FIRST|
+ -  `FSEG` (6) — key `6|fn_hl:40|prnt_hl:20`, val `seg0..seg5:10 ROOT-FIRST|
     depth:4`: the partial-path record ([LITE-011]), the last segment's hash
     plus the ancestor dir segment hashes; a pure function of the path TEXT,
     minted once at the path's rev 0, never invalidated (it names, not states).
- -  `LINK` (7) — key `fn_hl:40|par:20|7`, val `src path_hl:40|gpar:20|vnib:4`:
+ -  `LINK` (7) — key `7|fn_hl:40|par:20`, val `src path_hl:40|gpar:20|vnib:4`:
     the backlink SUSPECT record ([LITE-033]), one row per (dst, src) pair. Every
     slot is a truncated TEXT hashlet of the TARGET's own segments ([BEE-002]) —
     the filename's top 40 bits, the parent dir's top 20, the grandparent's top
@@ -48,7 +51,7 @@ Nine kinds, the nibble in `key & 0xf`. Rows are never deleted and re-puts are id
     ticket code (`LITE-029`) keys as its own text with both ancestors absent, so
     a ticket's backlinks survive the thin↔fat layout move. Anchors are dropped:
     a row names files, not places.
- -  `CTS` (8) — key `commit_hl:60|8`, val `ats:60|vnib:4`: the commit's AUTHOR
+ -  `CTS` (8) — key `8|commit_hl:60`, val `ats:60|vnib:4`: the commit's AUTHOR
     time in epoch seconds ([BEE-033]), the one every view displays. Minted at
     seal off the commit the walk already parsed for its date tiebreak — no ODB
     read of its own — and put BEFORE that commit's CPAR rows, so the done flag
@@ -56,9 +59,21 @@ Nine kinds, the nibble in `key & 0xf`. Rows are never deleted and re-puts are id
     leaves room for a committer-time row. A lane brought up before the kind
     existed carries NONE, and a reader answers `null` there rather than a date
     it cannot know.
- -  `MARK` (F) — key `ref_hl:60|F`, val `tip commit_hl:60|vnib:4`: the per-ref
+ -  `SYM` (9) — key `9|sym_hl:40|types:20`, val `seg0..seg3:10 ROOT-FIRST|
+    fn_hl:20|vnib:4`: the symbol-mention SUSPECT record ([BEE-063]), ONE row per
+    (symbol, file). `sym_hl` is the top 40 bits of the symbol text's hashlet,
+    VERBATIM — no decasing, no despacing, so `u8bFeed` and `U8BFeed` are two
+    keys — and `types` says what the DOG-034 lexer read it as in this file. The
+    val names the carrier the way LINK names a target: its ancestor dir segments
+    root-first at 10 bits, `0` absent, and the basename's own top 20. It is the
+    FAT family, ~10x every other kind combined, which is why the kind moved to
+    the top nibble; with it there the next free value is range enough, so
+    nothing had to be renumbered around it.
+ -  `MARK` (F) — key `F|ref_hl:60`, val `tip commit_hl:60|vnib:4`: the per-ref
     watermark, the LAST write of a run (DOG-027). `lindex` keeps its own under
-    the RESERVED ref `hlOfText("lindex")`, which is no ref and so never collides.
+    the RESERVED ref `hlOfText("lindex")`, which is no ref and so never collides,
+    and the SYM round keeps a SECOND one under `hlOfText("symdex")` — sharing
+    lindex's would read a pre-SYM index as done ([BEE-063]).
 
 ##  What the records buy
 
@@ -117,10 +132,17 @@ Each query is a scan of ONE key prefix; no ODB ancestry walk happens at query ti
     bare-filename ref, `fn|par` for one that named the parent — over EVERY repo
     in `$HOME/.config/bee/repos` ([BEE-002]): the vals are the carriers'
     `path_hl`, named back to text by that repo's own tree descent.
+ -  "Who mentions this SYMBOL?" is ONE prefix scan of `9|sym_hl` per index
+    ([BEE-063]), fanned over the same registry, and the naming descent is
+    PRUNED: a dir is entered only when some row's segment hashlet names it, and
+    a file confirms on the whole (segments, basename) tuple — cheaper than the
+    full tip-tree walk `lindex` pays. Past ~200 suspects in one repo the verb
+    prints the count and asks for a narrower query, since a name like `ctx`
+    legitimately carries a row per file.
 
 ##  The `kv` lane
 
-The KEYED family, `<gitdir>/be/*.kv.idx` ([BEE-024]): `abc.index("kv64", …)` compares KEYS alone, so a re-put of one key wins at `get`, `range` and `seek` alike. That is what lets `Now: OPEN` flip to `DONE` IN PLACE, which no lite2 row can say. Its records are FILE HEADERS: the StrictMark meta pairs under a `#   Title` ([/meta/todo]) and the top-level keys of a Markdown YAML preamble. Same discipline as lite2 — derived, the kind nibble in the LOW 4 bits, one lane for every cell-like kind.
+The KEYED family, `<gitdir>/be/*.kv.idx` ([BEE-024]): `abc.index("kv64", …)` compares KEYS alone, so a re-put of one key wins at `get`, `range` and `seek` alike. That is what lets `Now: OPEN` flip to `DONE` IN PLACE, which no lite row can say. Its records are FILE HEADERS: the StrictMark meta pairs under a `#   Title` ([/meta/todo]) and the top-level keys of a Markdown YAML preamble. Same discipline as the lite lane — derived, one lane for every cell-like kind — but its own file and its own catalogue, so [BEE-063] left it where it was: here the kind nibble is still the LOW 4 bits.
 
  -  `HEAD` (1) — key `path_hl:40|key_code:20|1`, val `vkind:4|payload:60`: one
     META PAIR of one file. `key_code` is the 3-char key VERBATIM at 6 bits a
@@ -181,25 +203,36 @@ The SWEEP owns staleness, since with the value in the row there is no confirming
 
 ##  The suspects contract
 
-`LINK` rows are SUSPECTS, not proof (ruling 2026-08-15): a row says a file MAY
-link to the target, and precision comes from OPENING the suspect — never from
-deleting a row and never from a tip-filtering hop. A removed link therefore
-leaves a false suspect behind, which is exactly what keeps the never-delete,
-idempotent contract of the index intact: the index only narrows the grep.
+`LINK` and `SYM` rows are SUSPECTS, not proof (ruling 2026-08-15): a row says a
+file MAY link to the target or MAY mention the symbol, and precision comes from
+OPENING the suspect — never from deleting a row and never from a tip-filtering
+hop. A removed link therefore leaves a false suspect behind, which is exactly
+what keeps the never-delete, idempotent contract of the index intact: the index
+only narrows the grep. A 40-bit `sym_hl` and a 10-bit segment collide harmlessly
+for the same reason — the open confirms.
 
  -  ONLY TIP BLOBS are scanned, and lazily. `lindex`'s own MARK row (the
     reserved ref `hlOfText("lindex")`) holds the commit the last scan finished
     at; a run diffs mark..tip through the SAME pruning tree diff the rev
     derivation rides and tokenises only the blobs that moved. A rerun over an
     unmoved tip writes nothing at all, and the mark row is the run's LAST write.
- -  ONE BRING-UP VERB, TWO MARKS ([BEE-007]): `bee index` runs the commit walk
-    and then this scan, each still no-opping off its own mark. `bringUp` — what
-    the read views (`log`, `list`, `commit`) call on every invocation — stays the
-    COMMIT half alone, so printing a log never lexes a blob. `bee lindex` is the
-    query form and still brings the rows up bare.
- -  Link RECOGNITION is the tokenizer's and only the tokenizer's: a link is
-    whatever the DOG-034 lexer fuses into one `F` token, read through
-    `index/hook.js fTokens`. There is no second recognizer and no raw-byte scan.
+ -  TWO FAMILIES, ONE PASS ([BEE-063]): the SYM rows mint off the very token
+    array the `F` filter reads, so a moved blob is read once and lexed once.
+    Each round still no-ops off its OWN mark, and the diff base is what BOTH
+    already hold — a mark only one of them reached would prune a path the other
+    still owes. A symbol shorter than three characters never mints, and only
+    the code classes do (`S`, `N`, `C`): comment prose is `D`, a keyword `R`,
+    and neither is a symbol anyone greps for.
+ -  ONE BRING-UP VERB, THREE MARKS ([BEE-007], [BEE-063]): `bee index` runs the
+    commit walk and then this scan, each round still no-opping off its own mark.
+    `bringUp` — what the read views (`log`, `list`, `commit`) call on every
+    invocation — stays the COMMIT half alone, so printing a log never lexes a
+    blob. `bee lindex` and `bee sym` are the query forms and both bring the rows
+    up bare.
+ -  RECOGNITION is the tokenizer's and only the tokenizer's: a link is whatever
+    the DOG-034 lexer fuses into one `F` token and a symbol is whatever it tags
+    as code, both read through `index/hook.js`. There is no second recognizer
+    and no raw-byte scan.
  -  The indexer RESOLVES NOTHING ([BEE-002]): a ref keys on its own segments, so
     there is no ambiguity to skip and no local descent to depend on. A ref
     spelling the carrier's own path mints no row, and a binary or over-cap blob
@@ -271,6 +304,7 @@ The gaps, stated so a reader does not go looking for them.
 [BEE-027]: /todo/BEE/BEE-027.mkd
 [BEE-033]: /todo/BEE/BEE-033.mkd
 [BEE-025]: /todo/BEE/BEE-025.mkd
+[BEE-063]: /todo/BEE/BEE-063.mkd
 [LITE-006]: /todo/LITE/LITE-006.mkd
 [TODO-003]: /todo/TODO/TODO-003.mkd
 [/meta/todo]: /meta/todo.mkd

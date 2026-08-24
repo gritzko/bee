@@ -71,29 +71,32 @@ check("kinds-are-only-the-eight", kinds.size === 8, "distinct kinds " + kinds.si
   //  a repo-ROOT file: no parent segment at all, so prnt_hl is 0.
   const rootWant = idx.fsegRow("a.txt");
   check("fseg-root-file-has-no-parent",
-        ((rootWant.key >> 4n) & ((1n << 20n) - 1n)) === 0n &&
+        idx.keyRev(rootWant.key) === 0n &&
         idx.fsegDepth(rootWant.val) === 0 &&
         rows.some((e) => e[0] === rootWant.key && e[1] === rootWant.val));
 }
 
-//  --- 2. one file's log = ONE prefix scan of its path_hl -------------------
-//  The rows come back rev-ordered oldest-first, each rev naming its blob, its
-//  commit and its parent revs — no ODB walk.
+//  --- 2. one file's log = one span per REV kind of its path_hl -------------
+//  BEE-063:38 leads the key with the kind, so the rows come back rev-ordered
+//  per kind, each rev naming its blob, its commit and its parent revs — no
+//  ODB walk and no cross-kind interleave.
 function logOf(path) {
   const phl = idx.pathHl(path);
   const revs = new Map();
-  ix.prefix(phl << 24n, 24, function (e) {
-    const rev = idx.keyRev(e[0]), kind = idx.keyKind(e[0]);
+  const each = function (k, v) {
+    const rev = idx.keyRev(k), kind = idx.keyKind(k);
     let r = revs.get(rev);
     if (r === undefined) revs.set(rev, r = { rev: rev, blob: null, commit: null, pars: [] });
-    if (kind === idx.K_BLOB) r.blob = idx.valHl60(e[1]);
-    else if (kind === idx.K_CMMT) r.commit = idx.valHl60(e[1]);
+    if (kind === idx.K_BLOB) r.blob = idx.valHl60(v);
+    else if (kind === idx.K_CMMT) r.commit = idx.valHl60(v);
     else if (kind === idx.K_PARS) {
-      const v = e[1];
       for (const s of [(v >> 44n) & idx.REV_MAX, (v >> 24n) & idx.REV_MAX, (v >> 4n) & idx.REV_MAX])
         if (s !== idx.REV_MAX) r.pars.push(s);
     }
-  });
+  };
+  idx.revSpan(ix, phl, idx.K_BLOB, each);
+  idx.revSpan(ix, phl, idx.K_CMMT, each);
+  idx.revSpan(ix, phl, idx.K_PARS, each);
   const out = [];
   for (const r of revs.values()) out.push(r);
   out.sort((x, y) => (x.rev < y.rev ? -1 : x.rev > y.rev ? 1 : 0));

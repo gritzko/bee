@@ -21,9 +21,15 @@ const TOK32_F = TAG_F - 65;                        //  the same tag in a tok32
 //  Link recognition is the tokenizer's alone (LITE-033:42:PS): the DOG-034 lexer
 //  fuses `abc/Makefile:20` or `LITE-029` into one `F` token, so no regex ever
 //  re-scans raw bytes.  Shared with lindex.js and mint.js; -> [{ lo, hi, text }].
-function fTokens(bytes, ext) {
-  let toks;
-  try { toks = tok.parse(bytes, ext); } catch (e) { return []; }
+//  The one guarded `tok.parse`, so a caller wanting two record families out of
+//  one blob tokenises it once (BEE-063:14).  A lexer that refuses -> no tokens.
+function parse(bytes, ext) {
+  try { return tok.parse(bytes, ext); } catch (e) { return new Uint32Array(0); }
+}
+
+function fTokens(bytes, ext) { return fTokensOn(bytes, parse(bytes, ext)); }
+
+function fTokensOn(bytes, toks) {
   const out = [];
   for (let i = 0; i < toks.length; i++) {
     if (((toks[i] >>> 27) & 0x1f) !== TOK32_F) continue;
@@ -525,8 +531,10 @@ function compose(file, mark, line) {
 module.exports = { precommit: precommit, postcommit: postcommit,
                    plant: plant, openUnborn: openUnborn,
                    freshRefs: freshRefs, stagedFiles: stagedFiles,
-                   //  The one link scanner, shared with index/lindex.js (LITE-033).
-                   fTokens: fTokens,
+                   //  The one link scanner, shared with index/lindex.js (LITE-033);
+                   //  `parse` + `fTokensOn` are its halves, so the SYM round
+                   //  rides the same token array (BEE-063:28).
+                   fTokens: fTokens, parse: parse, fTokensOn: fTokensOn,
                    //  The minter itself, shared with index/mint.js: the verb is
                    //  this pass with another scan and write-back (BEE-016:34:KH).
                    targetOf: targetOf, rewrite: rewrite, components: components,

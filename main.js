@@ -71,6 +71,21 @@ function runLindex(args) {
   if (out.paths.length) writeFd(1, utf8.Encode(out.paths.join("\n") + "\n"));
 }
 
+//  BEE-063: `bee sym <ident>` — every file that MAY mention the symbol, one
+//  prefix scan of the SYM rows fanned read-only over the registry.  Suspects
+//  like lindex's: the row narrows the grep and opening the file confirms.
+function runSym(args) {
+  const li = require("index/lindex.js");
+  //  A mode flag is a no-op here — plain lines either way, no hunk to page.
+  const rest = args.filter(function (a) { return modeOf(a) === null; });
+  if (rest.length === 0) {
+    writeStderr("Usage: bee sym <ident>\n");
+    throw "BROUSAGE";
+  }
+  const out = li.sym(rest.join(" "));
+  if (out.length) writeFd(1, utf8.Encode(out.join("\n") + "\n"));
+}
+
 //  LITE-014: `bee merge <base> <ours> <theirs> [-o <out>] [-p <path>]` — the
 //  git merge-driver contract (result over <ours>, a conflict THROWS exit 1) —
 //  and `bee install [<repo>]`, pointing a repo's git at it.  BEE-037: bare
@@ -225,7 +240,8 @@ function pageHunks(hunks) {
 //  LITE-045: `--plain`/`--color`/`--html` are no-ops for them (one line either
 //  way), but they are still FLAGS and never a verb's argument.
 const SIDE = {
-  index: runIndex, lindex: runLindex, merge: runMerge, install: runInstall,
+  index: runIndex, lindex: runLindex, sym: runSym,
+  merge: runMerge, install: runInstall,
   hook: runHook, chat: runChat, http: runHttp, now: runNow, mint: runMint,
   mark: runMark, wts: runWts,
 };

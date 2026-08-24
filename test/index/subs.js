@@ -66,12 +66,13 @@ const ix = idx.openIndex(ctx2.gitdir);
 const kinds = new Set();
 let bumps = 0, foreign = 0;
 try {
-  const c = ix.seek(phl << 24n);
-  while (c.next()) {
-    if (idx.keyPhl(c.key) !== phl) break;
-    kinds.add(idx.keyKind(c.key));
-    if (idx.keyKind(c.key) === idx.K_CMMT) bumps++;
-  }
+  //  BEE-063:38: the kind leads the key, so the path's rows are one span
+  //  per REV kind rather than one shared span.
+  for (const kind of [idx.K_BLOB, idx.K_CMMT, idx.K_PARS])
+    idx.revSpan(ix, phl, kind, function (k, v) {
+      kinds.add(kind);
+      if (kind === idx.K_CMMT) bumps++;
+    });
   //  The sub's TIP commit, as the parent's tree names it: no row of ours may
   //  be keyed by it (a B2P row would be exactly that foreign blob's row).
   const tip = idx.subAt(ctx2.r, idx.readCommit(ctx2.r, ctx2.head.sha).tree, sub);

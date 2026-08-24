@@ -5,6 +5,8 @@
 //  (BEE-002:50:qe) with no repo id (BEE-002:55:qe), so indexing order cannot change
 //  a key.  The scan is lazy and tip-only (LITE-033:20:PS, LITE-033:32:PS); the
 //  query fans out read-only over the registry (BEE-002:60:qe, BEE-002:65:qe).
+//  BEE-063:28 rides that one pass with a second family, SYM (kind 9), and the
+//  `bee sym` verb — same suspects contract, its own watermark.
 "use strict";
 
 const idx = require("./index.js");
@@ -12,15 +14,18 @@ const hk = require("./hook.js");
 const rs = require("./resolve.js");
 const wv = require("./weave.js");
 
-//  Nibble 7: LITE-006:17:Rc spends 1..5 and F, LITE-011:26:a9 took 6.
+//  Kind 7: LITE-006:17:Rc spends 1..5 and F, LITE-011:26:a9 took 6.
 const K_LINK = 0x7n;
 //  The reserved ref name the incremental mark hangs on (LITE-033:32:PS); not a
 //  real ref, so it can never collide with one's LITE-006 watermark.
 const LINDEX_REF = "lindex";
+//  The SYM round's own watermark ref (BEE-063:24): sharing lindex's would read
+//  a pre-SYM index as done and no blob would ever be re-lexed for symbols.
+const SYMDEX_REF = "symdex";
 
 const GPAR_MASK = (1n << 20n) - 1n;
 
-//  key = fn_hl:40 | par:20 | 7, a rev key whose rev slot holds the parent dir.
+//  key = 7 | fn_hl:40 | par:20, a rev key whose rev slot holds the parent dir.
 function linkKey(fn, par) { return idx.revKey(fn, par, K_LINK); }
 //  val = src path_hl:40 | gpar:20 | vnib:4, the B2P value shape with the rev
 //  slot holding the target's grandparent dir.
@@ -41,6 +46,90 @@ function slots(text) {
   return { fn: idx.fnHl(segs[n - 1]),
            par: n > 1 ? idx.segHl(segs[n - 2], 20n) : 0n,
            gpar: n > 2 ? idx.segHl(segs[n - 3], 20n) : 0n };
+}
+
+//  --- SYM, the symbol-mention record (BEE-063) --------------------------------
+//  key = 9 | sym_hl:40 | types:20, val = seg0..seg3:10 ROOT-FIRST | fn_hl:20 |
+//  vnib:4: ONE row per (symbol, file), LINK's field vocabulary cut to what a
+//  pruned descent needs.  Suspects like LINK's — the row says the symbol MAY be
+//  there and the open confirms (BEE-063:9).
+const SYM_SEGS = 4;                          // the val holds the top four dirs
+const SYM_SLOTS = 4;                         // and the key four 5-bit tags
+const TAG_BITS = 5n;
+const SEG10_MASK = (1n << 10n) - 1n;
+const FN20_MASK = (1n << 20n) - 1n;
+//  Past this many suspects in one repo the verb prints the count instead of
+//  descending the tree (BEE-063:37): `ctx` legitimately sits in every file.
+const SYM_CAP = 200;
+
+function symKey(symHl, types) { return idx.revKey(symHl, types, idx.K_SYM); }
+function symVal(chain, fn20) {
+  let v = 0n;
+  for (let i = 0; i < SYM_SEGS; i++)
+    v = (v << 10n) | (i < chain.length ? chain[i] : 0n);
+  return (v << 24n) | (fn20 << 4n);
+}
+function symSeg(v, i) { return (v >> BigInt(54 - 10 * i)) & SEG10_MASK; }
+function symFn(v) { return (v >> 4n) & FN20_MASK; }
+//  The val minus its reserved nibble, which is what a query compares: a path
+//  the descent reaches keys the same way the mint keyed the carrier.
+function symSig(v) { return v >> 4n; }
+function sigSeg(s, i) { return (s >> BigInt(50 - 10 * i)) & SEG10_MASK; }
+
+//  The basename's top 20 hashlet bits.  No bump: a filename is never absent,
+//  which is the one place FSEG's `0 = absent` rule does not apply.
+function fn20(name) { return idx.hlOfText(name) >> 40n; }
+
+//  One repo-relative path -> the val every row for a symbol in it carries.  A
+//  path deeper than SYM_SEGS says nothing about its near levels, so the descent
+//  goes wide there, exactly as the FSEG one does past its own slots.
+function symRow(path) {
+  const segs = path.split("/");
+  const dirs = segs.slice(0, -1);
+  const chain = [];
+  for (let i = 0; i < dirs.length && i < SYM_SEGS; i++)
+    chain.push(idx.segHl(dirs[i], 10n));
+  return symVal(chain, fn20(segs[segs.length - 1]));
+}
+
+//  The four tag slots, CANONICAL or idempotence dies (BEE-063:21): sorted
+//  ascending, deduped, `0` spells absent ('A' is no tag) and the lowest four
+//  win, so a re-lex of the same blob rebuilds the very same key.
+function typeSlots(tags) {
+  const s = [];
+  for (const t of tags) if (s.indexOf(t) < 0) s.push(t);
+  s.sort(function (a, b) { return a - b; });
+  let v = 0n;
+  for (let i = 0; i < SYM_SLOTS; i++)
+    v = (v << TAG_BITS) | (i < s.length ? BigInt(s[i]) : 0n);
+  return v;
+}
+
+//  Only code tokens mint (BEE-063:25).  The DOG-034 lexer tags an identifier
+//  `S`, a defined name `N` and a call `C` (dog/tok/DEF.h), while comment prose
+//  is `D`, a string `G` and a keyword `R` — none of them a symbol to grep for.
+const SYM_TAGS = new Set([18, 13, 2]);
+const SYM_MIN = 3;                     // shorter than three chars never mints
+
+//  One blob's symbols -> Map(text -> the tags it lexed as here).  Deduped at
+//  mint time, so a symbol used twenty times in a file is ONE row (BEE-063:23),
+//  and read off the array the F-token filter already parsed — no second lex.
+function symsOf(bytes, toks) {
+  const out = new Map();
+  let lo = 0;
+  for (let i = 0; i < toks.length; i++) {
+    const at = lo, hi = toks[i] & 0xffffff;
+    lo = hi;
+    if (hi - at < SYM_MIN) continue;
+    const tag = (toks[i] >>> 27) & 0x1f;
+    if (!SYM_TAGS.has(tag)) continue;
+    const text = utf8.Decode(bytes.slice(at, hi));
+    if (text.length < SYM_MIN) continue;
+    let s = out.get(text);
+    if (s === undefined) out.set(text, s = []);
+    if (s.indexOf(tag) < 0) s.push(tag);
+  }
+  return out;
 }
 
 //  --- the way back to text ---------------------------------------------------
@@ -74,14 +163,16 @@ function valsOn(ix, key, cache) {
   return s;
 }
 
-function markKey() { return idx.hlKey(idx.hlOfText(LINDEX_REF), idx.K_MARK); }
+function markKey(ref) {
+  return idx.hlKey(idx.hlOfText(ref === undefined ? LINDEX_REF : ref), idx.K_MARK);
+}
 
-//  Every commit the lindex mark names.  Bumping a mark writes a second row on
+//  Every commit one round's mark names.  Bumping a mark writes a second row on
 //  the same key and nothing says which is newer, which is fine: all of them
 //  had their tip blobs scanned, so each is a legal base for the diff, and
 //  `descend` prunes a path unchanged since any of them.
-function markCommits(ix) {
-  const key = markKey();
+function markCommits(ix, ref) {
+  const key = markKey(ref);
   const out = [];
   const c = ix.seek(key);
   while (c.next()) {
@@ -97,15 +188,17 @@ function blobBytes(ctx, sha) {
 }
 
 //  --- the scan ---------------------------------------------------------------
-//  scan(ctx, ix) -> the summary record.  Brings the LINK rows up to the tip and
-//  writes the mark last.
+//  scan(ctx, ix) -> the summary record.  ONE tokenised pass over the moved tip
+//  blobs yields BOTH families (BEE-063:28), each off its own mark, and the
+//  marks are the run's last writes.
 function scan(ctx, ix) {
   const r = ctx.r, tip = ctx.head.sha, tipHl = idx.hlOfSha(tip);
   const rec = { ref: ctx.head.ref, tip: tip, gitdir: ctx.gitdir,
-                upToDate: false, files: 0, links: 0, rows: 0 };
-  //  1. The O(1) no-op: the tip is already scanned, so nothing is even read.
-  const marks = markCommits(ix);
-  for (const m of marks) if (m === tipHl) { rec.upToDate = true; return rec; }
+                upToDate: false, files: 0, links: 0, syms: 0, rows: 0 };
+  //  1. The O(1) no-op: both rounds are already at the tip, so nothing is read.
+  const lMarks = markCommits(ix, LINDEX_REF), sMarks = markCommits(ix, SYMDEX_REF);
+  const linkUp = lMarks.indexOf(tipHl) >= 0, symUp = sMarks.indexOf(tipHl) >= 0;
+  if (linkUp && symUp) { rec.upToDate = true; return rec; }
 
   const tipC = idx.readCommit(r, tip);
   if (tipC === null || !tipC.tree)
@@ -113,18 +206,21 @@ function scan(ctx, ix) {
 
   //  2. The changed paths of mark..tip, each with its new tip blob; an unreadable
   //  mark (a rewritten history) drops out and the run walks the whole tip tree.
+  //  The base is what BOTH rounds already hold: a mark only one of them reached
+  //  would prune a path the other still owes.
+  const base = linkUp ? sMarks : symUp ? lMarks
+             : lMarks.filter(function (m) { return sMarks.indexOf(m) >= 0; });
   const pTrees = [];
-  for (const m of marks) {
+  for (const m of base) {
     const mc = idx.readCommit(r, idx.hexOfHl(m));
     if (mc !== null && mc.tree) pTrees.push(mc.tree);
   }
   const changed = [];
   idx.descend(r, tipC.tree, pTrees, "", changed);
 
-  //  3. One tokenised pass per new blob.
+  //  3. One tokenised pass per new blob, two families out of it.
   const wr = idx.idxWriter(ix);
   const cache = new Map();
-  const splitRef = require("door.js").splitRef;   // the one ref split point
   for (const c of changed) {
     //  `descend` yields changed dirs as well (LITE-044); a subtree carries no
     //  prose, so it is skipped here rather than read back off the ODB.
@@ -135,32 +231,56 @@ function scan(ctx, ix) {
     //  shared source cap are not tokenised at all (LITE-014's one gate).
     if (bytes.length > wv.MAX_SOURCE_SIZE || wv.isBinary(bytes)) continue;
     rec.files++;
-    for (const t of hk.fTokens(bytes, wv.extOf(c.path))) {
-      //  The anchor is shed through the one `splitRef`: the row names a file,
-      //  not a place, so `:12:24` and `:58:mJ` alike drop here.
-      const sp = splitRef(t.text);
-      if (sp.path === "") continue;
-      if (sp.path === c.path) continue;           // a self-link mints no row
-      //  The ref's own segments, resolved through nothing at all (BEE-002).
-      const q = slots(sp.path);
-      if (q === null) continue;
-      rec.links++;
-      const key = linkKey(q.fn, q.par), val = linkVal(c.phl, q.gpar);
-      const have = valsOn(ix, key, cache);
-      if (have.has(val)) continue;                // already a suspect: idempotent
-      have.add(val);
-      wr.put(key, val);
-      rec.rows++;
-    }
+    const toks = hk.parse(bytes, wv.extOf(c.path));
+    if (!linkUp) linkRows(ix, wr, cache, rec, c, bytes, toks);
+    if (!symUp) symRowsOf(ix, wr, cache, rec, c, bytes, toks);
   }
   wr.seal();
 
-  //  4. The mark is the run's last write (DOG-027), so a scan killed half way
+  //  4. A mark is its round's last write (DOG-027), so a scan killed half way
   //  leaves rows that are all true and a mark that simply lags.
-  ix.put(markKey(), idx.hlVal(tipHl, 0n));
+  if (!linkUp) { ix.put(markKey(LINDEX_REF), idx.hlVal(tipHl, 0n)); rec.rows++; }
+  if (!symUp) { ix.put(markKey(SYMDEX_REF), idx.hlVal(tipHl, 0n)); rec.rows++; }
   ix.commit(true);
-  rec.rows++;
   return rec;
+}
+
+//  One blob's LINK rows (LITE-033): every `F` token the lexer fused, keyed by
+//  the ref's own segments and by nothing this repo resolved.
+function linkRows(ix, wr, cache, rec, c, bytes, toks) {
+  const splitRef = require("door.js").splitRef;   // the one ref split point
+  for (const t of hk.fTokensOn(bytes, toks)) {
+    //  The anchor is shed through the one `splitRef`: the row names a file,
+    //  not a place, so `:12:24` and `:58:mJ` alike drop here.
+    const sp = splitRef(t.text);
+    if (sp.path === "") continue;
+    if (sp.path === c.path) continue;             // a self-link mints no row
+    //  The ref's own segments, resolved through nothing at all (BEE-002).
+    const q = slots(sp.path);
+    if (q === null) continue;
+    rec.links++;
+    const key = linkKey(q.fn, q.par), val = linkVal(c.phl, q.gpar);
+    const have = valsOn(ix, key, cache);
+    if (have.has(val)) continue;                  // already a suspect: idempotent
+    have.add(val);
+    wr.put(key, val);
+    rec.rows++;
+  }
+}
+
+//  One blob's SYM rows (BEE-063): one per symbol the gates let through, keyed
+//  by the symbol text VERBATIM and by the canonical tags it lexed as here.
+function symRowsOf(ix, wr, cache, rec, c, bytes, toks) {
+  const val = symRow(c.path);
+  for (const [text, tags] of symsOf(bytes, toks)) {
+    rec.syms++;
+    const key = symKey(idx.fnHl(text), typeSlots(tags));
+    const have = valsOn(ix, key, cache);
+    if (have.has(val)) continue;                  // already a suspect: idempotent
+    have.add(val);
+    wr.put(key, val);
+    rec.rows++;
+  }
 }
 
 //  --- the query --------------------------------------------------------------
@@ -250,6 +370,115 @@ function suspects(ctx, ix, target, opts) {
   return out;
 }
 
+//  --- the symbol query (BEE-063:19) -------------------------------------------
+//  One index's rows for one `sym_hl`: ONE prefix scan, since the kind's top
+//  nibble gives the family a range of its own.  -> the distinct val payloads.
+function symSuspects(ix, symhl, want) {
+  const c = ix.seek(symKey(symhl, 0n));
+  while (c.next()) {
+    if (idx.keyKind(c.key) !== idx.K_SYM || idx.keyPhl(c.key) !== symhl) break;
+    want.add(symSig(c.val));
+  }
+}
+
+//  The dir hashlets the rows name, level by level: the descent's prune table.
+//  A `0` slot names no dir at that level, so it lets nothing through.
+function segLevels(want) {
+  const dirs = [];
+  for (let i = 0; i < SYM_SEGS; i++) dirs.push(new Set());
+  for (const sig of want)
+    for (let i = 0; i < SYM_SEGS; i++) {
+      const s = sigSeg(sig, i);
+      if (s !== 0n) dirs[i].add(s);
+    }
+  return dirs;
+}
+
+//  The suspects named back to TEXT by a descent of the tip tree PRUNED by the
+//  rows' own segment hashlets — only a dir some row names is entered, which is
+//  cheaper than lindex's full descent (BEE-063:19).  A file confirms on the
+//  whole tuple, so depth is answered by the slots and never guessed.
+function nameSyms(r, treeSha, depth, want, dirs, prefix, out) {
+  const ents = idx.readTree(r, treeSha);
+  if (ents === null) return;
+  for (const [name, e] of ents) {
+    if (e.dir) {
+      //  Below the four slots a row says nothing, so the descent goes wide.
+      if (depth < SYM_SEGS && !dirs[depth].has(idx.segHl(name, 10n))) continue;
+      nameSyms(r, e.sha, depth + 1, want, dirs, prefix + name + "/", out);
+      continue;
+    }
+    const path = prefix + name;
+    if (want.has(symSig(symRow(path)))) out.push(path);
+  }
+}
+
+//  One repo's answer, repo-qualified.  Past the cap it prints the count and
+//  asks for a narrower query instead of descending the whole tree (BEE-063:37).
+function symIn(ctx, ix, symhl, out) {
+  const want = new Set();
+  symSuspects(ix, symhl, want);
+  if (want.size === 0) return;
+  if (want.size > SYM_CAP) {
+    out.push(ctx.root + ": " + want.size + " files carry it — narrow the query");
+    return;
+  }
+  const tipC = idx.readCommit(ctx.r, ctx.head.sha);
+  if (tipC === null || !tipC.tree) return;
+  const paths = [];
+  nameSyms(ctx.r, tipC.tree, 0, want, segLevels(want), "", paths);
+  paths.sort();
+  for (const p of paths) out.push(ctx.root + "/" + p);
+}
+
+//  One registered repo's answer (BEE-002:65:qe): opened READ-ONLY and never
+//  brought up, so a stale foreign index answers with fewer suspects and never
+//  with a wrong one; anything unopenable is skipped in silence.
+function symForeign(path, symhl, out) {
+  let ctx = null, ix = null;
+  try {
+    ctx = idx.openRepo(path, false);
+    if (idx.fresh(ctx.gitdir)) return;            // no index of this format
+    ix = idx.openIndex(ctx.gitdir, false, true);
+    symIn(ctx, ix, symhl, out);
+  } catch (e) { return; }
+  finally {
+    if (ix !== null) { try { ix.close(); } catch (e) {} }
+    if (ctx !== null) idx.closeRepo(ctx);
+  }
+}
+
+//  sym(ident, opts) -> the repo-qualified files that MAY mention `ident`, the
+//  local repo first, the registered ones after.  The local rows come up first
+//  (the verb's own bring-up); no other index is ever written.
+function sym(ident, opts) {
+  opts = opts || {};
+  const text = String(ident === undefined ? "" : ident).trim();
+  if (text === "") return [];
+  const symhl = idx.fnHl(text);
+  const ctx = idx.openRepo(opts.repo === undefined ? io.cwd() : opts.repo, true);
+  const out = [], seen = new Set();
+  try {
+    const ix = idx.openIndex(ctx.gitdir, idx.fresh(ctx.gitdir));
+    try {
+      idx.bringUp(ctx, ix, { track: false });
+      scan(ctx, ix);
+      symIn(ctx, ix, symhl, out);
+    } finally { try { ix.close(); } catch (e) {} }
+    for (const line of out) seen.add(line);
+    for (const repo of idx.repos(opts.home).sort()) {
+      if (repo === ctx.root || repo === ctx.repo) continue;  // the local one answered
+      let real = repo;
+      try { real = io.realpath(repo); } catch (e) {}
+      if (real === ctx.root) continue;
+      const got = [];
+      symForeign(repo, symhl, got);
+      for (const line of got) if (!seen.has(line)) { seen.add(line); out.push(line); }
+    }
+  } finally { idx.closeRepo(ctx); }
+  return out;
+}
+
 //  --- the run ----------------------------------------------------------------
 //  lindex(target) -> { rec, paths }, `paths` being null for the bare form and
 //  the suspect list otherwise.  Either way the LITE-006 index is brought up
@@ -284,4 +513,10 @@ module.exports = { lindex: lindex, summary: summary,
                    linkKey: linkKey, linkVal: linkVal, linkSrc: linkSrc,
                    linkGpar: linkGpar, carriers: carriers, foreign: foreign,
                    markKey: markKey, markCommits: markCommits,
-                   K_LINK: K_LINK, LINDEX_REF: LINDEX_REF };
+                   K_LINK: K_LINK, LINDEX_REF: LINDEX_REF,
+                   //  The BEE-063 half: the record, its gates and the verb.
+                   sym: sym, symKey: symKey, symVal: symVal, symRow: symRow,
+                   symSeg: symSeg, symFn: symFn, symSig: symSig,
+                   typeSlots: typeSlots, symsOf: symsOf, symIn: symIn,
+                   symSuspects: symSuspects, symForeign: symForeign,
+                   SYMDEX_REF: SYMDEX_REF, SYM_CAP: SYM_CAP };

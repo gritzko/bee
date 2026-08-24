@@ -64,8 +64,8 @@ function mergeBase(ix, a, b) {
 }
 
 //  --- the path index (REV-*) -------------------------------------------------
-//  One path's rev rows off the key span its `path_hl` owns (LITE-028:41:~1),
-//  filtered by kind, never cut short by one.  Returns { phl, revs: Map(rev ->
+//  One path's rev rows off the three key spans its `path_hl` owns, one per kind
+//  since BEE-063:38.  Returns { phl, revs: Map(rev ->
 //  { rev, blob, commit, pars[] }), order: [rev asc], byCommit: Map(chl -> rev) }.
 function pathRevs(ix, path) {
   const phl = idx.pathHl(path);
@@ -76,20 +76,15 @@ function pathRevs(ix, path) {
                                              pars: [] });
     return e;
   };
-  const c = ix.seek(phl << 24n);
-  while (c.next()) {
-    if (idx.keyPhl(c.key) !== phl) break;
-    const kind = idx.keyKind(c.key), rev = idx.keyRev(c.key), v = c.val;
-    if (kind === idx.K_BLOB) at(rev).blob = idx.valHl60(v);
-    else if (kind === idx.K_CMMT) at(rev).commit = idx.valHl60(v);
-    else if (kind === idx.K_PARS) {
-      //  A val holds three parent revs; a 4th+ rides a second row (BEE-005).
-      const e = at(rev);
-      for (const s of [(v >> 44n) & idx.REV_MAX, (v >> 24n) & idx.REV_MAX,
-                       (v >> 4n) & idx.REV_MAX])
-        if (s !== idx.REV_MAX && e.pars.indexOf(s) < 0) e.pars.push(s);
-    }
-  }
+  idx.revSpan(ix, phl, idx.K_BLOB, function (k, v) { at(idx.keyRev(k)).blob = idx.valHl60(v); });
+  idx.revSpan(ix, phl, idx.K_CMMT, function (k, v) { at(idx.keyRev(k)).commit = idx.valHl60(v); });
+  idx.revSpan(ix, phl, idx.K_PARS, function (k, v) {
+    //  A val holds three parent revs; a 4th+ rides a second row (BEE-005).
+    const e = at(idx.keyRev(k));
+    for (const s of [(v >> 44n) & idx.REV_MAX, (v >> 24n) & idx.REV_MAX,
+                     (v >> 4n) & idx.REV_MAX])
+      if (s !== idx.REV_MAX && e.pars.indexOf(s) < 0) e.pars.push(s);
+  });
   const order = [];
   for (const [rev, e] of revs) {
     //  A dir path carries CMMT rows and no blob (LITE-044): nothing to fold,

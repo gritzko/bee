@@ -37,11 +37,9 @@ function candidates(ix, q) {
     const key = idx.fsegKey(q.fn, q.prnt);
     ix.range(key, key + 1n, function (e) { take(e[0], e[1]); });
   } else {
-    //  The prefix also sweeps the REV rows that share these top 40 bits; the
-    //  kind nibble is what tells them apart.
-    ix.prefix(q.fn << 24n, 24, function (e) {
-      if (idx.keyKind(e[0]) === idx.K_FSEG) take(e[0], e[1]);
-    });
+    //  Every parent a file of this name was ever seen under: since BEE-063:38
+    //  the span holds FSEG rows and nothing else, so no kind filter is left.
+    idx.revSpan(ix, q.fn, idx.K_FSEG, take);
   }
   return out;
 }

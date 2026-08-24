@@ -81,9 +81,9 @@ try {
     //  LITE-044: the DIR REV rows themselves — the dir path's own `path_hl`
     //  span on the index, the very rows the fuse now scans.
     dirRevs = [];
-    ix.prefix(idx.pathHl("old") << 24n, 24, function (e) {
-      if (idx.keyKind(e[0]) === idx.K_CMMT)
-        dirRevs.push(idx.hexOfHl(idx.valHl60(e[1])));
+    //  BEE-063:38: the CMMT rows are their own span now, no kind filter left.
+    idx.revSpan(ix, idx.pathHl("old"), idx.K_CMMT, function (k, v) {
+      dirRevs.push(idx.hexOfHl(idx.valHl60(v)));
     });
   } finally { try { ix.close(); } catch (e) {} }
 } finally { idx.closeRepo(ctx); }
