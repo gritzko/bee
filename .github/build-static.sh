@@ -18,6 +18,8 @@ apk add -q build-base cmake samurai git file curl-dev \
 # Only dog/ is fetched — quickjab's test/ submodule feeds its own ctest suite,
 # which we never run, and a blanket --recurse-submodules dies on its pin.
 git config --global --add safe.directory "$SRC"
+git config --global user.email "you@example.com"
+git config --global user.name "Your Name"
 git clone -q --depth 1 https://github.com/gritzko/quickjab.git quickjab-src
 git -C quickjab-src submodule update -q --init --recursive dog
 git -C quickjab-src submodule update -q --init --recursive qjs

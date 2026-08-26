@@ -9,6 +9,8 @@ set -eu
 SRC=$PWD
 
 git config --global --add safe.directory "$SRC"
+git config --global user.email "test@example.com"
+git config --global user.name "Test Testov"
 git clone -q --depth 1 https://github.com/gritzko/quickjab.git quickjab-src
 git -C quickjab-src submodule update -q --init --recursive dog
 git -C quickjab-src submodule update -q --init --recursive qjs
